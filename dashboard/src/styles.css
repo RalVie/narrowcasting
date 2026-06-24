@@ -86,6 +86,79 @@ a {
   justify-content: space-between;
 }
 
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+button {
+  border: 1px solid #b9c8bd;
+  border-radius: 6px;
+  padding: 9px 12px;
+  color: #17201a;
+  background: #ffffff;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: #edf5ef;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.status-text {
+  margin-top: 18px;
+}
+
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.media-card {
+  overflow: hidden;
+  border: 1px solid #d9dfd4;
+  border-radius: 8px;
+  background: #f8faf6;
+}
+
+.media-card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: #101512;
+}
+
+.media-card-body {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.media-card h3 {
+  margin: 0 0 4px;
+  overflow-wrap: anywhere;
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
 .readonly-pill {
   flex: 0 0 auto;
   border: 1px solid #b9c8bd;

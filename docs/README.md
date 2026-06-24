@@ -1,6 +1,6 @@
-# Narrowcasting Phase 2
+# Narrowcasting Phase 3
 
-Single-screen local-first Raspberry Pi digital signage MVP with local image playback.
+Single-screen local-first Raspberry Pi digital signage MVP with a basic media library.
 
 ## Boundaries
 
@@ -13,8 +13,8 @@ Single-screen local-first Raspberry Pi digital signage MVP with local image play
 
 ## Parts
 
-- `server`: Node.js, TypeScript, Fastify, health endpoint, static image schedule endpoint, example media serving, and SQLite-ready structure.
-- `dashboard`: React, TypeScript, Vite management shell with read-only schedule preview.
+- `server`: Node.js, TypeScript, Fastify, health endpoint, static image schedule endpoint, media upload/list/delete API, example media serving, and SQLite-ready structure.
+- `dashboard`: React, TypeScript, Vite management shell with read-only schedule preview and basic media library.
 - `player`: React, TypeScript, Vite fullscreen-friendly local image playback shell.
 - `agent`: Node.js, TypeScript config loader, schedule poller, local schedule/media cache writer, and heartbeat placeholder.
 
@@ -39,13 +39,24 @@ The server exposes:
 
 - `GET http://localhost:3000/health`
 - `GET http://localhost:3000/api/schedule`
-- `GET http://localhost:3000/media/welcome.png`
+- `GET http://localhost:3000/api/media`
+- `POST http://localhost:3000/api/media`
+- `DELETE http://localhost:3000/api/media/:id`
+- `GET http://localhost:3000/media/welcome.jpg`
 
-Example media files live in:
+Server media files live in:
 
 ```text
 server/public/media/
 ```
+
+Media metadata is stored in a simple JSON file:
+
+```text
+server/data/media.json
+```
+
+There is no database yet.
 
 ```bash
 cd server
@@ -96,7 +107,10 @@ http://localhost:5174
 
 ### Dashboard
 
-The dashboard includes a read-only Schedule Preview page that reads the server schedule and displays item type, filename, and duration.
+The dashboard includes:
+
+- A read-only Schedule Preview page that reads the server schedule and displays item type, filename, and duration.
+- A Media Library page for image upload, thumbnail preview, refresh, and delete.
 
 ```bash
 cd dashboard
@@ -115,22 +129,28 @@ Default development ports:
 - Dashboard: `http://localhost:5173`
 - Player: `http://localhost:5174`
 
-## Test Image Sync And Offline Playback
+## Test Media Upload, Sync, And Offline Playback
 
 1. Start the server.
-2. Start the agent.
-3. Confirm the agent writes `player/public/data/schedule.json`.
-4. Confirm the agent writes `player/public/media/welcome.png`.
-5. Start the player and open `http://localhost:5174`.
-6. Confirm the player displays the image fullscreen.
-7. Stop the server.
-8. Confirm the agent logs a sync failure but keeps the existing local schedule and media file.
-9. Confirm the player continues displaying the cached image from `player/public/media/welcome.png`.
+2. Start the dashboard.
+3. Open the Media Library page at `http://localhost:5173`.
+4. Upload an image with the file picker.
+5. Confirm the image appears in the media library with thumbnail, filename, type, and size.
+6. Confirm the image exists in `server/public/media/`.
+7. Reference that filename from `server/src/schedule/staticSchedule.ts`.
+8. Start the agent.
+9. Confirm the agent writes `player/public/data/schedule.json`.
+10. Confirm the agent downloads the referenced image into `player/public/media/`.
+11. Start the player and open `http://localhost:5174`.
+12. Confirm the player displays the image fullscreen.
+13. Stop the server.
+14. Confirm the agent logs a sync failure but keeps the existing local schedule and media file.
+15. Confirm the player continues displaying the cached image from `player/public/media/`.
 
 ## Test Schedule Updates
 
 1. Edit `server/src/schedule/staticSchedule.ts`, for example change a duration or referenced image filename.
-2. Add the matching file to `server/public/media/` when changing filenames.
+2. Upload the matching file through the dashboard or add it to `server/public/media/`.
 3. Restart the server if the dev watcher has not already reloaded it.
 4. Wait up to 30 seconds for the agent to fetch the schedule and media updates.
 5. Wait up to 30 seconds for the player to reload the local schedule.

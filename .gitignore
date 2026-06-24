@@ -4,6 +4,7 @@ dist/
 vite.config.js
 vite.config.d.ts
 server/public/media/welcome.png
+server/data/media.json
 player/public/data/schedule.json
 player/public/media/*
 !player/public/media/.gitkeep

@@ -1,30 +1,62 @@
 import { createReadStream } from "node:fs";
 import { access } from "node:fs/promises";
-import { basename, extname, resolve } from "node:path";
 import type { FastifyPluginAsync } from "fastify";
-
-const mediaRoot = resolve(process.cwd(), "public", "media");
-
-function getContentType(file: string) {
-  switch (extname(file).toLowerCase()) {
-    case ".jpg":
-    case ".jpeg":
-      return "image/jpeg";
-    case ".png":
-      return "image/png";
-    case ".webp":
-      return "image/webp";
-    default:
-      return "application/octet-stream";
-  }
-}
+import multipart from "@fastify/multipart";
+import {
+  createMedia,
+  deleteMedia,
+  getMediaContentType,
+  getMediaPath,
+  listMedia
+} from "../../media/mediaStore.js";
 
 export const mediaRoutes: FastifyPluginAsync = async (app) => {
-  app.get<{ Params: { file: string } }>("/media/:file", async (request, reply) => {
-    const file = basename(request.params.file);
-    const filePath = resolve(mediaRoot, file);
+  app.register(multipart, {
+    limits: {
+      fileSize: 20 * 1024 * 1024,
+      files: 1
+    }
+  });
 
-    if (!filePath.startsWith(mediaRoot) || file !== request.params.file) {
+  app.get("/api/media", async () => listMedia());
+
+  app.post("/api/media", async (request, reply) => {
+    const uploadedFile = await request.file();
+
+    if (!uploadedFile) {
+      return reply.code(400).send({ error: "missing image upload" });
+    }
+
+    if (!uploadedFile.mimetype.startsWith("image/")) {
+      return reply.code(400).send({ error: "only image uploads are supported" });
+    }
+
+    try {
+      const item = await createMedia(uploadedFile.filename, await uploadedFile.toBuffer());
+      return reply.code(201).send(item);
+    } catch (error) {
+      return reply.code(400).send({
+        error: error instanceof Error ? error.message : "media upload failed"
+      });
+    }
+  });
+
+  app.delete<{ Params: { id: string } }>("/api/media/:id", async (request, reply) => {
+    const deleted = await deleteMedia(request.params.id);
+
+    if (!deleted) {
+      return reply.code(404).send({ error: "media item not found" });
+    }
+
+    return reply.code(204).send();
+  });
+
+  app.get<{ Params: { file: string } }>("/media/:file", async (request, reply) => {
+    let filePath: string;
+
+    try {
+      filePath = getMediaPath(request.params.file);
+    } catch {
       return reply.code(400).send({ error: "invalid media file" });
     }
 
@@ -34,6 +66,6 @@ export const mediaRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(404).send({ error: "media file not found" });
     }
 
-    return reply.type(getContentType(file)).send(createReadStream(filePath));
+    return reply.type(getMediaContentType(request.params.file)).send(createReadStream(filePath));
   });
 };

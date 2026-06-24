@@ -20,3 +20,10 @@ Local image playback.
 Example server media.
 Agent media cache sync.
 Offline cached image playback.
+
+PHASE 3
+
+Basic media library.
+Image upload.
+Media metadata JSON.
+Dashboard media management.
