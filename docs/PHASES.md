@@ -12,3 +12,4 @@ One screen.
 One playlist.
 Offline playback.
 Heartbeat.
+Static local schedule sync.

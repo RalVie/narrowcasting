@@ -1,14 +1,7 @@
 node_modules/
 dist/
 *.tsbuildinfo
-
-.env
-.env.local
-
-coverage/
-
-*.log
-
-.vscode/
 vite.config.js
 vite.config.d.ts
+player/public/data/schedule.json
+agent/data/

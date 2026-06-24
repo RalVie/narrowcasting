@@ -1,14 +1,20 @@
 export interface AgentConfig {
   deviceId: string;
   cacheDir: string;
+  serverUrl: string;
+  schedulePath: string;
   syncIntervalMs: number;
   heartbeatIntervalMs: number;
 }
 
 export function loadAgentConfig(): AgentConfig {
+  const cacheDir = process.env.CACHE_DIR ?? "../player/public/data";
+
   return {
     deviceId: process.env.DEVICE_ID ?? "local-player",
-    cacheDir: process.env.CACHE_DIR ?? "./cache",
+    cacheDir,
+    serverUrl: process.env.SERVER_URL ?? "http://localhost:3000",
+    schedulePath: `${cacheDir}/schedule.json`,
     syncIntervalMs: Number(process.env.SYNC_INTERVAL_MS ?? 30_000),
     heartbeatIntervalMs: Number(process.env.HEARTBEAT_INTERVAL_MS ?? 15_000)
   };
