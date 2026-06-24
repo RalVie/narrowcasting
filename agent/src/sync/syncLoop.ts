@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import type { AgentConfig } from "../config/loadAgentConfig.js";
 import type { Schedule } from "../schedule/types.js";
@@ -97,11 +97,80 @@ async function readLocalScheduleVersion(config: AgentConfig): Promise<number | n
   return null;
 }
 
+async function countCachedFiles(config: AgentConfig): Promise<number> {
+  try {
+    const filenames = await readdir(config.mediaDir);
+    const stats = await Promise.all(
+      filenames
+        .filter((filename) => !filename.startsWith("."))
+        .map(async (filename) => stat(resolve(config.mediaDir, filename)))
+    );
+
+    return stats.filter((fileStat) => fileStat.isFile()).length;
+  } catch {
+    return 0;
+  }
+}
+
+async function writeAgentStatus(config: AgentConfig, currentScheduleVersion: number | null) {
+  await writeAgentStatusFile(config, {
+    lastSync: new Date().toISOString(),
+    currentScheduleVersion,
+    cachedFiles: await countCachedFiles(config)
+  });
+}
+
+async function readExistingAgentStatus(config: AgentConfig): Promise<{
+  lastSync: string | null;
+}> {
+  try {
+    const content = await readFile(config.statusPath, "utf8");
+    const value = JSON.parse(content) as { lastSync?: unknown };
+
+    return {
+      lastSync: typeof value.lastSync === "string" ? value.lastSync : null
+    };
+  } catch {
+    return {
+      lastSync: null
+    };
+  }
+}
+
+async function writeAgentFailureStatus(
+  config: AgentConfig,
+  currentScheduleVersion: number | null
+) {
+  const existingStatus = await readExistingAgentStatus(config);
+  await writeAgentStatusFile(config, {
+    lastSync: existingStatus.lastSync,
+    currentScheduleVersion,
+    cachedFiles: await countCachedFiles(config)
+  });
+}
+
+async function writeAgentStatusFile(
+  config: AgentConfig,
+  status: {
+    lastSync: string | null;
+    currentScheduleVersion: number | null;
+    cachedFiles: number;
+  }
+) {
+  await mkdir(dirname(config.statusPath), { recursive: true });
+  await writeFile(
+    config.statusPath,
+    `${JSON.stringify(status, null, 2)}\n`,
+    "utf8"
+  );
+}
+
 export function startSyncLoop(config: AgentConfig) {
   console.log("sync loop ready", {
     cacheDir: config.cacheDir,
     mediaDir: config.mediaDir,
     schedulePath: config.schedulePath,
+    statusPath: config.statusPath,
     serverUrl: config.serverUrl,
     intervalMs: config.syncIntervalMs
   });
@@ -111,12 +180,14 @@ export function startSyncLoop(config: AgentConfig) {
       const schedule = await fetchSchedule(config);
       await syncMediaFiles(config, schedule);
       await saveSchedule(config, schedule);
+      await writeAgentStatus(config, schedule.version);
       console.log("sync success", {
         scheduleVersion: schedule.version,
         schedulePath: config.schedulePath
       });
     } catch (error) {
       const currentScheduleVersion = await readLocalScheduleVersion(config);
+      await writeAgentFailureStatus(config, currentScheduleVersion);
       console.error("sync failure: keeping existing local schedule", {
         error: error instanceof Error ? error.message : String(error),
         currentScheduleVersion,

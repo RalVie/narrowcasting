@@ -4,9 +4,11 @@ import { PlaylistsPage } from "./pages/PlaylistsPage";
 import { SchedulePreviewPage } from "./pages/SchedulePreviewPage";
 import { ScreensPage } from "./pages/ScreensPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { SystemStatusPage } from "./pages/SystemStatusPage";
 
 const pages = [
   { label: "Dashboard", component: DashboardPage },
+  { label: "System Status", component: SystemStatusPage },
   { label: "Schedule Preview", component: SchedulePreviewPage },
   { label: "Media Library", component: MediaLibraryPage },
   { label: "Playlists", component: PlaylistsPage },

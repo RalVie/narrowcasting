@@ -124,6 +124,33 @@ button:disabled {
   margin-top: 18px;
 }
 
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.status-grid article {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #d9dfd4;
+  border-radius: 8px;
+  padding: 16px;
+  background: #f8faf6;
+}
+
+.status-grid span {
+  color: #647064;
+  font-size: 13px;
+}
+
+.status-grid strong {
+  overflow-wrap: anywhere;
+  color: #17201a;
+  font-size: 18px;
+}
+
 .media-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));

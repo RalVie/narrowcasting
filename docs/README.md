@@ -1,6 +1,6 @@
-# Narrowcasting Phase 4
+# Narrowcasting Phase 5
 
-Single-screen local-first Raspberry Pi digital signage MVP with a basic media library and playlist editor.
+Single-screen local-first Raspberry Pi digital signage MVP with remote dashboard control.
 
 ## Boundaries
 
@@ -9,12 +9,12 @@ Single-screen local-first Raspberry Pi digital signage MVP with a basic media li
 - Media must be cached locally before playback.
 - Players must continue when the server, internet, or network is offline.
 - MQTT is not implemented yet, but player and agent code leave room for urgent commands later.
-- No authentication, scheduling engine, Cloudflare setup, systemd services, database, video, multi-screen support, multiple playlists, drag and drop, or commercial multi-tenant features yet.
+- No authentication, scheduling engine, Cloudflare setup, systemd services, database, video, multi-screen support, multiple playlists, drag and drop, kiosk mode, MQTT, or commercial multi-tenant features yet.
 
 ## Parts
 
-- `server`: Node.js, TypeScript, Fastify, health endpoint, media upload/list/delete API, playlist API, generated schedule endpoint, example media serving, and SQLite-ready structure.
-- `dashboard`: React, TypeScript, Vite management shell with read-only schedule preview, basic media library, and single playlist editor.
+- `server`: Node.js, TypeScript, Fastify, health endpoint, status endpoints, media upload/list/delete API, playlist API, generated schedule endpoint, example media serving, and SQLite-ready structure.
+- `dashboard`: React, TypeScript, Vite management shell with system status, read-only schedule preview, basic media library, and single playlist editor.
 - `player`: React, TypeScript, Vite fullscreen-friendly local image playback shell.
 - `agent`: Node.js, TypeScript config loader, schedule poller, local schedule/media cache writer, and heartbeat placeholder.
 
@@ -44,6 +44,9 @@ The server exposes:
 - `DELETE http://localhost:3000/api/media/:id`
 - `GET http://localhost:3000/api/playlist`
 - `PUT http://localhost:3000/api/playlist`
+- `GET http://localhost:3000/api/status`
+- `GET http://localhost:3000/api/player-cache`
+- `GET http://localhost:3000/api/agent-status`
 - `GET http://localhost:3000/media/welcome.jpg`
 
 Server media files live in:
@@ -97,7 +100,7 @@ npm run dev
 Optional environment overrides:
 
 ```bash
-SERVER_URL=http://localhost:3000 CACHE_DIR=../player/public/data MEDIA_DIR=../player/public/media npm run dev
+SERVER_URL=http://localhost:3000 CACHE_DIR=../player/public/data MEDIA_DIR=../player/public/media STATUS_PATH=../server/data/agent-status.json npm run dev
 ```
 
 ### Player
@@ -119,9 +122,18 @@ http://localhost:5174
 
 The dashboard includes:
 
+- A System Status page that refreshes every 10 seconds.
 - A read-only Schedule Preview page that reads the server schedule and displays item type, filename, and duration.
 - A Media Library page for image upload, thumbnail preview, refresh, and delete.
 - A Playlists page for adding media, removing items, setting duration, reordering with up/down buttons, and saving the single playlist.
+
+When opened from another device, the dashboard calls the server API at the dashboard hostname on port `3000`. For example, opening `http://PI-IP:5173` makes API calls to `http://PI-IP:3000`.
+
+To override the API target:
+
+```bash
+VITE_API_BASE_URL=http://PI-IP:3000 npm run dev
+```
 
 ```bash
 cd dashboard
@@ -171,6 +183,49 @@ Default development ports:
 9. Wait up to 30 seconds for the player to reload the local schedule.
 10. Stop the server.
 11. Confirm the player continues displaying cached playlist content offline.
+
+## Remote Dashboard Test Procedure
+
+On the Raspberry Pi, run these in separate terminals:
+
+```bash
+cd server
+npm run dev
+```
+
+```bash
+cd agent
+npm run dev
+```
+
+```bash
+cd player
+npm run dev
+```
+
+```bash
+cd dashboard
+npm run dev
+```
+
+From a Windows PC on the same network, open:
+
+```text
+http://PI-IP:5173
+```
+
+Then verify:
+
+1. Open System Status and confirm the server is online.
+2. Upload an image in Media Library.
+3. Confirm it appears in the media library.
+4. Add the image to the playlist.
+5. Set a duration and save.
+6. Confirm Schedule Preview updates within 10 seconds.
+7. Confirm Agent Status updates after the next sync.
+8. Confirm the Pi player updates automatically.
+9. Stop the server.
+10. Confirm the Pi player continues playing cached content.
 
 ## Build
 

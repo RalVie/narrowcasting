@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
+import { apiUrl } from "../api/apiBase";
 import type { MediaItem } from "../mediaTypes";
 
-const mediaUrl = "http://localhost:3000/api/media";
-const mediaFileUrl = "http://localhost:3000/media";
+const refreshIntervalMs = 10_000;
 
 function formatFileSize(size: number) {
   if (size < 1024) {
@@ -27,7 +27,7 @@ export function MediaLibraryPage() {
     setIsBusy(true);
 
     try {
-      const response = await fetch(mediaUrl);
+      const response = await fetch(apiUrl("/api/media"));
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
@@ -56,7 +56,7 @@ export function MediaLibraryPage() {
     setStatus(`Uploading ${file.name}...`);
 
     try {
-      const response = await fetch(mediaUrl, {
+      const response = await fetch(apiUrl("/api/media"), {
         method: "POST",
         body: formData
       });
@@ -80,7 +80,7 @@ export function MediaLibraryPage() {
     setStatus(`Deleting ${item.filename}...`);
 
     try {
-      const response = await fetch(`${mediaUrl}/${encodeURIComponent(item.id)}`, {
+      const response = await fetch(apiUrl(`/api/media/${encodeURIComponent(item.id)}`), {
         method: "DELETE"
       });
 
@@ -99,6 +99,13 @@ export function MediaLibraryPage() {
 
   useEffect(() => {
     void loadMedia();
+    const timer = window.setInterval(() => {
+      void loadMedia();
+    }, refreshIntervalMs);
+
+    return () => {
+      window.clearInterval(timer);
+    };
   }, []);
 
   return (
@@ -131,7 +138,7 @@ export function MediaLibraryPage() {
       <div className="media-grid">
         {items.map((item) => (
           <article className="media-card" key={item.id}>
-            <img alt="" src={`${mediaFileUrl}/${encodeURIComponent(item.filename)}`} />
+            <img alt="" src={apiUrl(`/media/${encodeURIComponent(item.filename)}`)} />
             <div className="media-card-body">
               <div>
                 <h3>{item.filename}</h3>

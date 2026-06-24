@@ -6,6 +6,7 @@ vite.config.d.ts
 server/public/media/welcome.png
 server/data/media.json
 server/data/playlist.json
+server/data/agent-status.json
 player/public/data/schedule.json
 player/public/media/*
 !player/public/media/.gitkeep

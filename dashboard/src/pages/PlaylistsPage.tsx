@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { apiUrl } from "../api/apiBase";
 import type { MediaItem } from "../mediaTypes";
 import type { Playlist, PlaylistItem } from "../playlistTypes";
 
-const mediaUrl = "http://localhost:3000/api/media";
-const playlistUrl = "http://localhost:3000/api/playlist";
+const refreshIntervalMs = 10_000;
 
 function createPlaylistItem(media: MediaItem): PlaylistItem {
   return {
@@ -24,14 +24,25 @@ export function PlaylistsPage() {
   });
   const [status, setStatus] = useState("Loading playlist...");
   const [isBusy, setIsBusy] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const isDirtyRef = useRef(false);
 
-  async function loadEditorData() {
+  function markDirty() {
+    isDirtyRef.current = true;
+    setIsDirty(true);
+  }
+
+  async function loadEditorData(options: { force?: boolean } = {}) {
+    if (isDirtyRef.current && !options.force) {
+      return;
+    }
+
     setIsBusy(true);
 
     try {
       const [mediaResponse, playlistResponse] = await Promise.all([
-        fetch(mediaUrl),
-        fetch(playlistUrl)
+        fetch(apiUrl("/api/media")),
+        fetch(apiUrl("/api/playlist"))
       ]);
 
       if (!mediaResponse.ok) {
@@ -47,6 +58,8 @@ export function PlaylistsPage() {
 
       setMediaItems(mediaBody);
       setPlaylist(playlistBody);
+      isDirtyRef.current = false;
+      setIsDirty(false);
       setStatus("Playlist loaded.");
     } catch (error) {
       setStatus(error instanceof Error ? `Unable to load playlist: ${error.message}` : "Unable to load playlist.");
@@ -60,6 +73,7 @@ export function PlaylistsPage() {
       ...currentPlaylist,
       items: [...currentPlaylist.items, createPlaylistItem(media)]
     }));
+    markDirty();
   }
 
   function removeItem(id: string) {
@@ -67,6 +81,7 @@ export function PlaylistsPage() {
       ...currentPlaylist,
       items: currentPlaylist.items.filter((item) => item.id !== id)
     }));
+    markDirty();
   }
 
   function moveItem(index: number, direction: -1 | 1) {
@@ -86,6 +101,7 @@ export function PlaylistsPage() {
         items
       };
     });
+    markDirty();
   }
 
   function updateDuration(id: string, duration: number) {
@@ -95,6 +111,7 @@ export function PlaylistsPage() {
         item.id === id ? { ...item, duration: Math.max(duration, 1) } : item
       )
     }));
+    markDirty();
   }
 
   async function savePlaylist() {
@@ -102,7 +119,7 @@ export function PlaylistsPage() {
     setStatus("Saving playlist...");
 
     try {
-      const response = await fetch(playlistUrl, {
+      const response = await fetch(apiUrl("/api/playlist"), {
         method: "PUT",
         headers: {
           "Content-Type": "application/json"
@@ -116,6 +133,8 @@ export function PlaylistsPage() {
 
       const body = (await response.json()) as Playlist;
       setPlaylist(body);
+      isDirtyRef.current = false;
+      setIsDirty(false);
       setStatus(`Playlist saved as version ${body.version}.`);
     } catch (error) {
       setStatus(error instanceof Error ? `Save failed: ${error.message}` : "Save failed.");
@@ -126,6 +145,13 @@ export function PlaylistsPage() {
 
   useEffect(() => {
     void loadEditorData();
+    const timer = window.setInterval(() => {
+      void loadEditorData();
+    }, refreshIntervalMs);
+
+    return () => {
+      window.clearInterval(timer);
+    };
   }, []);
 
   return (
@@ -136,7 +162,7 @@ export function PlaylistsPage() {
           <p>Single local playlist used to generate the player schedule.</p>
         </div>
         <div className="button-row">
-          <button disabled={isBusy} onClick={() => void loadEditorData()} type="button">
+          <button disabled={isBusy} onClick={() => void loadEditorData({ force: true })} type="button">
             Refresh
           </button>
           <button disabled={isBusy} onClick={() => void savePlaylist()} type="button">
@@ -145,7 +171,10 @@ export function PlaylistsPage() {
         </div>
       </div>
 
-      <p className="status-text">{status}</p>
+      <p className="status-text">
+        {status}
+        {isDirty ? " Unsaved changes." : ""}
+      </p>
 
       <div className="playlist-editor">
         <section className="playlist-panel" aria-label="Media available for playlist">

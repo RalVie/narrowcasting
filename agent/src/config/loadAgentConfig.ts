@@ -4,6 +4,7 @@ export interface AgentConfig {
   mediaDir: string;
   serverUrl: string;
   schedulePath: string;
+  statusPath: string;
   syncIntervalMs: number;
   heartbeatIntervalMs: number;
 }
@@ -17,6 +18,7 @@ export function loadAgentConfig(): AgentConfig {
     mediaDir: process.env.MEDIA_DIR ?? "../player/public/media",
     serverUrl: process.env.SERVER_URL ?? "http://localhost:3000",
     schedulePath: `${cacheDir}/schedule.json`,
+    statusPath: process.env.STATUS_PATH ?? "../server/data/agent-status.json",
     syncIntervalMs: Number(process.env.SYNC_INTERVAL_MS ?? 30_000),
     heartbeatIntervalMs: Number(process.env.HEARTBEAT_INTERVAL_MS ?? 15_000)
   };

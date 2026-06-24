@@ -34,3 +34,10 @@ Single playlist editor.
 Playlist JSON storage.
 Schedule generation from playlist.
 Offline cached playlist playback.
+
+PHASE 5
+
+Remote dashboard control.
+System status endpoints.
+Agent status reporting.
+Player cache visibility.

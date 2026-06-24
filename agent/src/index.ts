@@ -9,6 +9,7 @@ console.log("narrowcasting agent starting", {
   cacheDir: config.cacheDir,
   mediaDir: config.mediaDir,
   schedulePath: config.schedulePath,
+  statusPath: config.statusPath,
   serverUrl: config.serverUrl
 });
 

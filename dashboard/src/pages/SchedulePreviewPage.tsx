@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
+import { apiUrl } from "../api/apiBase";
 import type { Schedule } from "../scheduleTypes";
 
-const scheduleUrl = "http://localhost:3000/api/schedule";
+const refreshIntervalMs = 10_000;
 
 export function SchedulePreviewPage() {
   const [schedule, setSchedule] = useState<Schedule | null>(null);
@@ -10,7 +11,7 @@ export function SchedulePreviewPage() {
   useEffect(() => {
     async function loadSchedule() {
       try {
-        const response = await fetch(scheduleUrl);
+        const response = await fetch(apiUrl("/api/schedule"));
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
@@ -25,6 +26,13 @@ export function SchedulePreviewPage() {
     }
 
     void loadSchedule();
+    const timer = window.setInterval(() => {
+      void loadSchedule();
+    }, refreshIntervalMs);
+
+    return () => {
+      window.clearInterval(timer);
+    };
   }, []);
 
   return (
