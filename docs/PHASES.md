@@ -48,3 +48,10 @@ Production appliance mode.
 Systemd services.
 Chromium kiosk launch.
 Boot recovery with cached playback.
+
+PHASE 7
+
+Unified production runtime.
+Server-served dashboard.
+Single production management URL.
+Separate local player runtime.

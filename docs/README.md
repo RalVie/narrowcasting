@@ -1,6 +1,6 @@
-# Narrowcasting Phase 6
+# Narrowcasting Phase 7
 
-Single-screen local-first Raspberry Pi digital signage MVP with production appliance mode.
+Single-screen local-first Raspberry Pi digital signage MVP with unified production runtime.
 
 ## Boundaries
 
@@ -9,7 +9,7 @@ Single-screen local-first Raspberry Pi digital signage MVP with production appli
 - Media must be cached locally before playback.
 - Players must continue when the server, internet, or network is offline.
 - MQTT is not implemented yet, but player and agent code leave room for urgent commands later.
-- No authentication, scheduling engine, Cloudflare setup, systemd services, database, video, multi-screen support, multiple playlists, drag and drop, kiosk mode, MQTT, or commercial multi-tenant features yet.
+- No authentication, scheduling engine, Cloudflare setup, database, video, multi-screen support, multiple playlists, drag and drop, MQTT, or commercial multi-tenant features yet.
 
 ## Parts
 
@@ -237,6 +237,20 @@ cd ../agent && npm run build
 ```
 
 ## Production Appliance Mode
+
+Build all production parts:
+
+```bash
+./scripts/build-production.sh
+```
+
+Production behavior:
+
+- Server serves the dashboard at `http://PI-IP:3000/`.
+- API remains available at `http://PI-IP:3000/api/...`.
+- Media remains available at `http://PI-IP:3000/media/...`.
+- Player serves local playback at `http://PI-IP:4174/player`.
+- No separate dashboard service is required.
 
 For Raspberry Pi boot startup, player kiosk mode, and systemd service installation, see:
 

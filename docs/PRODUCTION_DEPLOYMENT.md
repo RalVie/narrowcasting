@@ -19,24 +19,21 @@ If your Pi uses another user or path, edit the files in `deployment/systemd/` be
 Run these on the Pi from the repository root:
 
 ```bash
-cd /opt/narrowcasting/server
-npm install
-npm run build
-
-cd /opt/narrowcasting/agent
-npm install
-npm run build
-
-cd /opt/narrowcasting/player
-npm install
-npm run build
-
-cd /opt/narrowcasting/dashboard
-npm install
-npm run build
+cd /opt/narrowcasting
+npm --prefix server install
+npm --prefix agent install
+npm --prefix player install
+npm --prefix dashboard install
+./scripts/build-production.sh
 ```
 
-The dashboard build remains available for future production hosting. Existing development dashboard workflows are unchanged.
+In production, the compiled server serves the dashboard build from `dashboard/dist` at:
+
+```text
+http://PI-IP:3000/
+```
+
+No separate dashboard process or dashboard systemd service is needed.
 
 ## Make Scripts Executable
 
@@ -46,6 +43,7 @@ chmod +x scripts/start-server.sh
 chmod +x scripts/start-agent.sh
 chmod +x scripts/start-player.sh
 chmod +x scripts/start-kiosk.sh
+chmod +x scripts/build-production.sh
 ```
 
 ## Install Services
@@ -140,6 +138,25 @@ Environment=XDG_RUNTIME_DIR=/run/user/1000
 
 ## Remote Dashboard Access
 
+Production management URL:
+
+```text
+http://PI-IP:3000/
+```
+
+The same server also serves:
+
+```text
+http://PI-IP:3000/api/...
+http://PI-IP:3000/media/...
+```
+
+The player remains separate:
+
+```text
+http://PI-IP:4174/player
+```
+
 Development dashboard access remains unchanged:
 
 ```bash
@@ -215,7 +232,9 @@ curl http://localhost:3000/api/schedule
 
 ## Production Routes
 
+- Management dashboard: `http://PI-IP:3000/`
 - Server API: `http://PI-IP:3000`
+- Media: `http://PI-IP:3000/media/...`
 - Production player: `http://PI-IP:4174/player`
 - Kiosk target on the Pi: `http://localhost:4174/player`
 
