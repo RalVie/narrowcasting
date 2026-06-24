@@ -62,3 +62,10 @@ Video media upload support.
 Video playlist and schedule items.
 Agent video cache sync.
 Local player video playback.
+
+PHASE 8B
+
+Optional playlist item scheduling.
+Server-side active item filtering.
+Dashboard date, day, and time controls.
+Player remains schedule-only.

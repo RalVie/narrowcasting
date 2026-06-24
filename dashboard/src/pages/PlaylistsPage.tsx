@@ -1,9 +1,28 @@
 import { useEffect, useRef, useState } from "react";
 import { apiUrl } from "../api/apiBase";
 import type { MediaItem } from "../mediaTypes";
-import type { Playlist, PlaylistItem } from "../playlistTypes";
+import type { DayOfWeek, Playlist, PlaylistItem } from "../playlistTypes";
 
 const refreshIntervalMs = 10_000;
+const daysOfWeek: DayOfWeek[] = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday"
+];
+const dayLabels: Record<DayOfWeek, string> = {
+  Monday: "Mon",
+  Tuesday: "Tue",
+  Wednesday: "Wed",
+  Thursday: "Thu",
+  Friday: "Fri",
+  Saturday: "Sat",
+  Sunday: "Sun"
+};
+const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sept", "Oct", "Nov", "Dec"];
 
 function createPlaylistItem(media: MediaItem): PlaylistItem {
   return {
@@ -13,6 +32,69 @@ function createPlaylistItem(media: MediaItem): PlaylistItem {
     file: media.filename,
     duration: 10
   };
+}
+
+function formatDateSummary(value: string) {
+  const [year, month, day] = value.split("-");
+  const monthIndex = Number(month) - 1;
+  const monthLabel = monthLabels[monthIndex] ?? month;
+  return `${day} ${monthLabel} ${year}`;
+}
+
+function summarizeDays(days?: DayOfWeek[]) {
+  if (!days || days.length === 0) {
+    return null;
+  }
+
+  if (
+    days.length === 5 &&
+    daysOfWeek.slice(0, 5).every((day) => days.includes(day))
+  ) {
+    return "Mon-Fri";
+  }
+
+  if (days.length === 7) {
+    return "Every day";
+  }
+
+  return days.map((day) => dayLabels[day]).join(", ");
+}
+
+function summarizeSchedule(item: PlaylistItem) {
+  const parts: string[] = [];
+  const daySummary = summarizeDays(item.daysOfWeek);
+
+  if (daySummary) {
+    parts.push(daySummary);
+  }
+
+  if (item.startTime || item.endTime) {
+    parts.push(`${item.startTime || "00:00"}-${item.endTime || "23:59"}`);
+  }
+
+  if (item.startDate || item.endDate) {
+    const startDate = item.startDate ? formatDateSummary(item.startDate) : "From now";
+    const endDate = item.endDate ? formatDateSummary(item.endDate) : "No end date";
+    parts.push(`${startDate} - ${endDate}`);
+  }
+
+  return parts.length > 0 ? parts.join(" | ") : "Always active";
+}
+
+function withScheduleField(
+  item: PlaylistItem,
+  field: "startDate" | "endDate" | "startTime" | "endTime",
+  value: string
+) {
+  const nextItem = { ...item };
+
+  if (value) {
+    nextItem[field] = value;
+  } else {
+    delete nextItem[field];
+  }
+
+  return nextItem;
 }
 
 export function PlaylistsPage() {
@@ -114,6 +196,51 @@ export function PlaylistsPage() {
     markDirty();
   }
 
+  function updateScheduleField(
+    id: string,
+    field: "startDate" | "endDate" | "startTime" | "endTime",
+    value: string
+  ) {
+    setPlaylist((currentPlaylist) => ({
+      ...currentPlaylist,
+      items: currentPlaylist.items.map((item) =>
+        item.id === id ? withScheduleField(item, field, value) : item
+      )
+    }));
+    markDirty();
+  }
+
+  function toggleDayOfWeek(id: string, day: DayOfWeek, isChecked: boolean) {
+    setPlaylist((currentPlaylist) => ({
+      ...currentPlaylist,
+      items: currentPlaylist.items.map((item) => {
+        if (item.id !== id) {
+          return item;
+        }
+
+        const selectedDays = new Set(item.daysOfWeek ?? []);
+
+        if (isChecked) {
+          selectedDays.add(day);
+        } else {
+          selectedDays.delete(day);
+        }
+
+        const orderedDays = daysOfWeek.filter((candidateDay) => selectedDays.has(candidateDay));
+        const nextItem = { ...item };
+
+        if (orderedDays.length > 0) {
+          nextItem.daysOfWeek = orderedDays;
+        } else {
+          delete nextItem.daysOfWeek;
+        }
+
+        return nextItem;
+      })
+    }));
+    markDirty();
+  }
+
   async function savePlaylist() {
     setIsBusy(true);
     setStatus("Saving playlist...");
@@ -207,34 +334,87 @@ export function PlaylistsPage() {
 
             {playlist.items.map((item, index) => (
               <article className="playlist-item-row" key={item.id}>
-                <div className="playlist-item-main">
-                  <strong>{item.file}</strong>
-                  <span>{item.type}</span>
+                <div className="playlist-item-topline">
+                  <div className="playlist-item-main">
+                    <strong>{item.file}</strong>
+                    <span>
+                      {item.type} | {summarizeSchedule(item)}
+                    </span>
+                  </div>
+                  <label>
+                    Duration
+                    <input
+                      min="1"
+                      onChange={(event) => updateDuration(item.id, Number(event.target.value))}
+                      type="number"
+                      value={item.duration}
+                    />
+                  </label>
+                  <div className="playlist-actions">
+                    <button disabled={isBusy || index === 0} onClick={() => moveItem(index, -1)} type="button">
+                      Up
+                    </button>
+                    <button
+                      disabled={isBusy || index === playlist.items.length - 1}
+                      onClick={() => moveItem(index, 1)}
+                      type="button"
+                    >
+                      Down
+                    </button>
+                    <button disabled={isBusy} onClick={() => removeItem(item.id)} type="button">
+                      Remove
+                    </button>
+                  </div>
                 </div>
-                <label>
-                  Duration
-                  <input
-                    min="1"
-                    onChange={(event) => updateDuration(item.id, Number(event.target.value))}
-                    type="number"
-                    value={item.duration}
-                  />
-                </label>
-                <div className="playlist-actions">
-                  <button disabled={isBusy || index === 0} onClick={() => moveItem(index, -1)} type="button">
-                    Up
-                  </button>
-                  <button
-                    disabled={isBusy || index === playlist.items.length - 1}
-                    onClick={() => moveItem(index, 1)}
-                    type="button"
-                  >
-                    Down
-                  </button>
-                  <button disabled={isBusy} onClick={() => removeItem(item.id)} type="button">
-                    Remove
-                  </button>
+
+                <div className="playlist-schedule-fields">
+                  <label>
+                    Date From
+                    <input
+                      onChange={(event) => updateScheduleField(item.id, "startDate", event.target.value)}
+                      type="date"
+                      value={item.startDate ?? ""}
+                    />
+                  </label>
+                  <label>
+                    Date Until
+                    <input
+                      onChange={(event) => updateScheduleField(item.id, "endDate", event.target.value)}
+                      type="date"
+                      value={item.endDate ?? ""}
+                    />
+                  </label>
+                  <label>
+                    Time From
+                    <input
+                      onChange={(event) => updateScheduleField(item.id, "startTime", event.target.value)}
+                      type="time"
+                      value={item.startTime ?? ""}
+                    />
+                  </label>
+                  <label>
+                    Time Until
+                    <input
+                      onChange={(event) => updateScheduleField(item.id, "endTime", event.target.value)}
+                      type="time"
+                      value={item.endTime ?? ""}
+                    />
+                  </label>
                 </div>
+
+                <fieldset className="playlist-days">
+                  <legend>Days of week</legend>
+                  {daysOfWeek.map((day) => (
+                    <label key={day}>
+                      <input
+                        checked={item.daysOfWeek?.includes(day) ?? false}
+                        onChange={(event) => toggleDayOfWeek(item.id, day, event.target.checked)}
+                        type="checkbox"
+                      />
+                      {dayLabels[day]}
+                    </label>
+                  ))}
+                </fieldset>
               </article>
             ))}
           </div>

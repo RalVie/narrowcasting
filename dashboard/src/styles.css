@@ -228,7 +228,7 @@ button:disabled {
 
 .playlist-panel-header,
 .playlist-media-row,
-.playlist-item-row,
+.playlist-item-topline,
 .playlist-actions {
   display: flex;
   gap: 10px;
@@ -237,7 +237,7 @@ button:disabled {
 
 .playlist-panel-header,
 .playlist-media-row,
-.playlist-item-row {
+.playlist-item-topline {
   justify-content: space-between;
 }
 
@@ -253,6 +253,11 @@ button:disabled {
   border-radius: 8px;
   padding: 12px;
   background: #ffffff;
+}
+
+.playlist-item-row {
+  display: grid;
+  gap: 12px;
 }
 
 .playlist-media-row div,
@@ -288,6 +293,45 @@ button:disabled {
   padding: 8px;
   color: #17201a;
   font: inherit;
+}
+
+.playlist-schedule-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.playlist-schedule-fields input {
+  width: auto;
+  min-width: 0;
+}
+
+.playlist-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 0;
+  border: 1px solid #d9dfd4;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.playlist-days legend {
+  padding: 0 4px;
+  color: #647064;
+  font-size: 13px;
+}
+
+.playlist-days label {
+  display: flex;
+  grid-template-columns: none;
+  gap: 6px;
+  align-items: center;
+}
+
+.playlist-days input {
+  width: auto;
+  padding: 0;
 }
 
 .readonly-pill {
@@ -384,10 +428,18 @@ button:disabled {
 
   .playlist-item-row {
     align-items: stretch;
+  }
+
+  .playlist-item-topline {
+    align-items: stretch;
     flex-direction: column;
   }
 
   .playlist-actions {
     flex-wrap: wrap;
+  }
+
+  .playlist-schedule-fields {
+    grid-template-columns: 1fr;
   }
 }

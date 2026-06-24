@@ -125,7 +125,7 @@ The dashboard includes:
 - A System Status page that refreshes every 10 seconds.
 - A read-only Schedule Preview page that reads the server schedule and displays item type, filename, and duration.
 - A Media Library page for image/video upload, thumbnail preview, refresh, and delete.
-- A Playlists page for adding media, removing items, setting duration, reordering with up/down buttons, and saving the single playlist.
+- A Playlists page for adding media, removing items, setting duration, setting optional date/day/time scheduling, reordering with up/down buttons, and saving the single playlist.
 
 Media upload limits:
 
@@ -193,6 +193,20 @@ Default development ports:
 9. Wait up to 30 seconds for the player to reload the local schedule.
 10. Stop the server.
 11. Confirm the player continues displaying cached playlist content offline.
+
+## Test Scheduled Playlist Items
+
+Playlist items may optionally include `startDate`, `endDate`, `daysOfWeek`, `startTime`, and `endTime`. Items without scheduling fields remain active. Scheduled fields are stored in `server/data/playlist.json`, but only currently active items are emitted by `GET /api/schedule`.
+
+1. Start the server.
+2. Add one unscheduled playlist item and save.
+3. Confirm `GET http://localhost:3000/api/schedule` includes that item.
+4. Set a future Date From and save.
+5. Confirm the item remains in `GET http://localhost:3000/api/playlist` but is excluded from `GET http://localhost:3000/api/schedule`.
+6. Clear the date, choose weekday and time settings that include the current local time, and save.
+7. Confirm the item appears in the generated schedule.
+8. Choose weekday or time settings that exclude the current local time.
+9. Confirm the generated schedule excludes the item and the player shows `Playlist is empty` when no active items remain.
 
 ## Remote Dashboard Test Procedure
 
