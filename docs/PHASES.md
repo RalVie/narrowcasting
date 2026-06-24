@@ -55,3 +55,10 @@ Unified production runtime.
 Server-served dashboard.
 Single production management URL.
 Separate local player runtime.
+
+PHASE 8A
+
+Video media upload support.
+Video playlist and schedule items.
+Agent video cache sync.
+Local player video playback.

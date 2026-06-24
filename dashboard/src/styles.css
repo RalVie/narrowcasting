@@ -173,6 +173,23 @@ button:disabled {
   background: #101512;
 }
 
+.media-video-placeholder {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  color: #f8fbf6;
+  background: #101512;
+}
+
+.media-video-placeholder span {
+  border: 1px solid rgb(255 255 255 / 26%);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
 .media-card-body {
   display: grid;
   gap: 12px;

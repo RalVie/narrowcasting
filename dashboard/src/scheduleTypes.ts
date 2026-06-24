@@ -13,7 +13,15 @@ export interface ImageScheduleItem {
   duration: number;
 }
 
-export type ScheduleItem = TextScheduleItem | ImageScheduleItem;
+export interface VideoScheduleItem {
+  id: string;
+  mediaId?: string;
+  type: "video";
+  file: string;
+  duration?: number;
+}
+
+export type ScheduleItem = TextScheduleItem | ImageScheduleItem | VideoScheduleItem;
 
 export interface Schedule {
   version: number;

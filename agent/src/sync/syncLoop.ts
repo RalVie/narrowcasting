@@ -37,7 +37,7 @@ async function saveSchedule(config: AgentConfig, schedule: Schedule) {
   await writeFile(config.schedulePath, `${JSON.stringify(schedule, null, 2)}\n`, "utf8");
 }
 
-async function syncImageFile(config: AgentConfig, file: string) {
+async function syncMediaFile(config: AgentConfig, file: string) {
   const safeFile = basename(file);
 
   if (safeFile !== file) {
@@ -76,8 +76,8 @@ async function syncImageFile(config: AgentConfig, file: string) {
 
 async function syncMediaFiles(config: AgentConfig, schedule: Schedule) {
   for (const item of schedule.items) {
-    if (item.type === "image") {
-      await syncImageFile(config, item.file);
+    if (item.type === "image" || item.type === "video") {
+      await syncMediaFile(config, item.file);
     }
   }
 }

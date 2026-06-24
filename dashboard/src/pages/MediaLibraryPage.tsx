@@ -113,7 +113,7 @@ export function MediaLibraryPage() {
       <div className="section-header">
         <div>
           <h2>Media Library</h2>
-          <p>Uploaded image media stored on the local server.</p>
+          <p>Uploaded image and video media stored on the local server.</p>
         </div>
         <div className="button-row">
           <button disabled={isBusy} onClick={() => inputRef.current?.click()} type="button">
@@ -126,7 +126,7 @@ export function MediaLibraryPage() {
       </div>
 
       <input
-        accept="image/*"
+        accept="image/*,video/mp4,video/webm"
         className="visually-hidden"
         onChange={(event) => void uploadFile(event)}
         ref={inputRef}
@@ -138,7 +138,13 @@ export function MediaLibraryPage() {
       <div className="media-grid">
         {items.map((item) => (
           <article className="media-card" key={item.id}>
-            <img alt="" src={apiUrl(`/media/${encodeURIComponent(item.filename)}`)} />
+            {item.type === "image" ? (
+              <img alt="" src={apiUrl(`/media/${encodeURIComponent(item.filename)}`)} />
+            ) : (
+              <div className="media-video-placeholder">
+                <span>Video</span>
+              </div>
+            )}
             <div className="media-card-body">
               <div>
                 <h3>{item.filename}</h3>

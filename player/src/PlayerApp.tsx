@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Schedule } from "./schedule/types";
 
 const reloadIntervalMs = 30_000;
@@ -19,6 +19,7 @@ function isSchedule(value: unknown): value is Schedule {
 export function PlayerApp() {
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [playbackEpoch, setPlaybackEpoch] = useState(0);
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
 
   useEffect(() => {
@@ -70,20 +71,37 @@ export function PlayerApp() {
     return schedule.items[activeIndex % schedule.items.length];
   }, [activeIndex, schedule]);
 
+  const advanceToNextItem = useCallback(() => {
+    if (!schedule || schedule.items.length === 0) {
+      return;
+    }
+
+    if (schedule.items.length === 1) {
+      setPlaybackEpoch((epoch) => epoch + 1);
+      return;
+    }
+
+    setActiveIndex((index) => (index + 1) % schedule.items.length);
+  }, [schedule]);
+
   useEffect(() => {
-    if (!activeItem || !schedule || schedule.items.length <= 1) {
+    if (!activeItem || !schedule || typeof activeItem.duration !== "number") {
+      return;
+    }
+
+    if (schedule.items.length <= 1 && activeItem.type !== "video") {
       return;
     }
 
     const durationMs = Math.max(activeItem.duration, 1) * 1000;
     const rotationTimer = window.setTimeout(() => {
-      setActiveIndex((index) => (index + 1) % schedule.items.length);
+      advanceToNextItem();
     }, durationMs);
 
     return () => {
       window.clearTimeout(rotationTimer);
     };
-  }, [activeItem, schedule]);
+  }, [activeItem, advanceToNextItem, schedule]);
 
   if (!activeItem) {
     const hasEmptyPlaylist = schedule !== null && schedule.items.length === 0;
@@ -108,7 +126,9 @@ export function PlayerApp() {
   return (
     <main className="player-shell">
       <section
-        className={`playback-surface ${activeItem.type === "image" ? "image-surface" : ""}`}
+        className={`playback-surface ${
+          activeItem.type === "image" || activeItem.type === "video" ? "image-surface" : ""
+        }`}
         aria-label="Local playlist playback"
       >
         <p className="status-label">Local schedule version {schedule?.version}</p>
@@ -119,6 +139,27 @@ export function PlayerApp() {
             onError={(event) => {
               event.currentTarget.dataset.missing = "true";
             }}
+            src={`/media/${encodeURIComponent(activeItem.file)}`}
+          />
+        ) : activeItem.type === "video" ? (
+          <video
+            autoPlay
+            className="media-video"
+            key={`${activeItem.id}-${schedule?.version}-${activeIndex}-${playbackEpoch}`}
+            muted
+            onCanPlay={(event) => {
+              void event.currentTarget.play().catch(() => {
+                advanceToNextItem();
+              });
+            }}
+            onEnded={() => {
+              advanceToNextItem();
+            }}
+            onError={() => {
+              advanceToNextItem();
+            }}
+            playsInline
+            preload="auto"
             src={`/media/${encodeURIComponent(activeItem.file)}`}
           />
         ) : (

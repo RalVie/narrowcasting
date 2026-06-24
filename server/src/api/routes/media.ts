@@ -24,11 +24,15 @@ export const mediaRoutes: FastifyPluginAsync = async (app) => {
     const uploadedFile = await request.file();
 
     if (!uploadedFile) {
-      return reply.code(400).send({ error: "missing image upload" });
+      return reply.code(400).send({ error: "missing media upload" });
     }
 
-    if (!uploadedFile.mimetype.startsWith("image/")) {
-      return reply.code(400).send({ error: "only image uploads are supported" });
+    if (
+      !uploadedFile.mimetype.startsWith("image/") &&
+      uploadedFile.mimetype !== "video/mp4" &&
+      uploadedFile.mimetype !== "video/webm"
+    ) {
+      return reply.code(400).send({ error: "only image and mp4/webm video uploads are supported" });
     }
 
     try {

@@ -4,13 +4,14 @@ import { basename, extname, resolve } from "node:path";
 export interface MediaItem {
   id: string;
   filename: string;
-  type: "image";
+  type: "image" | "video";
   size: number;
 }
 
 const mediaRoot = resolve(process.cwd(), "public", "media");
 const metadataPath = resolve(process.cwd(), "data", "media.json");
 const imageExtensions = new Set([".jpg", ".jpeg", ".png", ".webp"]);
+const videoExtensions = new Set([".mp4", ".webm"]);
 
 export function getMediaRoot() {
   return mediaRoot;
@@ -36,6 +37,10 @@ export function getMediaContentType(filename: string) {
       return "image/png";
     case ".webp":
       return "image/webp";
+    case ".mp4":
+      return "video/mp4";
+    case ".webm":
+      return "video/webm";
     default:
       return "application/octet-stream";
   }
@@ -58,6 +63,22 @@ function isImageFilename(filename: string) {
   return imageExtensions.has(extname(filename).toLowerCase());
 }
 
+function isVideoFilename(filename: string) {
+  return videoExtensions.has(extname(filename).toLowerCase());
+}
+
+function getMediaType(filename: string): MediaItem["type"] | null {
+  if (isImageFilename(filename)) {
+    return "image";
+  }
+
+  if (isVideoFilename(filename)) {
+    return "video";
+  }
+
+  return null;
+}
+
 async function readMetadataFile(): Promise<MediaItem[]> {
   try {
     const content = await readFile(metadataPath, "utf8");
@@ -69,7 +90,7 @@ async function readMetadataFile(): Promise<MediaItem[]> {
         return (
           typeof candidate.id === "string" &&
           typeof candidate.filename === "string" &&
-          candidate.type === "image" &&
+          (candidate.type === "image" || candidate.type === "video") &&
           typeof candidate.size === "number"
         );
       });
@@ -87,7 +108,9 @@ async function writeMetadataFile(items: MediaItem[]) {
 }
 
 async function itemFromFile(filename: string): Promise<MediaItem | null> {
-  if (!isImageFilename(filename)) {
+  const mediaType = getMediaType(filename);
+
+  if (!mediaType) {
     return null;
   }
 
@@ -101,7 +124,7 @@ async function itemFromFile(filename: string): Promise<MediaItem | null> {
   return {
     id: toMediaId(filename),
     filename,
-    type: "image",
+    type: mediaType,
     size: fileStat.size
   };
 }
@@ -123,8 +146,10 @@ export async function listMedia(): Promise<MediaItem[]> {
 export async function createMedia(filename: string, content: Buffer): Promise<MediaItem> {
   const safeFilename = basename(filename).replace(/[^a-zA-Z0-9._-]+/g, "-");
 
-  if (!safeFilename || !isImageFilename(safeFilename)) {
-    throw new Error("only jpg, png, and webp images are supported");
+  const mediaType = getMediaType(safeFilename);
+
+  if (!safeFilename || !mediaType) {
+    throw new Error("only jpg, jpeg, png, webp, mp4, and webm media files are supported");
   }
 
   await mkdir(mediaRoot, { recursive: true });
@@ -135,7 +160,7 @@ export async function createMedia(filename: string, content: Buffer): Promise<Me
   const item: MediaItem = {
     id: toMediaId(safeFilename),
     filename: safeFilename,
-    type: "image",
+    type: mediaType,
     size: fileStat.size
   };
 

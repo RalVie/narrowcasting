@@ -65,7 +65,8 @@ h1 {
   line-height: 1.45;
 }
 
-.media-image {
+.media-image,
+.media-video {
   display: block;
   max-width: 100vw;
   max-height: 100vh;

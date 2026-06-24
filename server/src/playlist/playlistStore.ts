@@ -5,7 +5,7 @@ import { staticSchedule, type Schedule } from "../schedule/staticSchedule.js";
 export interface PlaylistItem {
   id: string;
   mediaId: string;
-  type: "image";
+  type: "image" | "video";
   file: string;
   duration: number;
 }
@@ -43,7 +43,7 @@ function normalizePlaylistItems(items: unknown): PlaylistItem[] {
 
       if (
         typeof candidate.mediaId !== "string" ||
-        candidate.type !== "image" ||
+        (candidate.type !== "image" && candidate.type !== "video") ||
         typeof candidate.file !== "string"
       ) {
         return null;
@@ -52,7 +52,7 @@ function normalizePlaylistItems(items: unknown): PlaylistItem[] {
       return {
         id: typeof candidate.id === "string" ? candidate.id : `item-${index + 1}`,
         mediaId: candidate.mediaId,
-        type: "image",
+        type: candidate.type,
         file: candidate.file,
         duration: Math.max(Number(candidate.duration ?? 10), 1)
       };

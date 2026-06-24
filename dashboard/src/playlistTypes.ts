@@ -1,7 +1,7 @@
 export interface PlaylistItem {
   id: string;
   mediaId: string;
-  type: "image";
+  type: "image" | "video";
   file: string;
   duration: number;
 }

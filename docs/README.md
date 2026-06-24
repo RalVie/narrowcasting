@@ -1,6 +1,6 @@
 # Narrowcasting Phase 7
 
-Single-screen local-first Raspberry Pi digital signage MVP with unified production runtime.
+Single-screen local-first Raspberry Pi digital signage MVP with unified production runtime and safe image/video playback.
 
 ## Boundaries
 
@@ -9,11 +9,11 @@ Single-screen local-first Raspberry Pi digital signage MVP with unified producti
 - Media must be cached locally before playback.
 - Players must continue when the server, internet, or network is offline.
 - MQTT is not implemented yet, but player and agent code leave room for urgent commands later.
-- No authentication, scheduling engine, Cloudflare setup, database, video, multi-screen support, multiple playlists, drag and drop, MQTT, or commercial multi-tenant features yet.
+- No authentication, scheduling engine, Cloudflare setup, database, multi-screen support, multiple playlists, drag and drop, MQTT, or commercial multi-tenant features yet.
 
 ## Parts
 
-- `server`: Node.js, TypeScript, Fastify, health endpoint, status endpoints, media upload/list/delete API, playlist API, generated schedule endpoint, example media serving, and SQLite-ready structure.
+- `server`: Node.js, TypeScript, Fastify, health endpoint, status endpoints, image/video media upload/list/delete API, playlist API, generated schedule endpoint, example media serving, and SQLite-ready structure.
 - `dashboard`: React, TypeScript, Vite management shell with system status, read-only schedule preview, basic media library, and single playlist editor.
 - `player`: React, TypeScript, Vite fullscreen-friendly local image playback shell.
 - `agent`: Node.js, TypeScript config loader, schedule poller, local schedule/media cache writer, and heartbeat placeholder.
@@ -105,7 +105,7 @@ SERVER_URL=http://localhost:3000 CACHE_DIR=../player/public/data MEDIA_DIR=../pl
 
 ### Player
 
-The player reads the local schedule from `/data/schedule.json`, reloads it every 30 seconds, and renders image items from `/media/<file>`. Images are displayed fullscreen on a black background while preserving aspect ratio. If an image file is missing locally, the player shows a placeholder message for that item.
+The player reads the local schedule from `/data/schedule.json`, reloads it every 30 seconds, and renders image/video items from `/media/<file>`. Images and videos are displayed fullscreen on a black background while preserving aspect ratio. Videos autoplay muted, play inline, and use local cached files only.
 
 ```bash
 cd player
