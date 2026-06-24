@@ -7,6 +7,7 @@ export interface TextScheduleItem {
 
 export interface ImageScheduleItem {
   id: string;
+  mediaId?: string;
   type: "image";
   file: string;
   duration: number;

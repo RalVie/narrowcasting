@@ -27,3 +27,10 @@ Basic media library.
 Image upload.
 Media metadata JSON.
 Dashboard media management.
+
+PHASE 4
+
+Single playlist editor.
+Playlist JSON storage.
+Schedule generation from playlist.
+Offline cached playlist playback.

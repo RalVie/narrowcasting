@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
-import { staticSchedule } from "../../schedule/staticSchedule.js";
+import { getScheduleFromPlaylist } from "../../playlist/playlistStore.js";
 
 export const scheduleRoutes: FastifyPluginAsync = async (app) => {
-  app.get("/schedule", async () => staticSchedule);
+  app.get("/schedule", async () => getScheduleFromPlaylist());
 };

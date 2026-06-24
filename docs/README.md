@@ -1,6 +1,6 @@
-# Narrowcasting Phase 3
+# Narrowcasting Phase 4
 
-Single-screen local-first Raspberry Pi digital signage MVP with a basic media library.
+Single-screen local-first Raspberry Pi digital signage MVP with a basic media library and playlist editor.
 
 ## Boundaries
 
@@ -9,12 +9,12 @@ Single-screen local-first Raspberry Pi digital signage MVP with a basic media li
 - Media must be cached locally before playback.
 - Players must continue when the server, internet, or network is offline.
 - MQTT is not implemented yet, but player and agent code leave room for urgent commands later.
-- No authentication, uploads, scheduling engine, Cloudflare setup, systemd services, database, video, playlist editor, multi-screen support, or commercial multi-tenant features yet.
+- No authentication, scheduling engine, Cloudflare setup, systemd services, database, video, multi-screen support, multiple playlists, drag and drop, or commercial multi-tenant features yet.
 
 ## Parts
 
-- `server`: Node.js, TypeScript, Fastify, health endpoint, static image schedule endpoint, media upload/list/delete API, example media serving, and SQLite-ready structure.
-- `dashboard`: React, TypeScript, Vite management shell with read-only schedule preview and basic media library.
+- `server`: Node.js, TypeScript, Fastify, health endpoint, media upload/list/delete API, playlist API, generated schedule endpoint, example media serving, and SQLite-ready structure.
+- `dashboard`: React, TypeScript, Vite management shell with read-only schedule preview, basic media library, and single playlist editor.
 - `player`: React, TypeScript, Vite fullscreen-friendly local image playback shell.
 - `agent`: Node.js, TypeScript config loader, schedule poller, local schedule/media cache writer, and heartbeat placeholder.
 
@@ -42,6 +42,8 @@ The server exposes:
 - `GET http://localhost:3000/api/media`
 - `POST http://localhost:3000/api/media`
 - `DELETE http://localhost:3000/api/media/:id`
+- `GET http://localhost:3000/api/playlist`
+- `PUT http://localhost:3000/api/playlist`
 - `GET http://localhost:3000/media/welcome.jpg`
 
 Server media files live in:
@@ -57,6 +59,14 @@ server/data/media.json
 ```
 
 There is no database yet.
+
+The playlist is stored in:
+
+```text
+server/data/playlist.json
+```
+
+`GET /api/schedule` is generated from `server/data/playlist.json`. If no playlist exists, the server falls back to the static example schedule.
 
 ```bash
 cd server
@@ -111,6 +121,7 @@ The dashboard includes:
 
 - A read-only Schedule Preview page that reads the server schedule and displays item type, filename, and duration.
 - A Media Library page for image upload, thumbnail preview, refresh, and delete.
+- A Playlists page for adding media, removing items, setting duration, reordering with up/down buttons, and saving the single playlist.
 
 ```bash
 cd dashboard
@@ -147,13 +158,19 @@ Default development ports:
 14. Confirm the agent logs a sync failure but keeps the existing local schedule and media file.
 15. Confirm the player continues displaying the cached image from `player/public/media/`.
 
-## Test Schedule Updates
+## Test Playlist Changes
 
-1. Edit `server/src/schedule/staticSchedule.ts`, for example change a duration or referenced image filename.
-2. Upload the matching file through the dashboard or add it to `server/public/media/`.
-3. Restart the server if the dev watcher has not already reloaded it.
-4. Wait up to 30 seconds for the agent to fetch the schedule and media updates.
-5. Wait up to 30 seconds for the player to reload the local schedule.
+1. Start the server.
+2. Upload at least one image in the Media Library page.
+3. Open the Playlists page.
+4. Add the uploaded image to the playlist.
+5. Set a duration.
+6. Save the playlist.
+7. Confirm `GET http://localhost:3000/api/schedule` reflects the saved playlist.
+8. Wait up to 30 seconds for the agent to fetch the generated schedule.
+9. Wait up to 30 seconds for the player to reload the local schedule.
+10. Stop the server.
+11. Confirm the player continues displaying cached playlist content offline.
 
 ## Build
 

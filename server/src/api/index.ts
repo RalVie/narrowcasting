@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
+import { playlistRoutes } from "./routes/playlist.js";
 import { scheduleRoutes } from "./routes/schedule.js";
 
 export const registerApi: FastifyPluginAsync = async (app) => {
@@ -7,5 +8,6 @@ export const registerApi: FastifyPluginAsync = async (app) => {
     status: "ready"
   }));
 
+  app.register(playlistRoutes);
   app.register(scheduleRoutes);
 };
