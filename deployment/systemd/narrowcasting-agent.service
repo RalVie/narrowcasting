@@ -1,0 +1,20 @@
+[Unit]
+Description=Narrowcasting Agent
+After=network-online.target narrowcasting-server.service
+Wants=network-online.target narrowcasting-server.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/narrowcasting
+Environment=NARROWCASTING_ROOT=/opt/narrowcasting
+Environment=SERVER_URL=http://localhost:3000
+Environment=CACHE_DIR=../player/public/data
+Environment=MEDIA_DIR=../player/public/media
+Environment=STATUS_PATH=../server/data/agent-status.json
+ExecStart=/opt/narrowcasting/scripts/start-agent.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

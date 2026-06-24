@@ -1,0 +1,17 @@
+[Unit]
+Description=Narrowcasting Player Static Server
+After=local-fs.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/narrowcasting
+Environment=NARROWCASTING_ROOT=/opt/narrowcasting
+Environment=PLAYER_HOST=0.0.0.0
+Environment=PLAYER_PORT=4174
+ExecStart=/opt/narrowcasting/scripts/start-player.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,18 @@
+[Unit]
+Description=Narrowcasting Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/narrowcasting
+Environment=NARROWCASTING_ROOT=/opt/narrowcasting
+Environment=HOST=0.0.0.0
+Environment=PORT=3000
+ExecStart=/opt/narrowcasting/scripts/start-server.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

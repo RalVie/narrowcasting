@@ -1,6 +1,6 @@
-# Narrowcasting Phase 5
+# Narrowcasting Phase 6
 
-Single-screen local-first Raspberry Pi digital signage MVP with remote dashboard control.
+Single-screen local-first Raspberry Pi digital signage MVP with production appliance mode.
 
 ## Boundaries
 
@@ -234,4 +234,12 @@ cd server && npm run build
 cd ../dashboard && npm run build
 cd ../player && npm run build
 cd ../agent && npm run build
+```
+
+## Production Appliance Mode
+
+For Raspberry Pi boot startup, player kiosk mode, and systemd service installation, see:
+
+```text
+docs/PRODUCTION_DEPLOYMENT.md
 ```

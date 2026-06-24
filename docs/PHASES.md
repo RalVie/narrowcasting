@@ -41,3 +41,10 @@ Remote dashboard control.
 System status endpoints.
 Agent status reporting.
 Player cache visibility.
+
+PHASE 6
+
+Production appliance mode.
+Systemd services.
+Chromium kiosk launch.
+Boot recovery with cached playback.
