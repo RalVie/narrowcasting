@@ -86,15 +86,19 @@ export function PlayerApp() {
   }, [activeItem, schedule]);
 
   if (!activeItem) {
+    const hasEmptyPlaylist = schedule !== null && schedule.items.length === 0;
+
     return (
       <main className="player-shell">
         <section className="playback-surface" aria-label="Local playlist playback">
-          <p className="status-label">Waiting for local schedule</p>
-          <h1>Waiting for local schedule</h1>
+          <p className="status-label">
+            {hasEmptyPlaylist ? `Local schedule version ${schedule.version}` : "Waiting for local schedule"}
+          </p>
+          <h1>{hasEmptyPlaylist ? "Playlist is empty" : "Waiting for local schedule"}</h1>
         </section>
         <footer className="status-bar">
-          <span>Playback: waiting</span>
-          <span>Schedule: not cached</span>
+          <span>Playback: {hasEmptyPlaylist ? "empty playlist" : "waiting"}</span>
+          <span>Schedule: {hasEmptyPlaylist ? `version ${schedule.version}` : "not cached"}</span>
           <span>Reload: every 30s</span>
         </footer>
       </main>

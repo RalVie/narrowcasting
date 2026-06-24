@@ -102,7 +102,7 @@ export async function getPlaylistOrDefault(): Promise<Playlist> {
 export async function getScheduleFromPlaylist(): Promise<Schedule> {
   const playlist = await readPlaylist();
 
-  if (!playlist || playlist.items.length === 0) {
+  if (!playlist) {
     return staticSchedule;
   }
 

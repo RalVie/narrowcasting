@@ -136,6 +136,8 @@ export function PlaylistsPage() {
       isDirtyRef.current = false;
       setIsDirty(false);
       setStatus(`Playlist saved as version ${body.version}.`);
+      window.dispatchEvent(new CustomEvent("narrowcasting:playlist-saved"));
+      await loadEditorData({ force: true });
     } catch (error) {
       setStatus(error instanceof Error ? `Save failed: ${error.message}` : "Save failed.");
     } finally {

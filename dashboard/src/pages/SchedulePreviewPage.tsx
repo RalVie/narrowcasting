@@ -8,30 +8,36 @@ export function SchedulePreviewPage() {
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function loadSchedule() {
-      try {
-        const response = await fetch(apiUrl("/api/schedule"));
+  async function loadSchedule() {
+    try {
+      const response = await fetch(apiUrl("/api/schedule"));
 
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        const body = (await response.json()) as Schedule;
-        setSchedule(body);
-        setError(null);
-      } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : "Unable to load schedule");
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
       }
-    }
 
+      const body = (await response.json()) as Schedule;
+      setSchedule(body);
+      setError(null);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Unable to load schedule");
+    }
+  }
+
+  useEffect(() => {
     void loadSchedule();
     const timer = window.setInterval(() => {
       void loadSchedule();
     }, refreshIntervalMs);
+    const handlePlaylistSaved = () => {
+      void loadSchedule();
+    };
+
+    window.addEventListener("narrowcasting:playlist-saved", handlePlaylistSaved);
 
     return () => {
       window.clearInterval(timer);
+      window.removeEventListener("narrowcasting:playlist-saved", handlePlaylistSaved);
     };
   }, []);
 
@@ -61,6 +67,8 @@ export function SchedulePreviewPage() {
           </dl>
 
           <div className="schedule-items">
+            {schedule.items.length === 0 ? <p>Playlist is empty.</p> : null}
+
             {schedule.items.map((item) => (
               <article className="schedule-item" key={item.id}>
                 <div>
