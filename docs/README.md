@@ -1,6 +1,6 @@
 # Narrowcasting Phase 7
 
-Single-screen local-first Raspberry Pi digital signage MVP with unified production runtime and safe image/video playback.
+Single-screen local-first Raspberry Pi digital signage MVP with unified production runtime, safe image/video playback, and program-based scheduling.
 
 ## Boundaries
 
@@ -13,8 +13,8 @@ Single-screen local-first Raspberry Pi digital signage MVP with unified producti
 
 ## Parts
 
-- `server`: Node.js, TypeScript, Fastify, health endpoint, status endpoints, image/video media upload/list/delete API, playlist API, generated schedule endpoint, example media serving, and SQLite-ready structure.
-- `dashboard`: React, TypeScript, Vite management shell with system status, read-only schedule preview, basic media library, and single playlist editor.
+- `server`: Node.js, TypeScript, Fastify, health endpoint, status endpoints, image/video media upload/list/delete API, playlist/program/scheduler APIs, generated schedule endpoint, example media serving, and SQLite-ready structure.
+- `dashboard`: React, TypeScript, Vite management shell with system status, read-only schedule preview, basic media library, playlist editor, programs page, and scheduler page.
 - `player`: React, TypeScript, Vite fullscreen-friendly local image playback shell.
 - `agent`: Node.js, TypeScript config loader, schedule poller, local schedule/media cache writer, and heartbeat placeholder.
 
@@ -44,6 +44,16 @@ The server exposes:
 - `DELETE http://localhost:3000/api/media/:id`
 - `GET http://localhost:3000/api/playlist`
 - `PUT http://localhost:3000/api/playlist`
+- `GET http://localhost:3000/api/playlists`
+- `POST http://localhost:3000/api/playlists`
+- `PUT http://localhost:3000/api/playlists/:id`
+- `DELETE http://localhost:3000/api/playlists/:id`
+- `GET http://localhost:3000/api/programs`
+- `POST http://localhost:3000/api/programs`
+- `PUT http://localhost:3000/api/programs/:id`
+- `DELETE http://localhost:3000/api/programs/:id`
+- `GET http://localhost:3000/api/scheduler`
+- `PUT http://localhost:3000/api/scheduler`
 - `GET http://localhost:3000/api/status`
 - `GET http://localhost:3000/api/player-cache`
 - `GET http://localhost:3000/api/agent-status`
@@ -63,13 +73,26 @@ server/data/media.json
 
 There is no database yet.
 
-The playlist is stored in:
+The legacy default playlist is stored in:
 
 ```text
 server/data/playlist.json
 ```
 
-`GET /api/schedule` is generated from `server/data/playlist.json`. If no playlist exists, the server falls back to the static example schedule.
+Reusable playlist records are stored in:
+
+```text
+server/data/playlists.json
+```
+
+Programs and scheduler blocks are stored in:
+
+```text
+server/data/programs.json
+server/data/scheduler.json
+```
+
+`GET /api/schedule` is generated from the active scheduler block. The active block selects a program, the program expands to playlists in order, and those playlist media items become the local player schedule. If no scheduler blocks exist, the server falls back to the legacy default playlist path. If no playlist exists, the server falls back to the static example schedule.
 
 ```bash
 cd server
@@ -125,7 +148,9 @@ The dashboard includes:
 - A System Status page that refreshes every 10 seconds.
 - A read-only Schedule Preview page that reads the server schedule and displays item type, filename, and duration.
 - A Media Library page for image/video upload, thumbnail preview, refresh, and delete.
-- A Playlists page for adding media, removing items, setting duration, setting optional date/day/time scheduling, reordering with up/down buttons, and saving the single playlist.
+- A Playlists page for adding media, removing items, setting duration, reordering with up/down buttons, and saving the default playlist.
+- A Programs page for creating programs and ordering playlists inside each program.
+- A Scheduler page for assigning programs to date, day, and time blocks.
 
 Media upload limits:
 
@@ -194,19 +219,24 @@ Default development ports:
 10. Stop the server.
 11. Confirm the player continues displaying cached playlist content offline.
 
-## Test Scheduled Playlist Items
+## Test Program Scheduling
 
-Playlist items may optionally include `startDate`, `endDate`, `daysOfWeek`, `startTime`, and `endTime`. Items without scheduling fields remain active. Scheduled fields are stored in `server/data/playlist.json`, but only currently active items are emitted by `GET /api/schedule`.
+Programs sit between playlists and the scheduler:
+
+```text
+Media -> Playlist -> Program -> Scheduler Block -> Player
+```
 
 1. Start the server.
-2. Add one unscheduled playlist item and save.
-3. Confirm `GET http://localhost:3000/api/schedule` includes that item.
-4. Set a future Date From and save.
-5. Confirm the item remains in `GET http://localhost:3000/api/playlist` but is excluded from `GET http://localhost:3000/api/schedule`.
-6. Clear the date, choose weekday and time settings that include the current local time, and save.
-7. Confirm the item appears in the generated schedule.
-8. Choose weekday or time settings that exclude the current local time.
-9. Confirm the generated schedule excludes the item and the player shows `Playlist is empty` when no active items remain.
+2. Confirm `GET http://localhost:3000/api/schedule` still works with only the default playlist.
+3. Create or save playlists.
+4. Open Programs and create a program.
+5. Add one or more playlists to the program and save.
+6. Open Scheduler and add a block for the program.
+7. Set a time window that includes the current local time and save.
+8. Confirm `GET http://localhost:3000/api/schedule` contains the program playlists flattened in program order.
+9. Change the scheduler block to a time or day that is inactive.
+10. Confirm `GET http://localhost:3000/api/schedule` returns `items: []` and the player shows `Playlist is empty` after agent sync.
 
 ## Remote Dashboard Test Procedure
 

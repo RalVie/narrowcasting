@@ -16,12 +16,21 @@ export interface PlaylistItem {
 }
 
 export interface Playlist {
+  id?: string;
+  name?: string;
   version: number;
   updatedAt: string;
   items: PlaylistItem[];
 }
 
+export interface PlaylistRecord extends Playlist {
+  id: string;
+  name: string;
+}
+
+const defaultPlaylistId = "default";
 const playlistPath = resolve(process.cwd(), "data", "playlist.json");
+const playlistsPath = resolve(process.cwd(), "data", "playlists.json");
 const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
 const allowedDays = new Set<string>(dayNames);
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -41,6 +50,15 @@ function isPlaylist(value: unknown): value is Playlist {
     typeof playlist.updatedAt === "string" &&
     Array.isArray(playlist.items)
   );
+}
+
+function toPlaylistId(value: string) {
+  const normalized = value
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return normalized || `playlist-${Date.now()}`;
 }
 
 function normalizePlaylistItems(items: unknown): PlaylistItem[] {
@@ -150,26 +168,132 @@ export async function readPlaylist(): Promise<Playlist | null> {
   }
 }
 
+function normalizePlaylistRecord(value: unknown, fallbackIndex: number): PlaylistRecord | null {
+  if (!isPlaylist(value)) {
+    return null;
+  }
+
+  const candidate = value as Partial<PlaylistRecord>;
+  const name =
+    typeof candidate.name === "string" && candidate.name.trim()
+      ? candidate.name.trim()
+      : fallbackIndex === 0
+        ? "Default Playlist"
+        : `Playlist ${fallbackIndex + 1}`;
+  const id =
+    typeof candidate.id === "string" && candidate.id.trim()
+      ? toPlaylistId(candidate.id)
+      : fallbackIndex === 0
+        ? defaultPlaylistId
+        : toPlaylistId(name);
+
+  return {
+    id,
+    name,
+    version: value.version,
+    updatedAt: value.updatedAt,
+    items: normalizePlaylistItems(value.items)
+  };
+}
+
+async function writePlaylists(playlists: PlaylistRecord[]) {
+  await mkdir(resolve(process.cwd(), "data"), { recursive: true });
+  await writeFile(playlistsPath, `${JSON.stringify(playlists, null, 2)}\n`, "utf8");
+
+  const defaultPlaylist = playlists.find((playlist) => playlist.id === defaultPlaylistId);
+
+  if (defaultPlaylist) {
+    await writeFile(
+      playlistPath,
+      `${JSON.stringify(
+        {
+          version: defaultPlaylist.version,
+          updatedAt: defaultPlaylist.updatedAt,
+          items: defaultPlaylist.items
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+  }
+}
+
+export async function listPlaylists(): Promise<PlaylistRecord[]> {
+  try {
+    const content = await readFile(playlistsPath, "utf8");
+    const value: unknown = JSON.parse(content);
+
+    if (Array.isArray(value)) {
+      const playlists = value
+        .map((item, index) => normalizePlaylistRecord(item, index))
+        .filter((item): item is PlaylistRecord => item !== null);
+
+      if (playlists.length > 0) {
+        return playlists;
+      }
+    }
+  } catch {
+    // Fall back to the Phase 4-8 single playlist file below.
+  }
+
+  const defaultPlaylist = await readPlaylist();
+
+  if (!defaultPlaylist) {
+    return [
+      {
+        id: defaultPlaylistId,
+        name: "Default Playlist",
+        version: 0,
+        updatedAt: "",
+        items: []
+      }
+    ];
+  }
+
+  return [
+    {
+      id: defaultPlaylistId,
+      name: "Default Playlist",
+      version: defaultPlaylist.version,
+      updatedAt: defaultPlaylist.updatedAt,
+      items: normalizePlaylistItems(defaultPlaylist.items)
+    }
+  ];
+}
+
 export async function savePlaylist(value: unknown): Promise<Playlist> {
-  const existingPlaylist = await readPlaylist();
+  const playlists = await listPlaylists();
+  const existingPlaylist = playlists.find((playlist) => playlist.id === defaultPlaylistId);
   const incoming = value as Partial<Playlist>;
-  const playlist: Playlist = {
+  const playlist: PlaylistRecord = {
+    id: defaultPlaylistId,
+    name: existingPlaylist?.name ?? "Default Playlist",
     version: (existingPlaylist?.version ?? 0) + 1,
     updatedAt: new Date().toISOString(),
     items: normalizePlaylistItems(incoming.items)
   };
 
-  await mkdir(resolve(process.cwd(), "data"), { recursive: true });
-  await writeFile(playlistPath, `${JSON.stringify(playlist, null, 2)}\n`, "utf8");
+  const otherPlaylists = playlists.filter((item) => item.id !== defaultPlaylistId);
+  await writePlaylists([playlist, ...otherPlaylists]);
 
-  return playlist;
+  return {
+    version: playlist.version,
+    updatedAt: playlist.updatedAt,
+    items: playlist.items
+  };
 }
 
 export async function getPlaylistOrDefault(): Promise<Playlist> {
-  const playlist = await readPlaylist();
+  const playlists = await listPlaylists();
+  const playlist = playlists.find((item) => item.id === defaultPlaylistId);
 
   if (playlist) {
-    return playlist;
+    return {
+      version: playlist.version,
+      updatedAt: playlist.updatedAt,
+      items: playlist.items
+    };
   }
 
   return {
@@ -177,6 +301,72 @@ export async function getPlaylistOrDefault(): Promise<Playlist> {
     updatedAt: "",
     items: []
   };
+}
+
+export async function createPlaylist(value: unknown): Promise<PlaylistRecord> {
+  const playlists = await listPlaylists();
+  const incoming = value as Partial<PlaylistRecord>;
+  const name = typeof incoming.name === "string" && incoming.name.trim() ? incoming.name.trim() : "New Playlist";
+  const baseId = toPlaylistId(typeof incoming.id === "string" ? incoming.id : name);
+  const existingIds = new Set(playlists.map((playlist) => playlist.id));
+  let id = baseId;
+  let suffix = 2;
+
+  while (existingIds.has(id)) {
+    id = `${baseId}-${suffix}`;
+    suffix += 1;
+  }
+
+  const playlist: PlaylistRecord = {
+    id,
+    name,
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    items: normalizePlaylistItems(incoming.items)
+  };
+
+  await writePlaylists([...playlists, playlist]);
+  return playlist;
+}
+
+export async function savePlaylistRecord(id: string, value: unknown): Promise<PlaylistRecord | null> {
+  const playlists = await listPlaylists();
+  const existingPlaylist = playlists.find((playlist) => playlist.id === id);
+
+  if (!existingPlaylist) {
+    return null;
+  }
+
+  const incoming = value as Partial<PlaylistRecord>;
+  const playlist: PlaylistRecord = {
+    id: existingPlaylist.id,
+    name:
+      typeof incoming.name === "string" && incoming.name.trim()
+        ? incoming.name.trim()
+        : existingPlaylist.name,
+    version: existingPlaylist.version + 1,
+    updatedAt: new Date().toISOString(),
+    items: normalizePlaylistItems(incoming.items)
+  };
+
+  await writePlaylists(playlists.map((item) => (item.id === id ? playlist : item)));
+  return playlist;
+}
+
+export async function deletePlaylist(id: string): Promise<boolean> {
+  if (id === defaultPlaylistId) {
+    return false;
+  }
+
+  const playlists = await listPlaylists();
+  const nextPlaylists = playlists.filter((playlist) => playlist.id !== id);
+
+  if (nextPlaylists.length === playlists.length) {
+    return false;
+  }
+
+  await writePlaylists(nextPlaylists);
+  return true;
 }
 
 export async function getScheduleFromPlaylist(): Promise<Schedule> {

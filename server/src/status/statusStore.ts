@@ -2,7 +2,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { listMedia } from "../media/mediaStore.js";
 import { readPlaylist } from "../playlist/playlistStore.js";
-import { getScheduleFromPlaylist } from "../playlist/playlistStore.js";
+import { getGeneratedSchedule } from "../scheduler/generatedSchedule.js";
 
 export interface CachedMediaFile {
   filename: string;
@@ -66,7 +66,7 @@ export async function readAgentStatus(): Promise<AgentStatus> {
 
 export async function getSystemStatus() {
   const [schedule, playlist, media] = await Promise.all([
-    getScheduleFromPlaylist(),
+    getGeneratedSchedule(),
     readPlaylist(),
     listMedia()
   ]);

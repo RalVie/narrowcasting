@@ -69,3 +69,10 @@ Optional playlist item scheduling.
 Server-side active item filtering.
 Dashboard date, day, and time controls.
 Player remains schedule-only.
+
+PHASE 8C
+
+Programs between playlists and scheduler.
+Scheduler blocks activate programs.
+Generated schedule flattens active program playlists.
+Legacy default playlist path remains compatible.

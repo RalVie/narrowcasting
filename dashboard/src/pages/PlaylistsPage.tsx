@@ -1,28 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { apiUrl } from "../api/apiBase";
 import type { MediaItem } from "../mediaTypes";
-import type { DayOfWeek, Playlist, PlaylistItem } from "../playlistTypes";
+import type { PlaylistRecord, PlaylistItem } from "../playlistTypes";
 
 const refreshIntervalMs = 10_000;
-const daysOfWeek: DayOfWeek[] = [
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-  "Sunday"
-];
-const dayLabels: Record<DayOfWeek, string> = {
-  Monday: "Mon",
-  Tuesday: "Tue",
-  Wednesday: "Wed",
-  Thursday: "Thu",
-  Friday: "Fri",
-  Saturday: "Sat",
-  Sunday: "Sun"
-};
-const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sept", "Oct", "Nov", "Dec"];
 
 function createPlaylistItem(media: MediaItem): PlaylistItem {
   return {
@@ -34,72 +15,13 @@ function createPlaylistItem(media: MediaItem): PlaylistItem {
   };
 }
 
-function formatDateSummary(value: string) {
-  const [year, month, day] = value.split("-");
-  const monthIndex = Number(month) - 1;
-  const monthLabel = monthLabels[monthIndex] ?? month;
-  return `${day} ${monthLabel} ${year}`;
-}
-
-function summarizeDays(days?: DayOfWeek[]) {
-  if (!days || days.length === 0) {
-    return null;
-  }
-
-  if (
-    days.length === 5 &&
-    daysOfWeek.slice(0, 5).every((day) => days.includes(day))
-  ) {
-    return "Mon-Fri";
-  }
-
-  if (days.length === 7) {
-    return "Every day";
-  }
-
-  return days.map((day) => dayLabels[day]).join(", ");
-}
-
-function summarizeSchedule(item: PlaylistItem) {
-  const parts: string[] = [];
-  const daySummary = summarizeDays(item.daysOfWeek);
-
-  if (daySummary) {
-    parts.push(daySummary);
-  }
-
-  if (item.startTime || item.endTime) {
-    parts.push(`${item.startTime || "00:00"}-${item.endTime || "23:59"}`);
-  }
-
-  if (item.startDate || item.endDate) {
-    const startDate = item.startDate ? formatDateSummary(item.startDate) : "From now";
-    const endDate = item.endDate ? formatDateSummary(item.endDate) : "No end date";
-    parts.push(`${startDate} - ${endDate}`);
-  }
-
-  return parts.length > 0 ? parts.join(" | ") : "Always active";
-}
-
-function withScheduleField(
-  item: PlaylistItem,
-  field: "startDate" | "endDate" | "startTime" | "endTime",
-  value: string
-) {
-  const nextItem = { ...item };
-
-  if (value) {
-    nextItem[field] = value;
-  } else {
-    delete nextItem[field];
-  }
-
-  return nextItem;
-}
-
 export function PlaylistsPage() {
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
-  const [playlist, setPlaylist] = useState<Playlist>({
+  const [playlists, setPlaylists] = useState<PlaylistRecord[]>([]);
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState("default");
+  const [playlist, setPlaylist] = useState<PlaylistRecord>({
+    id: "default",
+    name: "Default Playlist",
     version: 0,
     updatedAt: "",
     items: []
@@ -124,7 +46,7 @@ export function PlaylistsPage() {
     try {
       const [mediaResponse, playlistResponse] = await Promise.all([
         fetch(apiUrl("/api/media")),
-        fetch(apiUrl("/api/playlist"))
+        fetch(apiUrl("/api/playlists"))
       ]);
 
       if (!mediaResponse.ok) {
@@ -136,10 +58,18 @@ export function PlaylistsPage() {
       }
 
       const mediaBody = (await mediaResponse.json()) as MediaItem[];
-      const playlistBody = (await playlistResponse.json()) as Playlist;
+      const playlistBody = (await playlistResponse.json()) as PlaylistRecord[];
+      const selectedPlaylist =
+        playlistBody.find((item) => item.id === selectedPlaylistId) ?? playlistBody[0];
 
       setMediaItems(mediaBody);
-      setPlaylist(playlistBody);
+      setPlaylists(playlistBody);
+
+      if (selectedPlaylist) {
+        setSelectedPlaylistId(selectedPlaylist.id);
+        setPlaylist(selectedPlaylist);
+      }
+
       isDirtyRef.current = false;
       setIsDirty(false);
       setStatus("Playlist loaded.");
@@ -154,6 +84,14 @@ export function PlaylistsPage() {
     setPlaylist((currentPlaylist) => ({
       ...currentPlaylist,
       items: [...currentPlaylist.items, createPlaylistItem(media)]
+    }));
+    markDirty();
+  }
+
+  function updatePlaylistName(name: string) {
+    setPlaylist((currentPlaylist) => ({
+      ...currentPlaylist,
+      name
     }));
     markDirty();
   }
@@ -196,57 +134,16 @@ export function PlaylistsPage() {
     markDirty();
   }
 
-  function updateScheduleField(
-    id: string,
-    field: "startDate" | "endDate" | "startTime" | "endTime",
-    value: string
-  ) {
-    setPlaylist((currentPlaylist) => ({
-      ...currentPlaylist,
-      items: currentPlaylist.items.map((item) =>
-        item.id === id ? withScheduleField(item, field, value) : item
-      )
-    }));
-    markDirty();
-  }
-
-  function toggleDayOfWeek(id: string, day: DayOfWeek, isChecked: boolean) {
-    setPlaylist((currentPlaylist) => ({
-      ...currentPlaylist,
-      items: currentPlaylist.items.map((item) => {
-        if (item.id !== id) {
-          return item;
-        }
-
-        const selectedDays = new Set(item.daysOfWeek ?? []);
-
-        if (isChecked) {
-          selectedDays.add(day);
-        } else {
-          selectedDays.delete(day);
-        }
-
-        const orderedDays = daysOfWeek.filter((candidateDay) => selectedDays.has(candidateDay));
-        const nextItem = { ...item };
-
-        if (orderedDays.length > 0) {
-          nextItem.daysOfWeek = orderedDays;
-        } else {
-          delete nextItem.daysOfWeek;
-        }
-
-        return nextItem;
-      })
-    }));
-    markDirty();
-  }
-
   async function savePlaylist() {
     setIsBusy(true);
     setStatus("Saving playlist...");
 
     try {
-      const response = await fetch(apiUrl("/api/playlist"), {
+      const endpoint =
+        playlist.id === "default"
+          ? apiUrl("/api/playlist")
+          : apiUrl(`/api/playlists/${encodeURIComponent(playlist.id)}`);
+      const response = await fetch(endpoint, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json"
@@ -258,8 +155,16 @@ export function PlaylistsPage() {
         throw new Error(`HTTP ${response.status}`);
       }
 
-      const body = (await response.json()) as Playlist;
-      setPlaylist(body);
+      const body = (await response.json()) as PlaylistRecord;
+      setPlaylist(
+        playlist.id === "default"
+          ? {
+              ...body,
+              id: "default",
+              name: playlist.name
+            }
+          : body
+      );
       isDirtyRef.current = false;
       setIsDirty(false);
       setStatus(`Playlist saved as version ${body.version}.`);
@@ -267,6 +172,68 @@ export function PlaylistsPage() {
       await loadEditorData({ force: true });
     } catch (error) {
       setStatus(error instanceof Error ? `Save failed: ${error.message}` : "Save failed.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function createPlaylist() {
+    setIsBusy(true);
+    setStatus("Creating playlist...");
+
+    try {
+      const response = await fetch(apiUrl("/api/playlists"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ name: "New Playlist", items: [] })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const body = (await response.json()) as PlaylistRecord;
+      setSelectedPlaylistId(body.id);
+      setPlaylist(body);
+      isDirtyRef.current = false;
+      setIsDirty(false);
+      await loadEditorData({ force: true });
+      setStatus(`${body.name} created.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? `Create failed: ${error.message}` : "Create failed.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function deleteSelectedPlaylist() {
+    if (playlist.id === "default") {
+      setStatus("Default playlist cannot be deleted.");
+      return;
+    }
+
+    setIsBusy(true);
+    setStatus(`Deleting ${playlist.name}...`);
+
+    try {
+      const response = await fetch(apiUrl(`/api/playlists/${encodeURIComponent(playlist.id)}`), {
+        method: "DELETE"
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      setSelectedPlaylistId("default");
+      isDirtyRef.current = false;
+      setIsDirty(false);
+      await loadEditorData({ force: true });
+      setStatus(`${playlist.name} deleted.`);
+      window.dispatchEvent(new CustomEvent("narrowcasting:playlist-saved"));
+    } catch (error) {
+      setStatus(error instanceof Error ? `Delete failed: ${error.message}` : "Delete failed.");
     } finally {
       setIsBusy(false);
     }
@@ -288,9 +255,12 @@ export function PlaylistsPage() {
       <div className="section-header">
         <div>
           <h2>Playlists</h2>
-          <p>Single local playlist used to generate the player schedule.</p>
+          <p>Reusable ordered media lists for programs.</p>
         </div>
         <div className="button-row">
+          <button disabled={isBusy} onClick={() => void createPlaylist()} type="button">
+            Create Playlist
+          </button>
           <button disabled={isBusy} onClick={() => void loadEditorData({ force: true })} type="button">
             Refresh
           </button>
@@ -325,8 +295,48 @@ export function PlaylistsPage() {
 
         <section className="playlist-panel" aria-label="Current playlist">
           <div className="playlist-panel-header">
-            <h3>Playlist</h3>
+            <h3>{playlist.name}</h3>
             <span>Version {playlist.version}</span>
+          </div>
+
+          <div className="playlist-management">
+            <label>
+              Edit playlist
+              <select
+                disabled={isBusy}
+                onChange={(event) => {
+                  const nextPlaylist = playlists.find((item) => item.id === event.target.value);
+
+                  if (nextPlaylist) {
+                    setSelectedPlaylistId(nextPlaylist.id);
+                    setPlaylist(nextPlaylist);
+                    isDirtyRef.current = false;
+                    setIsDirty(false);
+                  }
+                }}
+                value={playlist.id}
+              >
+                {playlists.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              Playlist name
+              <input
+                disabled={playlist.id === "default"}
+                onChange={(event) => updatePlaylistName(event.target.value)}
+                type="text"
+                value={playlist.name}
+              />
+            </label>
+
+            <button disabled={isBusy || playlist.id === "default"} onClick={() => void deleteSelectedPlaylist()} type="button">
+              Delete Playlist
+            </button>
           </div>
 
           <div className="playlist-items">
@@ -337,9 +347,7 @@ export function PlaylistsPage() {
                 <div className="playlist-item-topline">
                   <div className="playlist-item-main">
                     <strong>{item.file}</strong>
-                    <span>
-                      {item.type} | {summarizeSchedule(item)}
-                    </span>
+                    <span>{item.type}</span>
                   </div>
                   <label>
                     Duration
@@ -367,54 +375,6 @@ export function PlaylistsPage() {
                   </div>
                 </div>
 
-                <div className="playlist-schedule-fields">
-                  <label>
-                    Date From
-                    <input
-                      onChange={(event) => updateScheduleField(item.id, "startDate", event.target.value)}
-                      type="date"
-                      value={item.startDate ?? ""}
-                    />
-                  </label>
-                  <label>
-                    Date Until
-                    <input
-                      onChange={(event) => updateScheduleField(item.id, "endDate", event.target.value)}
-                      type="date"
-                      value={item.endDate ?? ""}
-                    />
-                  </label>
-                  <label>
-                    Time From
-                    <input
-                      onChange={(event) => updateScheduleField(item.id, "startTime", event.target.value)}
-                      type="time"
-                      value={item.startTime ?? ""}
-                    />
-                  </label>
-                  <label>
-                    Time Until
-                    <input
-                      onChange={(event) => updateScheduleField(item.id, "endTime", event.target.value)}
-                      type="time"
-                      value={item.endTime ?? ""}
-                    />
-                  </label>
-                </div>
-
-                <fieldset className="playlist-days">
-                  <legend>Days of week</legend>
-                  {daysOfWeek.map((day) => (
-                    <label key={day}>
-                      <input
-                        checked={item.daysOfWeek?.includes(day) ?? false}
-                        onChange={(event) => toggleDayOfWeek(item.id, day, event.target.checked)}
-                        type="checkbox"
-                      />
-                      {dayLabels[day]}
-                    </label>
-                  ))}
-                </fieldset>
               </article>
             ))}
           </div>

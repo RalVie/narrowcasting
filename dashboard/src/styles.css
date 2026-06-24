@@ -247,6 +247,29 @@ button:disabled {
   gap: 10px;
 }
 
+.playlist-management {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(140px, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.playlist-management label {
+  display: grid;
+  gap: 4px;
+  color: #647064;
+  font-size: 13px;
+}
+
+.playlist-management input,
+.playlist-management select {
+  border: 1px solid #b9c8bd;
+  border-radius: 6px;
+  padding: 8px;
+  color: #17201a;
+  font: inherit;
+}
+
 .playlist-media-row,
 .playlist-item-row {
   border: 1px solid #d9dfd4;
@@ -293,6 +316,57 @@ button:disabled {
   padding: 8px;
   color: #17201a;
   font: inherit;
+}
+
+.program-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.program-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #d9dfd4;
+  border-radius: 8px;
+  padding: 14px;
+  background: #f8faf6;
+}
+
+.program-card-header,
+.program-playlist-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.program-card label {
+  display: grid;
+  gap: 4px;
+  color: #647064;
+  font-size: 13px;
+}
+
+.program-card input,
+.program-card select {
+  border: 1px solid #b9c8bd;
+  border-radius: 6px;
+  padding: 8px;
+  color: #17201a;
+  font: inherit;
+}
+
+.program-playlists {
+  display: grid;
+  gap: 8px;
+}
+
+.program-playlist-row {
+  border: 1px solid #d9dfd4;
+  border-radius: 8px;
+  padding: 10px;
+  background: #ffffff;
 }
 
 .playlist-schedule-fields {
@@ -439,7 +513,17 @@ button:disabled {
     flex-wrap: wrap;
   }
 
+  .playlist-management {
+    grid-template-columns: 1fr;
+  }
+
   .playlist-schedule-fields {
     grid-template-columns: 1fr;
+  }
+
+  .program-card-header,
+  .program-playlist-row {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
