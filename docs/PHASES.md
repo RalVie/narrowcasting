@@ -1,8 +1,8 @@
 PHASE 0
 
-No coding.
+Runnable skeletons.
 
-Architecture only.
+Separate server, dashboard, player, and agent foundations.
 
 PHASE 1
 
