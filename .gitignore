@@ -3,5 +3,8 @@ dist/
 *.tsbuildinfo
 vite.config.js
 vite.config.d.ts
+server/public/media/welcome.png
 player/public/data/schedule.json
+player/public/media/*
+!player/public/media/.gitkeep
 agent/data/

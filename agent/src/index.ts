@@ -7,6 +7,7 @@ const config = loadAgentConfig();
 console.log("narrowcasting agent starting", {
   deviceId: config.deviceId,
   cacheDir: config.cacheDir,
+  mediaDir: config.mediaDir,
   schedulePath: config.schedulePath,
   serverUrl: config.serverUrl
 });

@@ -1,5 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { basename, dirname, resolve } from "node:path";
 import type { AgentConfig } from "../config/loadAgentConfig.js";
 import type { Schedule } from "../schedule/types.js";
 
@@ -37,6 +37,51 @@ async function saveSchedule(config: AgentConfig, schedule: Schedule) {
   await writeFile(config.schedulePath, `${JSON.stringify(schedule, null, 2)}\n`, "utf8");
 }
 
+async function syncImageFile(config: AgentConfig, file: string) {
+  const safeFile = basename(file);
+
+  if (safeFile !== file) {
+    console.error("media failed", { file, error: "invalid media filename" });
+    return;
+  }
+
+  const localPath = resolve(config.mediaDir, safeFile);
+
+  try {
+    await access(localPath);
+    console.log("media already present", { file: safeFile, localPath });
+    return;
+  } catch {
+    // Missing locally; download from server below.
+  }
+
+  try {
+    const response = await fetch(`${config.serverUrl}/media/${encodeURIComponent(safeFile)}`);
+
+    if (!response.ok) {
+      throw new Error(`media request failed with HTTP ${response.status}`);
+    }
+
+    const content = Buffer.from(await response.arrayBuffer());
+    await mkdir(config.mediaDir, { recursive: true });
+    await writeFile(localPath, content);
+    console.log("media downloaded", { file: safeFile, localPath });
+  } catch (error) {
+    console.error("media failed: keeping existing local file if present", {
+      file: safeFile,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
+async function syncMediaFiles(config: AgentConfig, schedule: Schedule) {
+  for (const item of schedule.items) {
+    if (item.type === "image") {
+      await syncImageFile(config, item.file);
+    }
+  }
+}
+
 async function readLocalScheduleVersion(config: AgentConfig): Promise<number | null> {
   try {
     const content = await readFile(config.schedulePath, "utf8");
@@ -55,6 +100,7 @@ async function readLocalScheduleVersion(config: AgentConfig): Promise<number | n
 export function startSyncLoop(config: AgentConfig) {
   console.log("sync loop ready", {
     cacheDir: config.cacheDir,
+    mediaDir: config.mediaDir,
     schedulePath: config.schedulePath,
     serverUrl: config.serverUrl,
     intervalMs: config.syncIntervalMs
@@ -63,6 +109,7 @@ export function startSyncLoop(config: AgentConfig) {
   const syncOnce = async () => {
     try {
       const schedule = await fetchSchedule(config);
+      await syncMediaFiles(config, schedule);
       await saveSchedule(config, schedule);
       console.log("sync success", {
         scheduleVersion: schedule.version,

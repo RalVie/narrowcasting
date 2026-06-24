@@ -14,7 +14,7 @@ body {
   position: relative;
   display: grid;
   min-height: 100vh;
-  background: linear-gradient(135deg, rgb(19 54 44 / 78%), rgb(5 8 7 / 96%));
+  background: #000000;
 }
 
 .playback-surface {
@@ -24,6 +24,19 @@ body {
   min-height: 100vh;
   padding: 8vw;
   text-align: center;
+}
+
+.image-surface {
+  position: relative;
+  padding: 0;
+}
+
+.image-surface .status-label {
+  position: fixed;
+  top: 18px;
+  left: 22px;
+  z-index: 1;
+  background: rgb(0 0 0 / 56%);
 }
 
 .status-label {
@@ -50,6 +63,30 @@ h1 {
   color: #d2ddd6;
   font-size: clamp(18px, 2vw, 26px);
   line-height: 1.45;
+}
+
+.media-image {
+  display: block;
+  max-width: 100vw;
+  max-height: 100vh;
+  object-fit: contain;
+}
+
+.media-image[data-missing="true"] {
+  display: none;
+}
+
+.missing-media-message {
+  display: none;
+  margin: 0;
+  padding: 8vw;
+  color: #f8fbff;
+  font-size: clamp(26px, 5vw, 62px);
+  line-height: 1.15;
+}
+
+.media-image[data-missing="true"] + .missing-media-message {
+  display: block;
 }
 
 .status-bar {

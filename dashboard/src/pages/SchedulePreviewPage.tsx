@@ -56,8 +56,11 @@ export function SchedulePreviewPage() {
             {schedule.items.map((item) => (
               <article className="schedule-item" key={item.id}>
                 <div>
-                  <h3>{item.title}</h3>
-                  <p>{item.type}</p>
+                  <h3>{item.type === "image" ? item.file : item.title}</h3>
+                  <p>
+                    Type: {item.type}
+                    {item.type === "image" ? ` | File: ${item.file}` : ""}
+                  </p>
                 </div>
                 <span>{item.duration}s</span>
               </article>

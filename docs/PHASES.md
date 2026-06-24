@@ -13,3 +13,10 @@ One playlist.
 Offline playback.
 Heartbeat.
 Static local schedule sync.
+
+PHASE 2
+
+Local image playback.
+Example server media.
+Agent media cache sync.
+Offline cached image playback.

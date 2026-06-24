@@ -1,6 +1,7 @@
 export interface AgentConfig {
   deviceId: string;
   cacheDir: string;
+  mediaDir: string;
   serverUrl: string;
   schedulePath: string;
   syncIntervalMs: number;
@@ -13,6 +14,7 @@ export function loadAgentConfig(): AgentConfig {
   return {
     deviceId: process.env.DEVICE_ID ?? "local-player",
     cacheDir,
+    mediaDir: process.env.MEDIA_DIR ?? "../player/public/media",
     serverUrl: process.env.SERVER_URL ?? "http://localhost:3000",
     schedulePath: `${cacheDir}/schedule.json`,
     syncIntervalMs: Number(process.env.SYNC_INTERVAL_MS ?? 30_000),

@@ -1,9 +1,18 @@
-export interface ScheduleItem {
+export interface TextScheduleItem {
   id: string;
   type: "text";
   title: string;
   duration: number;
 }
+
+export interface ImageScheduleItem {
+  id: string;
+  type: "image";
+  file: string;
+  duration: number;
+}
+
+export type ScheduleItem = TextScheduleItem | ImageScheduleItem;
 
 export interface Schedule {
   version: number;
@@ -12,20 +21,14 @@ export interface Schedule {
 }
 
 export const staticSchedule: Schedule = {
-  version: 1,
+  version: 2,
   updatedAt: "2026-06-24T12:00:00Z",
   items: [
     {
-      id: "welcome",
-      type: "text",
-      title: "Welcome to Narrowcasting",
+      id: "welcome-image",
+      type: "image",
+      file: "welcome.jpg",
       duration: 10
-    },
-    {
-      id: "local-first",
-      type: "text",
-      title: "Playback continues from the local cache",
-      duration: 8
     }
   ]
 };

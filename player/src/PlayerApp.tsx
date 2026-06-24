@@ -103,15 +103,33 @@ export function PlayerApp() {
 
   return (
     <main className="player-shell">
-      <section className="playback-surface" aria-label="Local playlist playback">
+      <section
+        className={`playback-surface ${activeItem.type === "image" ? "image-surface" : ""}`}
+        aria-label="Local playlist playback"
+      >
         <p className="status-label">Local schedule version {schedule?.version}</p>
-        <h1>{activeItem.title}</h1>
+        {activeItem.type === "image" ? (
+          <img
+            alt=""
+            className="media-image"
+            onError={(event) => {
+              event.currentTarget.dataset.missing = "true";
+            }}
+            src={`/media/${encodeURIComponent(activeItem.file)}`}
+          />
+        ) : (
+          <h1>{activeItem.title}</h1>
+        )}
+        {activeItem.type === "image" ? (
+          <p className="missing-media-message">Missing local image: {activeItem.file}</p>
+        ) : null}
       </section>
       <footer className="status-bar">
         <span>Playback: local</span>
         <span>
           Item {activeIndex + 1} / {schedule?.items.length}
         </span>
+        <span>Type: {activeItem.type}</span>
         <span>Duration: {activeItem.duration}s</span>
         <span>Loaded: {lastLoadedAt ?? "unknown"}</span>
       </footer>
