@@ -30,14 +30,27 @@ export function PlaylistsPage() {
   const [isBusy, setIsBusy] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const isDirtyRef = useRef(false);
+  const selectedPlaylistIdRef = useRef("default");
 
   function markDirty() {
     isDirtyRef.current = true;
     setIsDirty(true);
   }
 
+  function selectPlaylist(playlistRecord: PlaylistRecord) {
+    selectedPlaylistIdRef.current = playlistRecord.id;
+    setSelectedPlaylistId(playlistRecord.id);
+    setPlaylist(playlistRecord);
+  }
+
   async function loadEditorData(options: { force?: boolean } = {}) {
     if (isDirtyRef.current && !options.force) {
+      const mediaResponse = await fetch(apiUrl("/api/media")).catch(() => null);
+
+      if (mediaResponse?.ok) {
+        setMediaItems((await mediaResponse.json()) as MediaItem[]);
+      }
+
       return;
     }
 
@@ -60,14 +73,15 @@ export function PlaylistsPage() {
       const mediaBody = (await mediaResponse.json()) as MediaItem[];
       const playlistBody = (await playlistResponse.json()) as PlaylistRecord[];
       const selectedPlaylist =
-        playlistBody.find((item) => item.id === selectedPlaylistId) ?? playlistBody[0];
+        playlistBody.find((item) => item.id === selectedPlaylistIdRef.current) ??
+        playlistBody.find((item) => item.id === "default") ??
+        playlistBody[0];
 
       setMediaItems(mediaBody);
       setPlaylists(playlistBody);
 
       if (selectedPlaylist) {
-        setSelectedPlaylistId(selectedPlaylist.id);
-        setPlaylist(selectedPlaylist);
+        selectPlaylist(selectedPlaylist);
       }
 
       isDirtyRef.current = false;
@@ -156,15 +170,15 @@ export function PlaylistsPage() {
       }
 
       const body = (await response.json()) as PlaylistRecord;
-      setPlaylist(
+      const savedPlaylist =
         playlist.id === "default"
           ? {
               ...body,
               id: "default",
-              name: playlist.name
+              name: body.name ?? playlist.name
             }
-          : body
-      );
+          : body;
+      selectPlaylist(savedPlaylist);
       isDirtyRef.current = false;
       setIsDirty(false);
       setStatus(`Playlist saved as version ${body.version}.`);
@@ -195,8 +209,7 @@ export function PlaylistsPage() {
       }
 
       const body = (await response.json()) as PlaylistRecord;
-      setSelectedPlaylistId(body.id);
-      setPlaylist(body);
+      selectPlaylist(body);
       isDirtyRef.current = false;
       setIsDirty(false);
       await loadEditorData({ force: true });
@@ -226,6 +239,7 @@ export function PlaylistsPage() {
         throw new Error(`HTTP ${response.status}`);
       }
 
+      selectedPlaylistIdRef.current = "default";
       setSelectedPlaylistId("default");
       isDirtyRef.current = false;
       setIsDirty(false);
@@ -263,9 +277,6 @@ export function PlaylistsPage() {
           </button>
           <button disabled={isBusy} onClick={() => void loadEditorData({ force: true })} type="button">
             Refresh
-          </button>
-          <button disabled={isBusy} onClick={() => void savePlaylist()} type="button">
-            Save
           </button>
         </div>
       </div>
@@ -308,8 +319,7 @@ export function PlaylistsPage() {
                   const nextPlaylist = playlists.find((item) => item.id === event.target.value);
 
                   if (nextPlaylist) {
-                    setSelectedPlaylistId(nextPlaylist.id);
-                    setPlaylist(nextPlaylist);
+                    selectPlaylist(nextPlaylist);
                     isDirtyRef.current = false;
                     setIsDirty(false);
                   }
@@ -327,7 +337,6 @@ export function PlaylistsPage() {
             <label>
               Playlist name
               <input
-                disabled={playlist.id === "default"}
                 onChange={(event) => updatePlaylistName(event.target.value)}
                 type="text"
                 value={playlist.name}
@@ -336,6 +345,9 @@ export function PlaylistsPage() {
 
             <button disabled={isBusy || playlist.id === "default"} onClick={() => void deleteSelectedPlaylist()} type="button">
               Delete Playlist
+            </button>
+            <button disabled={isBusy} onClick={() => void savePlaylist()} type="button">
+              Save Playlist
             </button>
           </div>
 

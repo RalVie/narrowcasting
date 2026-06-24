@@ -268,7 +268,10 @@ export async function savePlaylist(value: unknown): Promise<Playlist> {
   const incoming = value as Partial<Playlist>;
   const playlist: PlaylistRecord = {
     id: defaultPlaylistId,
-    name: existingPlaylist?.name ?? "Default Playlist",
+    name:
+      typeof incoming.name === "string" && incoming.name.trim()
+        ? incoming.name.trim()
+        : existingPlaylist?.name ?? "Default Playlist",
     version: (existingPlaylist?.version ?? 0) + 1,
     updatedAt: new Date().toISOString(),
     items: normalizePlaylistItems(incoming.items)
@@ -278,6 +281,8 @@ export async function savePlaylist(value: unknown): Promise<Playlist> {
   await writePlaylists([playlist, ...otherPlaylists]);
 
   return {
+    id: playlist.id,
+    name: playlist.name,
     version: playlist.version,
     updatedAt: playlist.updatedAt,
     items: playlist.items
@@ -290,6 +295,8 @@ export async function getPlaylistOrDefault(): Promise<Playlist> {
 
   if (playlist) {
     return {
+      id: playlist.id,
+      name: playlist.name,
       version: playlist.version,
       updatedAt: playlist.updatedAt,
       items: playlist.items
@@ -297,6 +304,8 @@ export async function getPlaylistOrDefault(): Promise<Playlist> {
   }
 
   return {
+    id: defaultPlaylistId,
+    name: "Default Playlist",
     version: 0,
     updatedAt: "",
     items: []

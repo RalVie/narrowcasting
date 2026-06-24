@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiUrl } from "../api/apiBase";
 import type { PlaylistRecord } from "../playlistTypes";
 import type { Program } from "../programTypes";
@@ -8,10 +8,40 @@ const refreshIntervalMs = 10_000;
 export function ProgramsPage() {
   const [playlists, setPlaylists] = useState<PlaylistRecord[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
+  const [selectedProgramId, setSelectedProgramId] = useState("default-program");
+  const [program, setProgram] = useState<Program>({
+    id: "default-program",
+    name: "Default Program",
+    playlistIds: ["default"]
+  });
   const [status, setStatus] = useState("Loading programs...");
   const [isBusy, setIsBusy] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const selectedProgramIdRef = useRef("default-program");
+  const isDirtyRef = useRef(false);
 
-  async function loadData() {
+  function markDirty() {
+    isDirtyRef.current = true;
+    setIsDirty(true);
+  }
+
+  function selectProgram(programRecord: Program) {
+    selectedProgramIdRef.current = programRecord.id;
+    setSelectedProgramId(programRecord.id);
+    setProgram(programRecord);
+  }
+
+  async function loadData(options: { force?: boolean } = {}) {
+    if (isDirtyRef.current && !options.force) {
+      const playlistResponse = await fetch(apiUrl("/api/playlists")).catch(() => null);
+
+      if (playlistResponse?.ok) {
+        setPlaylists((await playlistResponse.json()) as PlaylistRecord[]);
+      }
+
+      return;
+    }
+
     setIsBusy(true);
 
     try {
@@ -24,8 +54,22 @@ export function ProgramsPage() {
         throw new Error("program data unavailable");
       }
 
-      setPlaylists((await playlistResponse.json()) as PlaylistRecord[]);
-      setPrograms((await programResponse.json()) as Program[]);
+      const playlistBody = (await playlistResponse.json()) as PlaylistRecord[];
+      const programBody = (await programResponse.json()) as Program[];
+      const selectedProgram =
+        programBody.find((item) => item.id === selectedProgramIdRef.current) ??
+        programBody.find((item) => item.id === "default-program") ??
+        programBody[0];
+
+      setPlaylists(playlistBody);
+      setPrograms(programBody);
+
+      if (selectedProgram) {
+        selectProgram(selectedProgram);
+      }
+
+      isDirtyRef.current = false;
+      setIsDirty(false);
       setStatus("Programs loaded.");
     } catch (error) {
       setStatus(error instanceof Error ? `Unable to load programs: ${error.message}` : "Unable to load programs.");
@@ -49,8 +93,12 @@ export function ProgramsPage() {
         throw new Error(`HTTP ${response.status}`);
       }
 
-      await loadData();
-      setStatus("Program created.");
+      const body = (await response.json()) as Program;
+      selectProgram(body);
+      isDirtyRef.current = false;
+      setIsDirty(false);
+      await loadData({ force: true });
+      setStatus(`${body.name} created.`);
     } catch (error) {
       setStatus(error instanceof Error ? `Create failed: ${error.message}` : "Create failed.");
     } finally {
@@ -58,7 +106,7 @@ export function ProgramsPage() {
     }
   }
 
-  async function saveProgram(program: Program) {
+  async function saveProgram() {
     setIsBusy(true);
     setStatus(`Saving ${program.name}...`);
 
@@ -73,7 +121,11 @@ export function ProgramsPage() {
         throw new Error(`HTTP ${response.status}`);
       }
 
-      await loadData();
+      const body = (await response.json()) as Program;
+      selectProgram(body);
+      isDirtyRef.current = false;
+      setIsDirty(false);
+      await loadData({ force: true });
       setStatus(`${program.name} saved.`);
       window.dispatchEvent(new CustomEvent("narrowcasting:playlist-saved"));
     } catch (error) {
@@ -83,7 +135,7 @@ export function ProgramsPage() {
     }
   }
 
-  async function deleteProgram(program: Program) {
+  async function deleteProgram() {
     setIsBusy(true);
     setStatus(`Deleting ${program.name}...`);
 
@@ -96,7 +148,11 @@ export function ProgramsPage() {
         throw new Error(`HTTP ${response.status}`);
       }
 
-      await loadData();
+      selectedProgramIdRef.current = "default-program";
+      setSelectedProgramId("default-program");
+      isDirtyRef.current = false;
+      setIsDirty(false);
+      await loadData({ force: true });
       setStatus(`${program.name} deleted.`);
       window.dispatchEvent(new CustomEvent("narrowcasting:playlist-saved"));
     } catch (error) {
@@ -106,32 +162,31 @@ export function ProgramsPage() {
     }
   }
 
-  function updateProgram(programId: string, updater: (program: Program) => Program) {
-    setPrograms((currentPrograms) =>
-      currentPrograms.map((program) => (program.id === programId ? updater(program) : program))
-    );
+  function updateProgram(updater: (program: Program) => Program) {
+    setProgram((currentProgram) => updater(currentProgram));
+    markDirty();
   }
 
-  function addPlaylist(programId: string, playlistId: string) {
+  function addPlaylist(playlistId: string) {
     if (!playlistId) {
       return;
     }
 
-    updateProgram(programId, (program) => ({
+    updateProgram((program) => ({
       ...program,
       playlistIds: [...program.playlistIds, playlistId]
     }));
   }
 
-  function removePlaylist(programId: string, index: number) {
-    updateProgram(programId, (program) => ({
+  function removePlaylist(index: number) {
+    updateProgram((program) => ({
       ...program,
       playlistIds: program.playlistIds.filter((_, playlistIndex) => playlistIndex !== index)
     }));
   }
 
-  function movePlaylist(programId: string, index: number, direction: -1 | 1) {
-    updateProgram(programId, (program) => {
+  function movePlaylist(index: number, direction: -1 | 1) {
+    updateProgram((program) => {
       const nextIndex = index + direction;
 
       if (nextIndex < 0 || nextIndex >= program.playlistIds.length) {
@@ -167,78 +222,101 @@ export function ProgramsPage() {
           <button disabled={isBusy} onClick={() => void createProgram()} type="button">
             Create Program
           </button>
-          <button disabled={isBusy} onClick={() => void loadData()} type="button">
+          <button disabled={isBusy} onClick={() => void loadData({ force: true })} type="button">
             Refresh
           </button>
         </div>
       </div>
 
-      <p className="status-text">{status}</p>
+      <p className="status-text">
+        {status}
+        {isDirty ? " Unsaved changes." : ""}
+      </p>
 
       <div className="program-list">
-        {programs.map((program) => (
-          <article className="program-card" key={program.id}>
-            <div className="program-card-header">
-              <label>
-                Program name
-                <input
-                  onChange={(event) =>
-                    updateProgram(program.id, (currentProgram) => ({
-                      ...currentProgram,
-                      name: event.target.value
-                    }))
-                  }
-                  type="text"
-                  value={program.name}
-                />
-              </label>
-              <div className="playlist-actions">
-                <button disabled={isBusy} onClick={() => void saveProgram(program)} type="button">
-                  Save
-                </button>
-                <button disabled={isBusy} onClick={() => void deleteProgram(program)} type="button">
-                  Delete
-                </button>
-              </div>
-            </div>
-
-            <div className="program-playlists">
-              {program.playlistIds.length === 0 ? <p>Empty program.</p> : null}
-              {program.playlistIds.map((playlistId, index) => (
-                <div className="program-playlist-row" key={`${program.id}-${playlistId}-${index}`}>
-                  <strong>{playlistName(playlistId)}</strong>
-                  <div className="playlist-actions">
-                    <button disabled={isBusy || index === 0} onClick={() => movePlaylist(program.id, index, -1)} type="button">
-                      Up
-                    </button>
-                    <button
-                      disabled={isBusy || index === program.playlistIds.length - 1}
-                      onClick={() => movePlaylist(program.id, index, 1)}
-                      type="button"
-                    >
-                      Down
-                    </button>
-                    <button disabled={isBusy} onClick={() => removePlaylist(program.id, index)} type="button">
-                      Remove
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
+        <article className="program-card" key={program.id}>
+          <div className="program-card-header">
             <label>
-              Add playlist
-              <select disabled={isBusy} onChange={(event) => addPlaylist(program.id, event.target.value)} value="">
-                <option value="">Choose playlist</option>
-                {playlists.map((playlist) => (
-                  <option key={playlist.id} value={playlist.id}>
-                    {playlist.name}
+              Edit program
+              <select
+                disabled={isBusy}
+                onChange={(event) => {
+                  const nextProgram = programs.find((item) => item.id === event.target.value);
+
+                  if (nextProgram) {
+                    selectProgram(nextProgram);
+                    isDirtyRef.current = false;
+                    setIsDirty(false);
+                  }
+                }}
+                value={selectedProgramId}
+              >
+                {programs.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
                   </option>
                 ))}
               </select>
             </label>
-          </article>
-        ))}
+            <label>
+              Program name
+              <input
+                onChange={(event) =>
+                  updateProgram((currentProgram) => ({
+                    ...currentProgram,
+                    name: event.target.value
+                  }))
+                }
+                type="text"
+                value={program.name}
+              />
+            </label>
+            <div className="playlist-actions">
+              <button disabled={isBusy} onClick={() => void saveProgram()} type="button">
+                Save Program
+              </button>
+              <button disabled={isBusy} onClick={() => void deleteProgram()} type="button">
+                Delete
+              </button>
+            </div>
+          </div>
+
+          <div className="program-playlists">
+            {program.playlistIds.length === 0 ? <p>Empty program.</p> : null}
+            {program.playlistIds.map((playlistId, index) => (
+              <div className="program-playlist-row" key={`${program.id}-${playlistId}-${index}`}>
+                <strong>{playlistName(playlistId)}</strong>
+                <div className="playlist-actions">
+                  <button disabled={isBusy || index === 0} onClick={() => movePlaylist(index, -1)} type="button">
+                    Up
+                  </button>
+                  <button
+                    disabled={isBusy || index === program.playlistIds.length - 1}
+                    onClick={() => movePlaylist(index, 1)}
+                    type="button"
+                  >
+                    Down
+                  </button>
+                  <button disabled={isBusy} onClick={() => removePlaylist(index)} type="button">
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <label>
+            Add playlist
+            <select disabled={isBusy} onChange={(event) => addPlaylist(event.target.value)} value="">
+              <option value="">Choose playlist</option>
+              {playlists.map((playlist) => (
+                <option key={playlist.id} value={playlist.id}>
+                  {playlist.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </article>
       </div>
     </section>
   );

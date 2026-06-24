@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiUrl } from "../api/apiBase";
 import type { DayOfWeek, Program, SchedulerBlock, SchedulerConfig } from "../programTypes";
 
@@ -40,8 +40,32 @@ export function SchedulerPage() {
   });
   const [status, setStatus] = useState("Loading scheduler...");
   const [isBusy, setIsBusy] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const [selectedBlockId, setSelectedBlockId] = useState("");
+  const isDirtyRef = useRef(false);
+  const selectedBlockIdRef = useRef("");
 
-  async function loadData() {
+  function markDirty() {
+    isDirtyRef.current = true;
+    setIsDirty(true);
+  }
+
+  function selectBlock(blockId: string) {
+    selectedBlockIdRef.current = blockId;
+    setSelectedBlockId(blockId);
+  }
+
+  async function loadData(options: { force?: boolean } = {}) {
+    if (isDirtyRef.current && !options.force) {
+      const programResponse = await fetch(apiUrl("/api/programs")).catch(() => null);
+
+      if (programResponse?.ok) {
+        setPrograms((await programResponse.json()) as Program[]);
+      }
+
+      return;
+    }
+
     setIsBusy(true);
 
     try {
@@ -54,8 +78,17 @@ export function SchedulerPage() {
         throw new Error("scheduler data unavailable");
       }
 
-      setPrograms((await programResponse.json()) as Program[]);
-      setScheduler((await schedulerResponse.json()) as SchedulerConfig);
+      const programBody = (await programResponse.json()) as Program[];
+      const schedulerBody = (await schedulerResponse.json()) as SchedulerConfig;
+      const selectedBlock =
+        schedulerBody.blocks.find((block) => block.id === selectedBlockIdRef.current) ??
+        schedulerBody.blocks[0];
+
+      setPrograms(programBody);
+      setScheduler(schedulerBody);
+      selectBlock(selectedBlock?.id ?? "");
+      isDirtyRef.current = false;
+      setIsDirty(false);
       setStatus("Scheduler loaded.");
     } catch (error) {
       setStatus(error instanceof Error ? `Unable to load scheduler: ${error.message}` : "Unable to load scheduler.");
@@ -79,7 +112,11 @@ export function SchedulerPage() {
         throw new Error(`HTTP ${response.status}`);
       }
 
-      setScheduler((await response.json()) as SchedulerConfig);
+      const body = (await response.json()) as SchedulerConfig;
+      setScheduler(body);
+      selectBlock(body.blocks.find((block) => block.id === selectedBlockIdRef.current)?.id ?? body.blocks[0]?.id ?? "");
+      isDirtyRef.current = false;
+      setIsDirty(false);
       setStatus("Scheduler saved.");
       window.dispatchEvent(new CustomEvent("narrowcasting:playlist-saved"));
     } catch (error) {
@@ -97,10 +134,13 @@ export function SchedulerPage() {
       return;
     }
 
+    const block = createBlock(programId);
     setScheduler((currentScheduler) => ({
       ...currentScheduler,
-      blocks: [...currentScheduler.blocks, createBlock(programId)]
+      blocks: [...currentScheduler.blocks, block]
     }));
+    selectBlock(block.id);
+    markDirty();
   }
 
   function updateBlock(blockId: string, updater: (block: SchedulerBlock) => SchedulerBlock) {
@@ -108,6 +148,7 @@ export function SchedulerPage() {
       ...currentScheduler,
       blocks: currentScheduler.blocks.map((block) => (block.id === blockId ? updater(block) : block))
     }));
+    markDirty();
   }
 
   function updateBlockField(
@@ -156,6 +197,9 @@ export function SchedulerPage() {
       ...currentScheduler,
       blocks: currentScheduler.blocks.filter((block) => block.id !== blockId)
     }));
+    const remainingBlocks = scheduler.blocks.filter((block) => block.id !== blockId);
+    selectBlock(remainingBlocks[0]?.id ?? "");
+    markDirty();
   }
 
   function moveBlock(index: number, direction: -1 | 1) {
@@ -172,6 +216,7 @@ export function SchedulerPage() {
 
       return { ...currentScheduler, blocks };
     });
+    markDirty();
   }
 
   useEffect(() => {
@@ -191,22 +236,30 @@ export function SchedulerPage() {
           <button disabled={isBusy} onClick={addBlock} type="button">
             Add Block
           </button>
-          <button disabled={isBusy} onClick={() => void saveScheduler()} type="button">
-            Save
-          </button>
-          <button disabled={isBusy} onClick={() => void loadData()} type="button">
+          <button disabled={isBusy} onClick={() => void loadData({ force: true })} type="button">
             Refresh
           </button>
         </div>
       </div>
 
-      <p className="status-text">{status}</p>
+      <p className="status-text">
+        {status}
+        {isDirty ? " Unsaved changes." : ""}
+      </p>
 
       <div className="program-list">
         {scheduler.blocks.length === 0 ? <p>No scheduler blocks. The default playlist remains active.</p> : null}
         {scheduler.blocks.map((block, index) => (
           <article className="program-card" key={block.id}>
             <div className="program-card-header">
+              <label>
+                Edit block
+                <input
+                  checked={selectedBlockId === block.id}
+                  onChange={() => selectBlock(block.id)}
+                  type="radio"
+                />
+              </label>
               <label>
                 Program
                 <select
@@ -234,6 +287,11 @@ export function SchedulerPage() {
                 <button disabled={isBusy} onClick={() => removeBlock(block.id)} type="button">
                   Remove
                 </button>
+                {selectedBlockId === block.id ? (
+                  <button disabled={isBusy} onClick={() => void saveScheduler()} type="button">
+                    Save Scheduler
+                  </button>
+                ) : null}
               </div>
             </div>
 
