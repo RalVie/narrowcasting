@@ -124,8 +124,18 @@ The dashboard includes:
 
 - A System Status page that refreshes every 10 seconds.
 - A read-only Schedule Preview page that reads the server schedule and displays item type, filename, and duration.
-- A Media Library page for image upload, thumbnail preview, refresh, and delete.
+- A Media Library page for image/video upload, thumbnail preview, refresh, and delete.
 - A Playlists page for adding media, removing items, setting duration, reordering with up/down buttons, and saving the single playlist.
+
+Media upload limits:
+
+- Images: 20 MB.
+- Videos: 500 MB.
+
+Supported media types:
+
+- Images: `jpg`, `jpeg`, `png`, `webp`.
+- Videos: `mp4`, `webm`.
 
 When opened from another device, the dashboard calls the server API at the dashboard hostname on port `3000`. For example, opening `http://PI-IP:5173` makes API calls to `http://PI-IP:3000`.
 
@@ -157,9 +167,9 @@ Default development ports:
 1. Start the server.
 2. Start the dashboard.
 3. Open the Media Library page at `http://localhost:5173`.
-4. Upload an image with the file picker.
-5. Confirm the image appears in the media library with thumbnail, filename, type, and size.
-6. Confirm the image exists in `server/public/media/`.
+4. Upload an image or video with the file picker.
+5. Confirm the media appears in the media library with preview, filename, type, and size.
+6. Confirm the file exists in `server/public/media/`.
 7. Reference that filename from `server/src/schedule/staticSchedule.ts`.
 8. Start the agent.
 9. Confirm the agent writes `player/public/data/schedule.json`.

@@ -10,10 +10,24 @@ import {
   listMedia
 } from "../../media/mediaStore.js";
 
+const imageUploadLimitBytes = 20 * 1024 * 1024;
+const videoUploadLimitBytes = 500 * 1024 * 1024;
+const imageTooLargeMessage = "Image is too large. Maximum allowed size is 20 MB.";
+const videoTooLargeMessage = "Video is too large. Maximum allowed size is 500 MB.";
+
+function isMultipartSizeLimitError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const errorCode = (error as { code?: string }).code;
+  return errorCode === "FST_REQ_FILE_TOO_LARGE" || error.message.toLowerCase().includes("too large");
+}
+
 export const mediaRoutes: FastifyPluginAsync = async (app) => {
   app.register(multipart, {
     limits: {
-      fileSize: 20 * 1024 * 1024,
+      fileSize: videoUploadLimitBytes,
       files: 1
     }
   });
@@ -21,24 +35,34 @@ export const mediaRoutes: FastifyPluginAsync = async (app) => {
   app.get("/api/media", async () => listMedia());
 
   app.post("/api/media", async (request, reply) => {
-    const uploadedFile = await request.file();
-
-    if (!uploadedFile) {
-      return reply.code(400).send({ error: "missing media upload" });
-    }
-
-    if (
-      !uploadedFile.mimetype.startsWith("image/") &&
-      uploadedFile.mimetype !== "video/mp4" &&
-      uploadedFile.mimetype !== "video/webm"
-    ) {
-      return reply.code(400).send({ error: "only image and mp4/webm video uploads are supported" });
-    }
-
     try {
-      const item = await createMedia(uploadedFile.filename, await uploadedFile.toBuffer());
+      const uploadedFile = await request.file();
+
+      if (!uploadedFile) {
+        return reply.code(400).send({ error: "missing media upload" });
+      }
+
+      const isImageUpload = uploadedFile.mimetype.startsWith("image/");
+      const isVideoUpload =
+        uploadedFile.mimetype === "video/mp4" || uploadedFile.mimetype === "video/webm";
+
+      if (!isImageUpload && !isVideoUpload) {
+        return reply.code(400).send({ error: "only image and mp4/webm video uploads are supported" });
+      }
+
+      const content = await uploadedFile.toBuffer();
+
+      if (isImageUpload && content.byteLength > imageUploadLimitBytes) {
+        return reply.code(413).send({ error: imageTooLargeMessage });
+      }
+
+      const item = await createMedia(uploadedFile.filename, content);
       return reply.code(201).send(item);
     } catch (error) {
+      if (isMultipartSizeLimitError(error)) {
+        return reply.code(413).send({ error: videoTooLargeMessage });
+      }
+
       return reply.code(400).send({
         error: error instanceof Error ? error.message : "media upload failed"
       });

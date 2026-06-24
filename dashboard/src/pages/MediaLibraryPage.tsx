@@ -17,6 +17,21 @@ function formatFileSize(size: number) {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+async function readApiError(response: Response) {
+  const body: unknown = await response.json().catch(() => null);
+
+  if (
+    body &&
+    typeof body === "object" &&
+    "error" in body &&
+    typeof (body as { error: unknown }).error === "string"
+  ) {
+    return (body as { error: string }).error;
+  }
+
+  return `HTTP ${response.status}`;
+}
+
 export function MediaLibraryPage() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [items, setItems] = useState<MediaItem[]>([]);
@@ -62,13 +77,13 @@ export function MediaLibraryPage() {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        throw new Error(await readApiError(response));
       }
 
       setStatus(`${file.name} uploaded.`);
       await loadMedia();
     } catch (error) {
-      setStatus(error instanceof Error ? `Upload failed: ${error.message}` : "Upload failed.");
+      setStatus(error instanceof Error ? error.message : "Upload failed.");
     } finally {
       setIsBusy(false);
       event.target.value = "";
