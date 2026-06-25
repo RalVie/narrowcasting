@@ -97,13 +97,13 @@ h1 {
 .theme-viewport {
   position: fixed;
   inset: 0;
+  display: grid;
+  place-items: center;
   overflow: hidden;
 }
 
 .theme-canvas {
-  position: absolute;
-  top: 50%;
-  left: 50%;
+  position: relative;
   overflow: hidden;
   transform-origin: center;
 }

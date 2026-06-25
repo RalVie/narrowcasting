@@ -3,6 +3,13 @@ import type { Schedule } from "./schedule/types";
 
 const reloadIntervalMs = 30_000;
 
+function getViewportSize() {
+  return {
+    width: window.innerWidth,
+    height: window.innerHeight
+  };
+}
+
 function isSchedule(value: unknown): value is Schedule {
   if (!value || typeof value !== "object") {
     return false;
@@ -21,6 +28,7 @@ export function PlayerApp() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [playbackEpoch, setPlaybackEpoch] = useState(0);
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
+  const [viewportSize, setViewportSize] = useState(getViewportSize);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,6 +68,17 @@ export function PlayerApp() {
     return () => {
       cancelled = true;
       window.clearInterval(reloadTimer);
+    };
+  }, []);
+
+  useEffect(() => {
+    function handleResize() {
+      setViewportSize(getViewportSize());
+    }
+
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
     };
   }, []);
 
@@ -176,7 +195,10 @@ export function PlayerApp() {
   const programRegion = theme?.regions.find((region) => region.type === "program");
 
   if (theme && programRegion) {
-    const scale = `min(100vw / ${theme.canvasWidth}, 100vh / ${theme.canvasHeight})`;
+    const scale = Math.min(
+      viewportSize.width / theme.canvasWidth,
+      viewportSize.height / theme.canvasHeight
+    );
 
     return (
       <main className="player-shell themed-player-shell">
@@ -193,7 +215,7 @@ export function PlayerApp() {
               width: `${theme.canvasWidth}px`,
               height: `${theme.canvasHeight}px`,
               backgroundColor: theme.backgroundColor,
-              transform: `translate(-50%, -50%) scale(calc(${scale}))`
+              transform: `scale(${Number.isFinite(scale) ? scale : 1})`
             }}
           >
             <div
