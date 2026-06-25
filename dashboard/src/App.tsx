@@ -5,6 +5,7 @@ import { MediaLibraryPage } from "./pages/MediaLibraryPage";
 import { ProgramsPage } from "./pages/ProgramsPage";
 import { PlaylistsPage } from "./pages/PlaylistsPage";
 import { SchedulePreviewPage } from "./pages/SchedulePreviewPage";
+import { SchedulerDiagnosticsPage } from "./pages/SchedulerDiagnosticsPage";
 import { SchedulerPage } from "./pages/SchedulerPage";
 import { ScreensPage } from "./pages/ScreensPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -36,6 +37,7 @@ const pageGroups = [
       { label: "System Status", component: SystemStatusPage },
       { label: "Schedule Preview", component: SchedulePreviewPage },
       { label: "Scheduler", component: SchedulerPage },
+      { label: "Scheduler Diagnostics", component: SchedulerDiagnosticsPage },
       { label: "Advanced Assignments", component: AssignmentsPage },
       { label: "General", component: SettingsPage }
     ]
