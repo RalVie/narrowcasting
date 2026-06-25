@@ -1153,8 +1153,32 @@ button:disabled {
   background: #ffffff;
 }
 
+.diagnostics-candidate-card.selected {
+  border-color: #4777d9;
+  background: #f3f7ff;
+}
+
 .diagnostics-candidate-card strong {
   overflow-wrap: anywhere;
+}
+
+.diagnostics-selected-mark,
+.diagnostics-rejected-mark {
+  justify-self: start;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.diagnostics-selected-mark {
+  color: #0f2f72;
+  background: #dce9ff;
+}
+
+.diagnostics-rejected-mark {
+  color: #647064;
+  background: #edf1ea;
 }
 
 .diagnostics-warning,

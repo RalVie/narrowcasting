@@ -12,6 +12,7 @@ export interface SchedulerCandidate {
   targetId: string;
   programId: string;
   enabled: boolean;
+  priority: number;
   metadata: {
     assignmentId?: string;
     assignmentSource?: Assignment["source"];

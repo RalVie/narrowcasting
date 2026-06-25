@@ -20,6 +20,7 @@ export interface SchedulerCandidate {
   targetId: string;
   programId: string;
   enabled: boolean;
+  priority: number;
   metadata: {
     assignmentId: string;
     assignmentSource: Assignment["source"];
@@ -50,13 +51,16 @@ function assignmentToCandidate(
   assignment: Assignment,
   matchedGroup?: ScreenGroup
 ): SchedulerCandidate {
+  const targetType = assignment.targetType === "SCREEN" ? "screen" : "group";
+
   return {
     id: assignment.id,
     sourceType: assignment.source === "campaign" ? "campaign" : "assignment",
-    targetType: assignment.targetType === "SCREEN" ? "screen" : "group",
+    targetType,
     targetId: assignment.targetId,
     programId: assignment.programId,
     enabled: assignment.enabled,
+    priority: targetType === "screen" ? 200 : 100,
     metadata: {
       assignmentId: assignment.id,
       assignmentSource: assignment.source,
@@ -67,25 +71,22 @@ function assignmentToCandidate(
 }
 
 function chooseWinningCandidate(candidates: SchedulerCandidate[]) {
-  const screenCandidate = candidates.find(
-    (candidate) => candidate.enabled && candidate.targetType === "screen"
-  );
+  const validCandidates = candidates
+    .map((candidate, index) => ({ candidate, index }))
+    .filter((item) => item.candidate.enabled)
+    .sort((left, right) => {
+      if (right.candidate.priority !== left.candidate.priority) {
+        return right.candidate.priority - left.candidate.priority;
+      }
 
-  if (screenCandidate) {
+      return left.index - right.index;
+    });
+  const winner = validCandidates[0]?.candidate ?? null;
+
+  if (winner) {
     return {
-      candidate: screenCandidate,
-      reason: "screen candidate wins over group candidate"
-    };
-  }
-
-  const groupCandidate = candidates.find(
-    (candidate) => candidate.enabled && candidate.targetType === "group"
-  );
-
-  if (groupCandidate) {
-    return {
-      candidate: groupCandidate,
-      reason: "group candidate selected because no screen candidate matched"
+      candidate: winner,
+      reason: `selected highest-priority valid candidate: ${winner.priority}`
     };
   }
 
@@ -112,7 +113,16 @@ async function loadResolution(screenId: string): Promise<SchedulerResolution> {
 
       return matchingGroupById.has(assignment.targetId);
     })
-    .map((assignment) => assignmentToCandidate(assignment, matchingGroupById.get(assignment.targetId)));
+    .map((assignment) => assignmentToCandidate(assignment, matchingGroupById.get(assignment.targetId)))
+    .map((candidate, index) => ({ candidate, index }))
+    .sort((left, right) => {
+      if (right.candidate.priority !== left.candidate.priority) {
+        return right.candidate.priority - left.candidate.priority;
+      }
+
+      return left.index - right.index;
+    })
+    .map((item) => item.candidate);
   const winner = chooseWinningCandidate(candidates);
 
   return {

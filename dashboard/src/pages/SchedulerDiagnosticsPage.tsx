@@ -36,7 +36,31 @@ function describeCandidate(candidate: SchedulerCandidate | null) {
     return "No winning candidate";
   }
 
-  return `${candidate.sourceType} / ${candidate.targetType} / ${candidate.programId}`;
+  return `Priority ${candidate.priority} / ${candidate.sourceType} / ${candidate.targetType}`;
+}
+
+function describeCandidateDecision(candidate: SchedulerCandidate, winner: SchedulerCandidate | null) {
+  if (!candidate.enabled) {
+    return "Rejected: disabled";
+  }
+
+  if (!winner) {
+    return "Rejected: no winner selected";
+  }
+
+  if (candidate.id === winner.id) {
+    return "Selected";
+  }
+
+  if (candidate.priority < winner.priority) {
+    return "Rejected: lower priority";
+  }
+
+  if (candidate.priority === winner.priority) {
+    return "Rejected: equal priority, deterministic ordering selected another candidate";
+  }
+
+  return "Rejected";
 }
 
 export function SchedulerDiagnosticsPage() {
@@ -67,6 +91,7 @@ export function SchedulerDiagnosticsPage() {
   const warnings = [
     result && !result.winningCandidate ? "No candidate matched this screen." : null,
     result?.winningCandidate && !result.resolvedProgram ? "Winning candidate references a missing program." : null,
+    result?.winningCandidate ? `Winner selected at priority ${result.winningCandidate.priority}.` : null,
     result?.resolvedSchedule.assignmentStatus === "unassigned" ? "Resolved schedule is unassigned." : null
   ].filter((message): message is string => message !== null);
 
@@ -142,11 +167,18 @@ export function SchedulerDiagnosticsPage() {
     const program = programMap.get(candidate.programId);
     const campaignId = getCampaignId(candidate);
     const campaign = campaignId ? campaignMap.get(campaignId) : null;
+    const decision = describeCandidateDecision(candidate, result?.winningCandidate ?? null);
+    const isSelected = candidate.id === result?.winningCandidate?.id;
 
     return (
-      <article className="diagnostics-candidate-card" key={candidate.id}>
+      <article className={`diagnostics-candidate-card${isSelected ? " selected" : ""}`} key={candidate.id}>
         <strong>{candidate.id}</strong>
+        <span className={isSelected ? "diagnostics-selected-mark" : "diagnostics-rejected-mark"}>
+          {decision}
+        </span>
         <dl className="diagnostics-meta">
+          <dt>Priority</dt>
+          <dd>{candidate.priority}</dd>
           <dt>Source</dt>
           <dd>{candidate.sourceType}</dd>
           <dt>Target</dt>
@@ -255,6 +287,8 @@ export function SchedulerDiagnosticsPage() {
               </dd>
               <dt>Assignment</dt>
               <dd>{result.winningCandidate?.metadata.assignmentId ?? "-"}</dd>
+              <dt>Priority</dt>
+              <dd>{result.winningCandidate?.priority ?? "-"}</dd>
               <dt>Campaign</dt>
               <dd>{winningCampaign?.name ?? winningCampaignId ?? "-"}</dd>
             </dl>
@@ -294,7 +328,7 @@ export function SchedulerDiagnosticsPage() {
 
           <section className="operator-panel diagnostics-wide-panel">
             <div className="operator-panel-header">
-              <h3>Candidates</h3>
+              <h3>Ordered Candidates</h3>
               <span>{result.candidates.length}</span>
             </div>
             {result.candidates.length === 0 ? <p className="operator-empty">No candidates matched this screen.</p> : null}
