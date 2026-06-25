@@ -49,6 +49,7 @@ export interface Theme {
 const themesPath = resolve(process.cwd(), "data", "themes.json");
 const defaultThemeId = "default-fullscreen";
 const colorPattern = /^#[0-9a-fA-F]{6}$/;
+const transparentColor = "transparent";
 const allowedRegionTypes = new Set<ThemeRegionType>(["program", "logo", "image", "text", "clock"]);
 const allowedObjectFits = new Set<ThemeObjectFit>(["contain", "cover", "stretch", "center"]);
 const allowedTextAlignments = new Set<ThemeTextAlign>(["left", "center", "right"]);
@@ -105,6 +106,22 @@ function toOpacity(value: unknown) {
   return Math.min(Math.max(toNumber(value, 1), 0), 1);
 }
 
+function normalizeColor(value: unknown, fallback?: string) {
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+
+    if (normalized === transparentColor) {
+      return transparentColor;
+    }
+
+    if (colorPattern.test(value)) {
+      return value;
+    }
+  }
+
+  return fallback;
+}
+
 function normalizeRegion(value: unknown, index: number): ThemeRegion | null {
   if (!value || typeof value !== "object") {
     return null;
@@ -144,14 +161,8 @@ function normalizeRegion(value: unknown, index: number): ThemeRegion | null {
     bold: toBoolean(candidate.bold, false),
     italic: toBoolean(candidate.italic, false),
     align,
-    textColor:
-      typeof candidate.textColor === "string" && colorPattern.test(candidate.textColor)
-        ? candidate.textColor
-        : undefined,
-    backgroundColor:
-      typeof candidate.backgroundColor === "string" && colorPattern.test(candidate.backgroundColor)
-        ? candidate.backgroundColor
-        : undefined,
+    textColor: normalizeColor(candidate.textColor),
+    backgroundColor: normalizeColor(candidate.backgroundColor),
     padding: Math.max(toNumber(candidate.padding, 0), 0),
     cornerRadius: Math.max(toNumber(candidate.cornerRadius, 0), 0),
     clockFormat
@@ -189,10 +200,7 @@ function normalizeTheme(value: unknown, fallbackIndex: number): Theme | null {
     orientation: candidate.orientation === "portrait" ? "portrait" : "landscape",
     canvasWidth,
     canvasHeight,
-    backgroundColor:
-      typeof candidate.backgroundColor === "string" && colorPattern.test(candidate.backgroundColor)
-        ? candidate.backgroundColor
-        : defaultTheme.backgroundColor,
+    backgroundColor: normalizeColor(candidate.backgroundColor, defaultTheme.backgroundColor) ?? defaultTheme.backgroundColor,
     backgroundMediaId:
       typeof candidate.backgroundMediaId === "string" && candidate.backgroundMediaId.trim()
         ? candidate.backgroundMediaId.trim()

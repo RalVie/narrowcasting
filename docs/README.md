@@ -111,6 +111,8 @@ The player scales the virtual canvas to the actual screen. Physical display reso
 
 Theme layouts are stored as a generic `regions[]` collection. The dashboard editor currently supports Program, Logo, Image, Text, and Clock regions. Logo and Image regions use image files from the Media Library. Text regions render static text. Clock regions render local time dynamically without a server dependency.
 
+Transparent backgrounds are stored as the string `transparent`. Existing saved hex colors such as `#000000` remain compatible.
+
 Player rendering order is:
 
 1. Background

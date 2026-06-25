@@ -149,6 +149,51 @@ function isSupportedThemeImage(item: MediaItem) {
   return item.type === "image" && extension !== undefined && supportedThemeImageExtensions.has(extension);
 }
 
+function isTransparentColor(value: string | undefined) {
+  return value?.toLowerCase() === "transparent";
+}
+
+function getColorInputValue(value: string | undefined, fallback = "#000000") {
+  return value && /^#[0-9a-fA-F]{6}$/.test(value) ? value : fallback;
+}
+
+function ColorControl({
+  allowTransparent = false,
+  fallback = "#000000",
+  label,
+  onChange,
+  value
+}: {
+  allowTransparent?: boolean;
+  fallback?: string;
+  label: string;
+  onChange: (value: string) => void;
+  value: string | undefined;
+}) {
+  const transparent = isTransparentColor(value);
+  const colorValue = getColorInputValue(value, fallback);
+
+  return (
+    <label className="theme-color-control">
+      {label}
+      <span className="theme-color-row">
+        <span
+          aria-hidden="true"
+          className={transparent ? "theme-color-swatch transparent" : "theme-color-swatch"}
+          style={transparent ? undefined : { backgroundColor: colorValue }}
+        />
+        <input onChange={(event) => onChange(event.target.value)} type="color" value={colorValue} />
+      </span>
+      <span className="theme-color-value">{transparent ? "Transparent" : colorValue}</span>
+      {allowTransparent ? (
+        <button onClick={() => onChange("transparent")} type="button">
+          Transparent
+        </button>
+      ) : null}
+    </label>
+  );
+}
+
 export function ThemesPage() {
   const [themes, setThemes] = useState<Theme[]>([]);
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
@@ -922,16 +967,13 @@ export function ThemesPage() {
                 value={theme.name}
               />
             </label>
-            <label>
-              Background
-              <input
-                onChange={(event) =>
-                  updateTheme((currentTheme) => ({ ...currentTheme, backgroundColor: event.target.value }))
-                }
-                type="color"
-                value={theme.backgroundColor}
-              />
-            </label>
+            <ColorControl
+              allowTransparent
+              fallback="#000000"
+              label="Background"
+              onChange={(value) => updateTheme((currentTheme) => ({ ...currentTheme, backgroundColor: value }))}
+              value={theme.backgroundColor}
+            />
             <label>
               Show Grid
               <input checked={showGrid} onChange={(event) => setShowGrid(event.target.checked)} type="checkbox" />
@@ -960,7 +1002,11 @@ export function ThemesPage() {
 
           <div className="theme-canvas-frame">
             <div
-              className="theme-design-canvas"
+              className={
+                isTransparentColor(theme.backgroundColor)
+                  ? "theme-design-canvas transparent-background"
+                  : "theme-design-canvas"
+              }
               onPointerMove={updateInteraction}
               onPointerUp={endInteraction}
               onPointerLeave={endInteraction}
@@ -1204,22 +1250,19 @@ export function ThemesPage() {
                     ))}
                   </select>
                 </label>
-                <label>
-                  Text Color
-                  <input
-                    onChange={(event) => patchSelectedRegion({ textColor: event.target.value })}
-                    type="color"
-                    value={selectedRegion.textColor ?? "#ffffff"}
-                  />
-                </label>
-                <label>
-                  Background Color
-                  <input
-                    onChange={(event) => patchSelectedRegion({ backgroundColor: event.target.value })}
-                    type="color"
-                    value={selectedRegion.backgroundColor ?? "#000000"}
-                  />
-                </label>
+                <ColorControl
+                  fallback="#ffffff"
+                  label="Text Color"
+                  onChange={(value) => patchSelectedRegion({ textColor: value })}
+                  value={selectedRegion.textColor ?? "#ffffff"}
+                />
+                <ColorControl
+                  allowTransparent
+                  fallback="#000000"
+                  label="Background Color"
+                  onChange={(value) => patchSelectedRegion({ backgroundColor: value })}
+                  value={selectedRegion.backgroundColor ?? "#000000"}
+                />
                 <label>
                   Padding
                   <input
@@ -1307,22 +1350,19 @@ export function ThemesPage() {
                     ))}
                   </select>
                 </label>
-                <label>
-                  Text Color
-                  <input
-                    onChange={(event) => patchSelectedRegion({ textColor: event.target.value })}
-                    type="color"
-                    value={selectedRegion.textColor ?? "#ffffff"}
-                  />
-                </label>
-                <label>
-                  Background Color
-                  <input
-                    onChange={(event) => patchSelectedRegion({ backgroundColor: event.target.value })}
-                    type="color"
-                    value={selectedRegion.backgroundColor ?? "#000000"}
-                  />
-                </label>
+                <ColorControl
+                  fallback="#ffffff"
+                  label="Text Color"
+                  onChange={(value) => patchSelectedRegion({ textColor: value })}
+                  value={selectedRegion.textColor ?? "#ffffff"}
+                />
+                <ColorControl
+                  allowTransparent
+                  fallback="#000000"
+                  label="Background Color"
+                  onChange={(value) => patchSelectedRegion({ backgroundColor: value })}
+                  value={selectedRegion.backgroundColor ?? "#000000"}
+                />
                 <label>
                   Padding
                   <input

@@ -39,6 +39,8 @@ The player scales the virtual canvas to the real display. Physical display resol
 
 Themes store layout as a generic `regions[]` collection. The dashboard Theme Designer edits those regions through a reusable visual framework with a Layers panel, canvas selection, and a Properties panel.
 
+Transparent colors are stored as the string `transparent`. Existing hex colors such as `#000000` remain valid and continue to load normally.
+
 Supported region types:
 
 - Program: renders the active playlist/program content.
