@@ -5,7 +5,8 @@ import type { Program } from "../programTypes";
 import type {
   RejectedSchedulerCandidate,
   SchedulerCandidate,
-  SchedulerDiagnosticsResult
+  SchedulerDiagnosticsResult,
+  SchedulerResolutionTraceEntry
 } from "../schedulerDiagnosticsTypes";
 import type { ScreenRecord } from "../screenTypes";
 
@@ -83,6 +84,18 @@ function formatAssignmentSchedule(candidate: SchedulerCandidate) {
     .join(" / ");
 }
 
+function getTraceMark(status: SchedulerResolutionTraceEntry["evaluationStatus"]) {
+  if (status === "Selected") {
+    return "Selected";
+  }
+
+  if (status === "Ignored") {
+    return "Ignored";
+  }
+
+  return "Rejected";
+}
+
 export function SchedulerDiagnosticsPage() {
   const [screens, setScreens] = useState<ScreenRecord[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
@@ -108,6 +121,7 @@ export function SchedulerDiagnosticsPage() {
   const winningProgram = result?.resolvedProgram ?? (
     result?.winningCandidate ? programMap.get(result.winningCandidate.programId) ?? null : null
   );
+  const trace = result?.trace;
   const warnings = [
     result && !result.winningCandidate ? "No candidate matched this screen." : null,
     result?.winningCandidate && !result.resolvedProgram ? "Winning candidate references a missing program." : null,
@@ -262,6 +276,50 @@ export function SchedulerDiagnosticsPage() {
     );
   }
 
+  function renderTraceEntry(entry: SchedulerResolutionTraceEntry, index: number) {
+    const program = programMap.get(entry.programId);
+    const campaignId = getCampaignId(entry.candidate);
+    const campaign = campaignId ? campaignMap.get(campaignId) : null;
+    const statusLabel = getTraceMark(entry.evaluationStatus);
+    const isSelected = entry.evaluationStatus === "Selected";
+
+    return (
+      <details className={`diagnostics-trace-entry${isSelected ? " selected" : ""}`} key={`${entry.candidateId}-${index}`}>
+        <summary>
+          <span>{statusLabel}</span>
+          <strong>{entry.candidateId}</strong>
+          <small>Priority {entry.priority}</small>
+        </summary>
+        <dl className="diagnostics-meta">
+          <dt>Selection Result</dt>
+          <dd>{entry.selectionResult}</dd>
+          <dt>Rejection Reason</dt>
+          <dd>{entry.rejectionReason ?? "-"}</dd>
+          <dt>Source</dt>
+          <dd>{entry.sourceType}</dd>
+          <dt>Target</dt>
+          <dd>
+            {entry.targetType} / {entry.targetId}
+          </dd>
+          <dt>Schedule Status</dt>
+          <dd>{entry.scheduleStatus}</dd>
+          <dt>Schedule Reason</dt>
+          <dd>{entry.candidate.metadata.scheduleReason ?? "-"}</dd>
+          <dt>Assignment</dt>
+          <dd>{entry.candidate.metadata.assignmentId ?? "-"}</dd>
+          <dt>Campaign</dt>
+          <dd>{campaign?.name ?? campaignId ?? "-"}</dd>
+          <dt>Program</dt>
+          <dd>{program?.name ?? entry.programId}</dd>
+          <dt>Playlist IDs</dt>
+          <dd>{program?.playlistIds.join(", ") || "-"}</dd>
+          <dt>Assignment Schedule</dt>
+          <dd>{formatAssignmentSchedule(entry.candidate)}</dd>
+        </dl>
+      </details>
+    );
+  }
+
   return (
     <section className="page-section" id="scheduler-diagnostics">
       <div className="section-heading">
@@ -322,14 +380,20 @@ export function SchedulerDiagnosticsPage() {
               <span>{result.reason}</span>
             </div>
             <dl className="diagnostics-meta">
+              <dt>Resolved At</dt>
+              <dd>{trace?.resolvedAt ? formatDateTime(trace.resolvedAt) : formatDateTime(result.resolvedSchedule.updatedAt)}</dd>
+              <dt>Resolver Version</dt>
+              <dd>{trace?.resolverVersion ?? "-"}</dd>
               <dt>Screen ID</dt>
               <dd>{result.screenContext.screenId}</dd>
               <dt>Screen Name</dt>
               <dd>{result.screenContext.screen?.name ?? "Unknown screen"}</dd>
               <dt>Groups</dt>
               <dd>{result.screenContext.groups.map((group) => group.name).join(", ") || "-"}</dd>
-              <dt>Resolved At</dt>
-              <dd>{formatDateTime(result.resolvedSchedule.updatedAt)}</dd>
+              <dt>Candidates Found</dt>
+              <dd>{trace?.totalCandidatesDiscovered ?? result.candidates.length + (result.rejectedCandidates?.length ?? 0)}</dd>
+              <dt>Candidates Evaluated</dt>
+              <dd>{trace?.totalCandidatesEvaluated ?? result.candidates.length}</dd>
             </dl>
           </section>
 
@@ -388,6 +452,21 @@ export function SchedulerDiagnosticsPage() {
               <dt>Assigned Program</dt>
               <dd>{formatNullable(result.resolvedSchedule.assignedProgramName ?? result.resolvedSchedule.assignedProgramId)}</dd>
             </dl>
+          </section>
+
+          <section className="operator-panel diagnostics-wide-panel">
+            <div className="operator-panel-header">
+              <h3>Evaluation Timeline</h3>
+              <span>{trace?.orderedEvaluationList.length ?? 0}</span>
+            </div>
+            {!trace || trace.orderedEvaluationList.length === 0 ? (
+              <p className="operator-empty">No trace entries available.</p>
+            ) : null}
+            {trace && trace.orderedEvaluationList.length > 0 ? (
+              <div className="diagnostics-trace-list">
+                {trace.orderedEvaluationList.map(renderTraceEntry)}
+              </div>
+            ) : null}
           </section>
 
           <section className="operator-panel diagnostics-wide-panel">

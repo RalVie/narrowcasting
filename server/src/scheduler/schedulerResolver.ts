@@ -35,6 +35,40 @@ export interface RejectedSchedulerCandidate extends SchedulerCandidate {
   rejectedReason: string;
 }
 
+export type CandidateEvaluationStatus = "Selected" | "Rejected" | "Ignored";
+export type CandidateRejectionReason =
+  | "Lower priority"
+  | "Disabled"
+  | "Outside date range"
+  | "Outside daily time"
+  | "Wrong weekday"
+  | "No valid assignment"
+  | "Tie (deterministic ordering)";
+
+export interface SchedulerResolutionTraceEntry {
+  candidateId: string;
+  sourceType: CandidateSourceType;
+  targetType: CandidateTargetType;
+  targetId: string;
+  programId: string;
+  priority: number;
+  scheduleStatus: "active" | "inactive";
+  evaluationStatus: CandidateEvaluationStatus;
+  selectionResult: string;
+  rejectionReason?: CandidateRejectionReason;
+  candidate: SchedulerCandidate;
+}
+
+export interface SchedulerResolutionTrace {
+  resolvedAt: string;
+  screenId: string;
+  resolverVersion: string;
+  totalCandidatesDiscovered: number;
+  totalCandidatesEvaluated: number;
+  winningCandidate: SchedulerCandidate | null;
+  orderedEvaluationList: SchedulerResolutionTraceEntry[];
+}
+
 export interface ScreenContext {
   screenId: string;
   screen: ScreenRecord | null;
@@ -48,6 +82,7 @@ export interface SchedulerResolution {
   winningCandidate: SchedulerCandidate | null;
   reason: string;
   resolvedProgram: Program | null;
+  trace: SchedulerResolutionTrace;
 }
 
 export interface SchedulerResolutionResult extends SchedulerResolution {
@@ -202,6 +237,98 @@ function chooseWinningCandidate(candidates: SchedulerCandidate[]) {
   };
 }
 
+function toRejectionReason(reason: string): CandidateRejectionReason {
+  if (reason === "Disabled") {
+    return "Disabled";
+  }
+
+  if (reason === "Outside date range") {
+    return "Outside date range";
+  }
+
+  if (reason === "Outside daily time") {
+    return "Outside daily time";
+  }
+
+  if (reason === "Wrong weekday") {
+    return "Wrong weekday";
+  }
+
+  return "No valid assignment";
+}
+
+function buildTrace(input: {
+  screenId: string;
+  candidates: SchedulerCandidate[];
+  rejectedCandidates: RejectedSchedulerCandidate[];
+  winningCandidate: SchedulerCandidate | null;
+}): SchedulerResolutionTrace {
+  const activeTraceEntries: SchedulerResolutionTraceEntry[] = input.candidates.map((candidate) => {
+    if (input.winningCandidate?.id === candidate.id) {
+      return {
+        candidateId: candidate.id,
+        sourceType: candidate.sourceType,
+        targetType: candidate.targetType,
+        targetId: candidate.targetId,
+        programId: candidate.programId,
+        priority: candidate.priority,
+        scheduleStatus: candidate.metadata.scheduleStatus,
+        evaluationStatus: "Selected",
+        selectionResult: "Selected highest-priority valid candidate",
+        candidate
+      };
+    }
+
+    const rejectionReason: CandidateRejectionReason =
+      input.winningCandidate && candidate.priority === input.winningCandidate.priority
+        ? "Tie (deterministic ordering)"
+        : "Lower priority";
+
+    return {
+      candidateId: candidate.id,
+      sourceType: candidate.sourceType,
+      targetType: candidate.targetType,
+      targetId: candidate.targetId,
+      programId: candidate.programId,
+      priority: candidate.priority,
+      scheduleStatus: candidate.metadata.scheduleStatus,
+      evaluationStatus: "Rejected",
+      selectionResult: `Rejected: ${rejectionReason}`,
+      rejectionReason,
+      candidate
+    };
+  });
+  const rejectedTraceEntries: SchedulerResolutionTraceEntry[] = input.rejectedCandidates.map((candidate) => ({
+    candidateId: candidate.id,
+    sourceType: candidate.sourceType,
+    targetType: candidate.targetType,
+    targetId: candidate.targetId,
+    programId: candidate.programId,
+    priority: candidate.priority,
+    scheduleStatus: candidate.metadata.scheduleStatus,
+    evaluationStatus: "Rejected",
+    selectionResult: `Rejected: ${candidate.rejectedReason}`,
+    rejectionReason: toRejectionReason(candidate.rejectedReason),
+    candidate
+  }));
+
+  return {
+    resolvedAt: new Date().toISOString(),
+    screenId: input.screenId,
+    resolverVersion: "priority-time-window-v1",
+    totalCandidatesDiscovered: input.candidates.length + input.rejectedCandidates.length,
+    totalCandidatesEvaluated: input.candidates.length,
+    winningCandidate: input.winningCandidate,
+    orderedEvaluationList: [...activeTraceEntries, ...rejectedTraceEntries].sort((left, right) => {
+      if (right.priority !== left.priority) {
+        return right.priority - left.priority;
+      }
+
+      return 0;
+    })
+  };
+}
+
 async function loadResolution(screenId: string): Promise<SchedulerResolution> {
   const [screen, groups, assignments, programs] = await Promise.all([
     getScreenById(screenId),
@@ -251,6 +378,12 @@ async function loadResolution(screenId: string): Promise<SchedulerResolution> {
       rejectedReason: item.scheduleEvaluation.reason
     }));
   const winner = chooseWinningCandidate(candidates);
+  const trace = buildTrace({
+    screenId,
+    candidates,
+    rejectedCandidates,
+    winningCandidate: winner.candidate
+  });
 
   return {
     screenContext: {
@@ -264,7 +397,8 @@ async function loadResolution(screenId: string): Promise<SchedulerResolution> {
     reason: winner.reason,
     resolvedProgram: winner.candidate
       ? programs.find((program) => program.id === winner.candidate?.programId) ?? null
-      : null
+      : null,
+    trace
   };
 }
 
@@ -344,6 +478,7 @@ export async function explainSchedulerResolution(screenId: string) {
     rejectedCandidates: resolution.rejectedCandidates,
     winningCandidate: resolution.winningCandidate,
     reason: resolution.reason,
+    trace: resolution.trace,
     resolvedProgram: resolution.resolvedProgram,
     resolvedSchedule: {
       version: resolution.schedule.version,

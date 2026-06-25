@@ -27,6 +27,40 @@ export interface RejectedSchedulerCandidate extends SchedulerCandidate {
   rejectedReason: string;
 }
 
+export type CandidateEvaluationStatus = "Selected" | "Rejected" | "Ignored";
+export type CandidateRejectionReason =
+  | "Lower priority"
+  | "Disabled"
+  | "Outside date range"
+  | "Outside daily time"
+  | "Wrong weekday"
+  | "No valid assignment"
+  | "Tie (deterministic ordering)";
+
+export interface SchedulerResolutionTraceEntry {
+  candidateId: string;
+  sourceType: SchedulerCandidateSourceType;
+  targetType: SchedulerCandidateTargetType;
+  targetId: string;
+  programId: string;
+  priority: number;
+  scheduleStatus: "active" | "inactive";
+  evaluationStatus: CandidateEvaluationStatus;
+  selectionResult: string;
+  rejectionReason?: CandidateRejectionReason;
+  candidate: SchedulerCandidate;
+}
+
+export interface SchedulerResolutionTrace {
+  resolvedAt: string;
+  screenId: string;
+  resolverVersion?: string;
+  totalCandidatesDiscovered: number;
+  totalCandidatesEvaluated: number;
+  winningCandidate: SchedulerCandidate | null;
+  orderedEvaluationList: SchedulerResolutionTraceEntry[];
+}
+
 export interface SchedulerResolvedScheduleSummary {
   version: number;
   updatedAt: string;
@@ -46,6 +80,7 @@ export interface SchedulerDiagnosticsResult {
   rejectedCandidates?: RejectedSchedulerCandidate[];
   winningCandidate: SchedulerCandidate | null;
   reason: string;
+  trace?: SchedulerResolutionTrace;
   resolvedProgram: Program | null;
   resolvedSchedule: SchedulerResolvedScheduleSummary;
 }

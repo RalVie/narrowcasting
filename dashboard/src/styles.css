@@ -1230,6 +1230,57 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.diagnostics-trace-list {
+  display: grid;
+  gap: 8px;
+}
+
+.diagnostics-trace-entry {
+  border: 1px solid #d9dfd4;
+  border-radius: 8px;
+  padding: 10px;
+  background: #ffffff;
+}
+
+.diagnostics-trace-entry.selected {
+  border-color: #4777d9;
+  background: #f3f7ff;
+}
+
+.diagnostics-trace-entry summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  cursor: pointer;
+}
+
+.diagnostics-trace-entry summary span {
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #2b4938;
+  background: #edf5ef;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.diagnostics-trace-entry.selected summary span {
+  color: #0f2f72;
+  background: #dce9ff;
+}
+
+.diagnostics-trace-entry summary strong {
+  overflow-wrap: anywhere;
+}
+
+.diagnostics-trace-entry summary small {
+  color: #647064;
+}
+
+.diagnostics-trace-entry .diagnostics-meta {
+  margin-top: 10px;
+}
+
 .diagnostics-selected-mark,
 .diagnostics-rejected-mark {
   justify-self: start;
