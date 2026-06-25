@@ -27,6 +27,7 @@ const regionColors: Record<string, { color: string; background: string }> = {
 };
 const objectFitOptions: ThemeObjectFit[] = ["contain", "cover", "stretch", "center"];
 const textAlignOptions: ThemeTextAlign[] = ["left", "center", "right"];
+const supportedThemeImageExtensions = new Set(["jpg", "jpeg", "png", "webp"]);
 
 type ResizeHandle = (typeof resizeHandles)[number];
 type Interaction =
@@ -111,6 +112,11 @@ function getPointerPosition(event: PointerEvent<HTMLElement>, canvasElement: HTM
   };
 }
 
+function isSupportedThemeImage(item: MediaItem) {
+  const extension = item.filename.split(".").pop()?.toLowerCase();
+  return item.type === "image" && extension !== undefined && supportedThemeImageExtensions.has(extension);
+}
+
 export function ThemesPage() {
   const [themes, setThemes] = useState<Theme[]>([]);
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
@@ -158,21 +164,26 @@ export function ThemesPage() {
     setIsDirty(true);
   }
 
-  function selectTheme(themeRecord: Theme) {
+  function selectTheme(themeRecord: Theme, options: { preserveRegionSelection?: boolean } = {}) {
     selectedThemeIdRef.current = themeRecord.id;
     setSelectedThemeId(themeRecord.id);
     setTheme(themeRecord);
-    const nextRegionId = themeRecord.regions[0]?.id ?? "main-program";
+    const nextRegionId =
+      options.preserveRegionSelection && themeRecord.regions.some((region) => region.id === selectedRegionIdRef.current)
+        ? selectedRegionIdRef.current
+        : themeRecord.regions[0]?.id ?? "main-program";
     selectedRegionIdRef.current = nextRegionId;
     setSelectedRegionId(nextRegionId);
   }
 
-  async function loadThemes(options: { force?: boolean } = {}) {
+  async function loadThemes(options: { force?: boolean; silent?: boolean } = {}) {
     if (isDirtyRef.current && !options.force) {
       return;
     }
 
-    setIsBusy(true);
+    if (!options.silent) {
+      setIsBusy(true);
+    }
 
     try {
       const response = await fetch(apiUrl("/api/themes"));
@@ -182,24 +193,36 @@ export function ThemesPage() {
       }
 
       const body = (await response.json()) as Theme[];
-      const selectedTheme =
-        body.find((item) => item.id === selectedThemeIdRef.current) ??
-        body.find((item) => item.id === defaultThemeId) ??
-        body[0];
+      const selectedTheme = body.find((item) => item.id === selectedThemeIdRef.current);
+      const fallbackTheme = body.find((item) => item.id === defaultThemeId) ?? body[0];
 
       setThemes(body);
 
       if (selectedTheme) {
-        selectTheme(selectedTheme);
+        selectTheme(selectedTheme, { preserveRegionSelection: true });
+        isDirtyRef.current = false;
+        setIsDirty(false);
+        setStatus(options.silent ? "Themes refreshed." : "Themes loaded.");
+      } else if (options.force && fallbackTheme) {
+        selectTheme(fallbackTheme);
+        isDirtyRef.current = false;
+        setIsDirty(false);
+        setStatus("Themes loaded.");
+      } else if (body.length > 0) {
+        setStatus("Themes refreshed, but the active local draft was kept because the selected theme was not returned.");
+      } else {
+        setStatus("Theme list is empty. Active local draft was kept.");
       }
-
-      isDirtyRef.current = false;
-      setIsDirty(false);
-      setStatus("Themes loaded.");
     } catch (error) {
-      setStatus(error instanceof Error ? `Unable to load themes: ${error.message}` : "Unable to load themes.");
+      setStatus(
+        error instanceof Error
+          ? `Unable to load themes: ${error.message}. Active local draft was kept.`
+          : "Unable to load themes. Active local draft was kept."
+      );
     } finally {
-      setIsBusy(false);
+      if (!options.silent) {
+        setIsBusy(false);
+      }
     }
   }
 
@@ -212,10 +235,19 @@ export function ThemesPage() {
       }
 
       const body = (await response.json()) as MediaItem[];
-      setMediaItems(body.filter((item) => item.type === "image"));
+      setMediaItems(body.filter(isSupportedThemeImage));
     } catch (error) {
-      setStatus(error instanceof Error ? `Unable to load media: ${error.message}` : "Unable to load media.");
+      setStatus(
+        error instanceof Error
+          ? `Unable to load media: ${error.message}. Theme draft was kept.`
+          : "Unable to load media. Theme draft was kept."
+      );
     }
+  }
+
+  async function refreshThemeDesigner() {
+    await loadThemes({ force: true });
+    await loadMedia();
   }
 
   function updateTheme(updater: (currentTheme: Theme) => Theme) {
@@ -565,7 +597,10 @@ export function ThemesPage() {
       selectTheme(body);
       isDirtyRef.current = false;
       setIsDirty(false);
-      await loadThemes({ force: true });
+      setThemes((currentThemes) => {
+        const hasTheme = currentThemes.some((item) => item.id === body.id);
+        return hasTheme ? currentThemes.map((item) => (item.id === body.id ? body : item)) : [...currentThemes, body];
+      });
       setStatus(`${body.name} created.`);
     } catch (error) {
       setStatus(error instanceof Error ? `Create failed: ${error.message}` : "Create failed.");
@@ -590,10 +625,13 @@ export function ThemesPage() {
       }
 
       const body = (await response.json()) as Theme;
-      selectTheme(body);
+      selectTheme(body, { preserveRegionSelection: true });
       isDirtyRef.current = false;
       setIsDirty(false);
-      await loadThemes({ force: true });
+      setThemes((currentThemes) => {
+        const hasTheme = currentThemes.some((item) => item.id === body.id);
+        return hasTheme ? currentThemes.map((item) => (item.id === body.id ? body : item)) : [...currentThemes, body];
+      });
       setStatus(`${body.name} saved.`);
     } catch (error) {
       setStatus(error instanceof Error ? `Save failed: ${error.message}` : "Save failed.");
@@ -636,7 +674,7 @@ export function ThemesPage() {
   useEffect(() => {
     void loadThemes();
     void loadMedia();
-    const timer = window.setInterval(() => void loadThemes(), refreshIntervalMs);
+    const timer = window.setInterval(() => void loadThemes({ silent: true }), refreshIntervalMs);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -646,6 +684,11 @@ export function ThemesPage() {
     theme.regions[0] ??
     mainRegion;
   const programRegionCount = theme.regions.filter((region) => region.type === "program").length;
+  const selectedRegionMedia = mediaItems.find(
+    (item) => item.id === selectedRegion.mediaId || item.filename === selectedRegion.file
+  );
+  const selectedRegionNeedsImage = selectedRegion.type === "logo" || selectedRegion.type === "image";
+  const selectedRegionMediaMissing = selectedRegionNeedsImage && Boolean(selectedRegion.file) && !selectedRegionMedia;
   const canvasStyle = {
     aspectRatio: `${theme.canvasWidth} / ${theme.canvasHeight}`,
     backgroundColor: theme.backgroundColor,
@@ -682,7 +725,7 @@ export function ThemesPage() {
           <button disabled={isBusy} onClick={() => void createTheme()} type="button">
             Create Theme
           </button>
-          <button disabled={isBusy} onClick={() => void loadThemes({ force: true })} type="button">
+          <button disabled={isBusy} onClick={() => void refreshThemeDesigner()} type="button">
             Refresh
           </button>
         </div>
@@ -955,7 +998,7 @@ export function ThemesPage() {
                         file: media?.filename
                       });
                     }}
-                    value={selectedRegion.mediaId ?? ""}
+                    value={selectedRegionMedia?.id ?? ""}
                   >
                     <option value="">Select image</option>
                     {mediaItems.map((item) => (
@@ -965,6 +1008,25 @@ export function ThemesPage() {
                     ))}
                   </select>
                 </label>
+                <div className="theme-selected-media">
+                  <span>Selected file</span>
+                  <strong>{selectedRegion.file ?? selectedRegionMedia?.filename ?? "No image selected"}</strong>
+                  <button
+                    disabled={!selectedRegion.file && !selectedRegion.mediaId}
+                    onClick={() => patchSelectedRegion({ mediaId: undefined, file: undefined })}
+                    type="button"
+                  >
+                    Clear image
+                  </button>
+                  <button onClick={() => void loadMedia()} type="button">
+                    Refresh media
+                  </button>
+                </div>
+                {selectedRegionMediaMissing ? (
+                  <p className="theme-warning-text">
+                    Selected image is not in the Media Library: {selectedRegion.file}
+                  </p>
+                ) : null}
                 <label>
                   Object Fit
                   <select

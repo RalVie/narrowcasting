@@ -97,9 +97,11 @@ button {
   border: 1px solid #b9c8bd;
   border-radius: 6px;
   padding: 9px 12px;
+  min-width: 0;
   color: #17201a;
   background: #ffffff;
   font: inherit;
+  overflow-wrap: anywhere;
   cursor: pointer;
 }
 
@@ -385,7 +387,7 @@ button:disabled {
 
 .theme-designer-layout {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-columns: minmax(220px, 250px) minmax(0, 1fr);
   gap: 16px;
   margin-top: 18px;
 }
@@ -500,7 +502,7 @@ button:disabled {
 }
 
 .theme-designer-panel {
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
 }
 
 .theme-toolbar {
@@ -747,6 +749,10 @@ button:disabled {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.theme-property-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .theme-property-toggles {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -769,6 +775,31 @@ button:disabled {
 .theme-property-panel textarea {
   min-height: 92px;
   resize: vertical;
+}
+
+.theme-selected-media {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #d9dfd4;
+  border-radius: 8px;
+  padding: 10px;
+  background: #f8faf6;
+}
+
+.theme-selected-media span {
+  color: #647064;
+  font-size: 12px;
+}
+
+.theme-selected-media strong {
+  overflow-wrap: anywhere;
+}
+
+.theme-warning-text {
+  margin: 0;
+  color: #9b2f22;
+  font-size: 13px;
+  line-height: 1.35;
 }
 
 .playlist-schedule-fields {
