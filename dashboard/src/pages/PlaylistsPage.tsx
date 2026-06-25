@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { DragEvent } from "react";
 import { apiUrl } from "../api/apiBase";
 import type { MediaItem } from "../mediaTypes";
-import type { PlaylistRecord, PlaylistItem } from "../playlistTypes";
+import type { PlaylistItem, PlaylistRecord } from "../playlistTypes";
 
 const refreshIntervalMs = 10_000;
+type MediaFilter = "all" | "image" | "video" | "logo" | "background" | "recent" | "favorite";
 
 function createPlaylistItem(media: MediaItem): PlaylistItem {
   return {
@@ -13,6 +15,40 @@ function createPlaylistItem(media: MediaItem): PlaylistItem {
     file: media.filename,
     duration: 10
   };
+}
+
+function formatBytes(size: number) {
+  if (size < 1024) {
+    return `${size} B`;
+  }
+
+  if (size < 1024 * 1024) {
+    return `${Math.round(size / 1024)} KB`;
+  }
+
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function mediaMatchesFilter(media: MediaItem, filter: MediaFilter) {
+  const name = media.filename.toLowerCase();
+
+  if (filter === "image") {
+    return media.type === "image";
+  }
+
+  if (filter === "video") {
+    return media.type === "video";
+  }
+
+  if (filter === "logo") {
+    return media.type === "image" && name.includes("logo");
+  }
+
+  if (filter === "background") {
+    return media.type === "image" && (name.includes("background") || name.includes("bg"));
+  }
+
+  return true;
 }
 
 export function PlaylistsPage() {
@@ -26,9 +62,14 @@ export function PlaylistsPage() {
     updatedAt: "",
     items: []
   });
-  const [status, setStatus] = useState("Loading playlist...");
+  const [status, setStatus] = useState("Loading workspace...");
   const [isBusy, setIsBusy] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [mediaSearch, setMediaSearch] = useState("");
+  const [playlistSearch, setPlaylistSearch] = useState("");
+  const [mediaFilter, setMediaFilter] = useState<MediaFilter>("all");
+  const [previewingVideoId, setPreviewingVideoId] = useState<string | null>(null);
+  const previewTimerRef = useRef<number | null>(null);
   const isDirtyRef = useRef(false);
   const selectedPlaylistIdRef = useRef("default");
 
@@ -86,19 +127,24 @@ export function PlaylistsPage() {
 
       isDirtyRef.current = false;
       setIsDirty(false);
-      setStatus("Playlist loaded.");
+      setStatus("Workspace loaded.");
     } catch (error) {
-      setStatus(error instanceof Error ? `Unable to load playlist: ${error.message}` : "Unable to load playlist.");
+      setStatus(error instanceof Error ? `Unable to load workspace: ${error.message}` : "Unable to load workspace.");
     } finally {
       setIsBusy(false);
     }
   }
 
-  function addMediaItem(media: MediaItem) {
-    setPlaylist((currentPlaylist) => ({
-      ...currentPlaylist,
-      items: [...currentPlaylist.items, createPlaylistItem(media)]
-    }));
+  function addMediaItem(media: MediaItem, index = playlist.items.length) {
+    setPlaylist((currentPlaylist) => {
+      const items = [...currentPlaylist.items];
+      items.splice(index, 0, createPlaylistItem(media));
+
+      return {
+        ...currentPlaylist,
+        items
+      };
+    });
     markDirty();
   }
 
@@ -118,17 +164,15 @@ export function PlaylistsPage() {
     markDirty();
   }
 
-  function moveItem(index: number, direction: -1 | 1) {
+  function reorderItem(fromIndex: number, toIndex: number) {
     setPlaylist((currentPlaylist) => {
-      const nextIndex = index + direction;
-
-      if (nextIndex < 0 || nextIndex >= currentPlaylist.items.length) {
+      if (fromIndex === toIndex || fromIndex < 0 || fromIndex >= currentPlaylist.items.length) {
         return currentPlaylist;
       }
 
       const items = [...currentPlaylist.items];
-      const [item] = items.splice(index, 1);
-      items.splice(nextIndex, 0, item);
+      const [item] = items.splice(fromIndex, 1);
+      items.splice(Math.min(toIndex, items.length), 0, item);
 
       return {
         ...currentPlaylist,
@@ -179,11 +223,13 @@ export function PlaylistsPage() {
             }
           : body;
       selectPlaylist(savedPlaylist);
+      setPlaylists((currentPlaylists) =>
+        currentPlaylists.map((item) => (item.id === savedPlaylist.id ? savedPlaylist : item))
+      );
       isDirtyRef.current = false;
       setIsDirty(false);
-      setStatus(`Playlist saved as version ${body.version}.`);
+      setStatus(`Saved ${savedPlaylist.name}.`);
       window.dispatchEvent(new CustomEvent("narrowcasting:playlist-saved"));
-      await loadEditorData({ force: true });
     } catch (error) {
       setStatus(error instanceof Error ? `Save failed: ${error.message}` : "Save failed.");
     } finally {
@@ -191,7 +237,7 @@ export function PlaylistsPage() {
     }
   }
 
-  async function createPlaylist() {
+  async function createPlaylist(name = "New Playlist", items: PlaylistItem[] = []) {
     setIsBusy(true);
     setStatus("Creating playlist...");
 
@@ -201,7 +247,7 @@ export function PlaylistsPage() {
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ name: "New Playlist", items: [] })
+        body: JSON.stringify({ name, items })
       });
 
       if (!response.ok) {
@@ -210,9 +256,9 @@ export function PlaylistsPage() {
 
       const body = (await response.json()) as PlaylistRecord;
       selectPlaylist(body);
+      setPlaylists((currentPlaylists) => [...currentPlaylists, body]);
       isDirtyRef.current = false;
       setIsDirty(false);
-      await loadEditorData({ force: true });
       setStatus(`${body.name} created.`);
     } catch (error) {
       setStatus(error instanceof Error ? `Create failed: ${error.message}` : "Create failed.");
@@ -221,9 +267,17 @@ export function PlaylistsPage() {
     }
   }
 
+  async function duplicatePlaylist() {
+    await createPlaylist(`${playlist.name} Copy`, playlist.items);
+  }
+
   async function deleteSelectedPlaylist() {
     if (playlist.id === "default") {
       setStatus("Default playlist cannot be deleted.");
+      return;
+    }
+
+    if (!window.confirm(`Delete playlist "${playlist.name}"?`)) {
       return;
     }
 
@@ -239,11 +293,16 @@ export function PlaylistsPage() {
         throw new Error(`HTTP ${response.status}`);
       }
 
-      selectedPlaylistIdRef.current = "default";
-      setSelectedPlaylistId("default");
+      const nextPlaylists = playlists.filter((item) => item.id !== playlist.id);
+      const nextPlaylist = nextPlaylists.find((item) => item.id === "default") ?? nextPlaylists[0];
+      setPlaylists(nextPlaylists);
+
+      if (nextPlaylist) {
+        selectPlaylist(nextPlaylist);
+      }
+
       isDirtyRef.current = false;
       setIsDirty(false);
-      await loadEditorData({ force: true });
       setStatus(`${playlist.name} deleted.`);
       window.dispatchEvent(new CustomEvent("narrowcasting:playlist-saved"));
     } catch (error) {
@@ -251,6 +310,57 @@ export function PlaylistsPage() {
     } finally {
       setIsBusy(false);
     }
+  }
+
+  function getMediaById(mediaId: string) {
+    return mediaItems.find((media) => media.id === mediaId);
+  }
+
+  function handleMediaDragStart(event: DragEvent<HTMLElement>, media: MediaItem) {
+    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.setData("application/x-media-id", media.id);
+  }
+
+  function handlePlaylistItemDragStart(event: DragEvent<HTMLElement>, index: number) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/x-playlist-index", String(index));
+  }
+
+  function handlePlaylistDrop(event: DragEvent<HTMLElement>, index = playlist.items.length) {
+    event.preventDefault();
+    const mediaId = event.dataTransfer.getData("application/x-media-id");
+    const draggedIndex = event.dataTransfer.getData("application/x-playlist-index");
+
+    if (mediaId) {
+      const media = getMediaById(mediaId);
+
+      if (media) {
+        addMediaItem(media, index);
+      }
+
+      return;
+    }
+
+    if (draggedIndex) {
+      reorderItem(Number(draggedIndex), index);
+    }
+  }
+
+  function startVideoPreview(mediaId: string) {
+    if (previewTimerRef.current) {
+      window.clearTimeout(previewTimerRef.current);
+    }
+
+    previewTimerRef.current = window.setTimeout(() => setPreviewingVideoId(mediaId), 500);
+  }
+
+  function stopVideoPreview() {
+    if (previewTimerRef.current) {
+      window.clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = null;
+    }
+
+    setPreviewingVideoId(null);
   }
 
   useEffect(() => {
@@ -264,19 +374,40 @@ export function PlaylistsPage() {
     };
   }, []);
 
+  const filteredMedia = useMemo(() => {
+    const search = mediaSearch.trim().toLowerCase();
+    const media = mediaItems
+      .filter((item) => mediaMatchesFilter(item, mediaFilter))
+      .filter((item) => (search ? item.filename.toLowerCase().includes(search) : true));
+
+    return mediaFilter === "recent" ? media.slice().reverse() : media;
+  }, [mediaFilter, mediaItems, mediaSearch]);
+  const filteredPlaylists = playlists.filter((item) =>
+    playlistSearch.trim() ? item.name.toLowerCase().includes(playlistSearch.trim().toLowerCase()) : true
+  );
+  const filterButtons: Array<{ label: string; value: MediaFilter; disabled?: boolean }> = [
+    { label: "All", value: "all" },
+    { label: "Images", value: "image" },
+    { label: "Videos", value: "video" },
+    { label: "Logos", value: "logo" },
+    { label: "Backgrounds", value: "background" },
+    { label: "Recent", value: "recent" },
+    { label: "Favorites", value: "favorite", disabled: true }
+  ];
+
   return (
-    <section className="page-section" id="playlists">
+    <section className="page-section operator-section" id="playlists">
       <div className="section-header">
         <div>
-          <h2>Playlists</h2>
-          <p>Reusable ordered media lists for programs.</p>
+          <h2>Operator Workspace</h2>
+          <p>Build playlists from media with direct drag and drop.</p>
         </div>
         <div className="button-row">
-          <button disabled={isBusy} onClick={() => void createPlaylist()} type="button">
-            Create Playlist
-          </button>
           <button disabled={isBusy} onClick={() => void loadEditorData({ force: true })} type="button">
             Refresh
+          </button>
+          <button disabled={isBusy} onClick={() => void savePlaylist()} type="button">
+            Save Playlist
           </button>
         </div>
       </div>
@@ -286,107 +417,154 @@ export function PlaylistsPage() {
         {isDirty ? " Unsaved changes." : ""}
       </p>
 
-      <div className="playlist-editor">
-        <section className="playlist-panel" aria-label="Media available for playlist">
-          <h3>Media</h3>
-          <div className="playlist-media-list">
-            {mediaItems.map((media) => (
-              <article className="playlist-media-row" key={media.id}>
-                <div>
-                  <strong>{media.filename}</strong>
-                  <span>{media.type}</span>
+      <div className="operator-workspace">
+        <section className="operator-panel media-browser" aria-label="Media library">
+          <div className="operator-panel-header">
+            <h3>Media Library</h3>
+            <span>{filteredMedia.length} shown</span>
+          </div>
+          <input
+            aria-label="Search media"
+            onChange={(event) => setMediaSearch(event.target.value)}
+            placeholder="Search media"
+            type="search"
+            value={mediaSearch}
+          />
+          <div className="operator-filter-row">
+            {filterButtons.map((button) => (
+              <button
+                className={mediaFilter === button.value ? "operator-chip active" : "operator-chip"}
+                disabled={button.disabled}
+                key={button.value}
+                onClick={() => setMediaFilter(button.value)}
+                type="button"
+              >
+                {button.label}
+              </button>
+            ))}
+          </div>
+          <div className="operator-media-grid">
+            {filteredMedia.map((media) => (
+              <article
+                className="operator-media-card"
+                draggable
+                key={media.id}
+                onDragStart={(event) => handleMediaDragStart(event, media)}
+                onMouseEnter={() => media.type === "video" && startVideoPreview(media.id)}
+                onMouseLeave={stopVideoPreview}
+              >
+                <div className="operator-thumb">
+                  {media.type === "image" ? (
+                    <img alt="" src={apiUrl(`/media/${encodeURIComponent(media.filename)}`)} />
+                  ) : previewingVideoId === media.id ? (
+                    <video autoPlay muted playsInline src={apiUrl(`/media/${encodeURIComponent(media.filename)}`)} />
+                  ) : (
+                    <div className="operator-video-mark">Play</div>
+                  )}
                 </div>
-                <button disabled={isBusy} onClick={() => addMediaItem(media)} type="button">
-                  Add
-                </button>
+                <strong>{media.filename}</strong>
+                <span>
+                  {media.type} · {formatBytes(media.size)}
+                </span>
               </article>
             ))}
           </div>
         </section>
 
-        <section className="playlist-panel" aria-label="Current playlist">
-          <div className="playlist-panel-header">
-            <h3>{playlist.name}</h3>
-            <span>Version {playlist.version}</span>
+        <section className="operator-panel playlist-browser" aria-label="Playlists">
+          <div className="operator-panel-header">
+            <h3>Playlists</h3>
+            <span>{playlists.length}</span>
           </div>
-
-          <div className="playlist-management">
-            <label>
-              Edit playlist
-              <select
-                disabled={isBusy}
-                onChange={(event) => {
-                  const nextPlaylist = playlists.find((item) => item.id === event.target.value);
-
-                  if (nextPlaylist) {
-                    selectPlaylist(nextPlaylist);
-                    isDirtyRef.current = false;
-                    setIsDirty(false);
-                  }
-                }}
-                value={playlist.id}
-              >
-                {playlists.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              Playlist name
-              <input
-                onChange={(event) => updatePlaylistName(event.target.value)}
-                type="text"
-                value={playlist.name}
-              />
-            </label>
-
+          <input
+            aria-label="Search playlists"
+            onChange={(event) => setPlaylistSearch(event.target.value)}
+            placeholder="Search playlists"
+            type="search"
+            value={playlistSearch}
+          />
+          <div className="operator-action-grid">
+            <button disabled={isBusy} onClick={() => void createPlaylist()} type="button">
+              New Playlist
+            </button>
+            <button disabled={isBusy} onClick={() => void duplicatePlaylist()} type="button">
+              Duplicate
+            </button>
             <button disabled={isBusy || playlist.id === "default"} onClick={() => void deleteSelectedPlaylist()} type="button">
-              Delete Playlist
-            </button>
-            <button disabled={isBusy} onClick={() => void savePlaylist()} type="button">
-              Save Playlist
+              Delete
             </button>
           </div>
+          <div className="operator-list">
+            {filteredPlaylists.map((item) => (
+              <button
+                className={item.id === selectedPlaylistId ? "operator-list-item active" : "operator-list-item"}
+                key={item.id}
+                onClick={() => {
+                  selectPlaylist(item);
+                  isDirtyRef.current = false;
+                  setIsDirty(false);
+                }}
+                type="button"
+              >
+                <strong>{item.name}</strong>
+                <span>{item.items.length} item(s)</span>
+              </button>
+            ))}
+          </div>
+        </section>
 
-          <div className="playlist-items">
-            {playlist.items.length === 0 ? <p>No playlist items yet.</p> : null}
-
+        <section
+          className="operator-panel playlist-content-panel"
+          aria-label="Playlist content"
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => handlePlaylistDrop(event)}
+        >
+          <div className="operator-panel-header">
+            <div>
+              <h3>{playlist.name}</h3>
+              <span>Version {playlist.version}</span>
+            </div>
+            <button disabled={isBusy} onClick={() => void savePlaylist()} type="button">
+              Save
+            </button>
+          </div>
+          <input
+            aria-label="Playlist name"
+            className="operator-title-input"
+            onChange={(event) => updatePlaylistName(event.target.value)}
+            value={playlist.name}
+          />
+          <div className="operator-drop-zone">
+            Drop media here
+          </div>
+          <div className="operator-timeline">
+            {playlist.items.length === 0 ? <p className="operator-empty">No media yet. Drag media into this playlist.</p> : null}
             {playlist.items.map((item, index) => (
-              <article className="playlist-item-row" key={item.id}>
-                <div className="playlist-item-topline">
-                  <div className="playlist-item-main">
-                    <strong>{item.file}</strong>
-                    <span>{item.type}</span>
-                  </div>
-                  <label>
-                    Duration
-                    <input
-                      min="1"
-                      onChange={(event) => updateDuration(item.id, Number(event.target.value))}
-                      type="number"
-                      value={item.duration}
-                    />
-                  </label>
-                  <div className="playlist-actions">
-                    <button disabled={isBusy || index === 0} onClick={() => moveItem(index, -1)} type="button">
-                      Up
-                    </button>
-                    <button
-                      disabled={isBusy || index === playlist.items.length - 1}
-                      onClick={() => moveItem(index, 1)}
-                      type="button"
-                    >
-                      Down
-                    </button>
-                    <button disabled={isBusy} onClick={() => removeItem(item.id)} type="button">
-                      Remove
-                    </button>
-                  </div>
+              <article
+                className="operator-timeline-row"
+                draggable
+                key={item.id}
+                onDragOver={(event) => event.preventDefault()}
+                onDragStart={(event) => handlePlaylistItemDragStart(event, index)}
+                onDrop={(event) => handlePlaylistDrop(event, index)}
+              >
+                <span className="operator-drag-handle">Drag</span>
+                <div className="operator-item-main">
+                  <strong>{item.file}</strong>
+                  <span>{item.type}{item.type === "video" ? " · video duration from file" : ""}</span>
                 </div>
-
+                <label>
+                  Duration
+                  <input
+                    min="1"
+                    onChange={(event) => updateDuration(item.id, Number(event.target.value))}
+                    type="number"
+                    value={item.duration}
+                  />
+                </label>
+                <button disabled={isBusy} onClick={() => removeItem(item.id)} type="button">
+                  Remove
+                </button>
               </article>
             ))}
           </div>
