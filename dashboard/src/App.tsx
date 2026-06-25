@@ -1,3 +1,4 @@
+import { AssignmentsPage } from "./pages/AssignmentsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { MediaLibraryPage } from "./pages/MediaLibraryPage";
 import { ProgramsPage } from "./pages/ProgramsPage";
@@ -16,6 +17,7 @@ const pages = [
   { label: "Media Library", component: MediaLibraryPage },
   { label: "Playlists", component: PlaylistsPage },
   { label: "Programs", component: ProgramsPage },
+  { label: "Assignments", component: AssignmentsPage },
   { label: "Themes", component: ThemesPage },
   { label: "Scheduler", component: SchedulerPage },
   { label: "Screens", component: ScreensPage },

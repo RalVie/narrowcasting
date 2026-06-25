@@ -264,29 +264,6 @@ export async function getScreenById(screenId: string): Promise<ScreenRecord | nu
   return screens.find((screen) => screen.screenId === screenId) ?? null;
 }
 
-export async function assignProgramToScreen(
-  screenId: string,
-  programId: unknown,
-  programName: unknown
-): Promise<ScreenRecord | null> {
-  const screens = await listScreens();
-  const screen = screens.find((item) => item.screenId === screenId);
-
-  if (!screen) {
-    return null;
-  }
-
-  const assignedScreen: ScreenRecord = {
-    ...screen,
-    assignedProgramId: sanitizeNullableText(programId),
-    assignedProgramName: sanitizeNullableText(programName),
-    lastAssignment: new Date().toISOString()
-  };
-
-  await writeScreens(screens.map((item) => (item.screenId === screenId ? assignedScreen : item)));
-  return assignedScreen;
-}
-
 export async function updateScreenHeartbeat(
   screenId: string,
   input: unknown

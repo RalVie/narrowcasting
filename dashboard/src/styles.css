@@ -767,6 +767,16 @@ button:disabled {
   font: inherit;
 }
 
+.screen-assignment-link {
+  display: inline-block;
+  border: 1px solid #b9c8bd;
+  border-radius: 6px;
+  padding: 7px 9px;
+  color: #2b4938;
+  background: #ffffff;
+  font-weight: 700;
+}
+
 .screen-warning {
   border-radius: 999px;
   padding: 4px 8px;
@@ -872,6 +882,79 @@ button:disabled {
 
 .screen-group-member small {
   color: #647064;
+}
+
+.assignment-create-panel,
+.assignment-list-panel {
+  margin-top: 14px;
+}
+
+.assignment-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.assignment-form-grid label {
+  display: grid;
+  gap: 4px;
+  color: #647064;
+  font-size: 12px;
+}
+
+.assignment-form-grid select,
+.assignment-form-grid input[type="checkbox"] {
+  min-width: 0;
+}
+
+.assignment-form-grid select {
+  border: 1px solid #b9c8bd;
+  border-radius: 6px;
+  padding: 8px;
+  color: #17201a;
+  background: #ffffff;
+  font: inherit;
+}
+
+.assignment-list {
+  display: grid;
+  gap: 10px;
+}
+
+.assignment-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid #d9dfd4;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.assignment-card-summary {
+  display: grid;
+  gap: 3px;
+}
+
+.assignment-card-summary span,
+.assignment-card-summary small {
+  color: #647064;
+  font-size: 12px;
+}
+
+.assignment-toggle {
+  align-content: center;
+}
+
+.assignment-toggle input {
+  width: auto;
+}
+
+.assignment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .screen-detail-grid {

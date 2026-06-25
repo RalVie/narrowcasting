@@ -1,6 +1,7 @@
 import { listPlaylists, getScheduleFromPlaylist } from "../playlist/playlistStore.js";
 import { getProgramsOrDefault, type Program } from "../program/programStore.js";
 import { staticSchedule, type Schedule } from "../schedule/staticSchedule.js";
+import { resolveAssignmentForScreen } from "../assignments/assignmentStore.js";
 import { getScreenById } from "../screens/screenStore.js";
 import { getThemeOrDefault } from "../theme/themeStore.js";
 import { isSchedulerBlockActive, readScheduler } from "./schedulerStore.js";
@@ -73,14 +74,17 @@ async function getScheduleForProgram(program: Program, themeId?: string): Promis
 }
 
 export async function getGeneratedScheduleForScreen(screenId: string): Promise<Schedule> {
-  const screen = await getScreenById(screenId);
+  const [screen, resolvedAssignment] = await Promise.all([
+    getScreenById(screenId),
+    resolveAssignmentForScreen(screenId)
+  ]);
 
-  if (!screen || !screen.assignedProgramId) {
+  if (!resolvedAssignment) {
     const theme = await getThemeOrDefault();
 
     return {
       version: hashScheduleVersion({ screenId, assignmentStatus: "unassigned", theme }),
-      updatedAt: screen?.lastAssignment ?? screen?.lastSeen ?? staticSchedule.updatedAt,
+      updatedAt: screen?.lastSeen ?? staticSchedule.updatedAt,
       assignmentStatus: "unassigned",
       assignedProgramId: null,
       assignedProgramName: null,
@@ -89,29 +93,36 @@ export async function getGeneratedScheduleForScreen(screenId: string): Promise<S
     };
   }
 
-  const programs = await getProgramsOrDefault();
-  const program = programs.find((item) => item.id === screen.assignedProgramId);
-
-  if (!program) {
+  if (!resolvedAssignment.program) {
     const theme = await getThemeOrDefault();
 
     return {
       version: hashScheduleVersion({
         screenId,
         assignmentStatus: "unassigned",
-        missingProgramId: screen.assignedProgramId,
+        assignment: resolvedAssignment.assignment,
         theme
       }),
-      updatedAt: screen.lastAssignment ?? staticSchedule.updatedAt,
+      updatedAt: resolvedAssignment.assignment.updatedAt,
       assignmentStatus: "unassigned",
-      assignedProgramId: screen.assignedProgramId,
-      assignedProgramName: screen.assignedProgramName ?? null,
+      assignedProgramId: resolvedAssignment.assignment.programId,
+      assignedProgramName: null,
       theme,
       items: []
     };
   }
 
-  return getScheduleForProgram(program);
+  const schedule = await getScheduleForProgram(resolvedAssignment.program);
+
+  return {
+    ...schedule,
+    version: hashScheduleVersion({
+      screenId,
+      assignment: resolvedAssignment.assignment,
+      scheduleVersion: schedule.version
+    }),
+    updatedAt: getLatestUpdatedAt([schedule.updatedAt, resolvedAssignment.assignment.updatedAt])
+  };
 }
 
 export async function getGeneratedSchedule(): Promise<Schedule> {

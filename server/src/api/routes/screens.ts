@@ -1,8 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
-import { getProgramsOrDefault } from "../../program/programStore.js";
 import {
   approveScreen,
-  assignProgramToScreen,
   getScreenById,
   listScreens,
   registerScreen,
@@ -64,32 +62,7 @@ export const screensRoutes: FastifyPluginAsync = async (app) => {
 
     return reply.send({
       screenId: screen.screenId,
-      assignedProgramId: screen.assignedProgramId ?? null,
-      assignedProgramName: screen.assignedProgramName ?? null,
-      lastAssignment: screen.lastAssignment ?? null
+      message: "screen assignments are managed by /api/assignments"
     });
-  });
-
-  app.post<{ Params: { id: string } }>("/screens/:id/assign-program", async (request, reply) => {
-    const body = request.body as { programId?: unknown } | undefined;
-    const programId = typeof body?.programId === "string" && body.programId.trim() ? body.programId.trim() : null;
-    const programs = await getProgramsOrDefault();
-    const program = programId ? programs.find((item) => item.id === programId) : null;
-
-    if (programId && !program) {
-      return reply.code(400).send({ error: "program not found" });
-    }
-
-    const screen = await assignProgramToScreen(
-      request.params.id,
-      program?.id ?? null,
-      program?.name ?? null
-    );
-
-    if (!screen) {
-      return reply.code(404).send({ error: "screen not found" });
-    }
-
-    return reply.send(screen);
   });
 };

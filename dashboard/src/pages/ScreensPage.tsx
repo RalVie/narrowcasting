@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiUrl } from "../api/apiBase";
-import type { Program } from "../programTypes";
 import type { ScreenGroup, ScreenRecord } from "../screenTypes";
 
 const refreshIntervalMs = 10_000;
@@ -55,8 +54,6 @@ export function ScreensPage() {
   const [status, setStatus] = useState("Loading screens...");
   const [isBusy, setIsBusy] = useState(false);
   const [screenNames, setScreenNames] = useState<Record<string, string>>({});
-  const [programs, setPrograms] = useState<Program[]>([]);
-  const [programAssignments, setProgramAssignments] = useState<Record<string, string>>({});
   const [screenGroups, setScreenGroups] = useState<ScreenGroup[]>([]);
   const [groupDrafts, setGroupDrafts] = useState<Record<string, { name: string; description: string }>>({});
   const [groupAddScreen, setGroupAddScreen] = useState<Record<string, string>>({});
@@ -79,9 +76,8 @@ export function ScreensPage() {
 
   async function loadScreens() {
     try {
-      const [screenResponse, programResponse, groupResponse] = await Promise.all([
+      const [screenResponse, groupResponse] = await Promise.all([
         fetch(apiUrl("/api/screens")),
-        fetch(apiUrl("/api/programs")),
         fetch(apiUrl("/api/screen-groups"))
       ]);
 
@@ -89,28 +85,18 @@ export function ScreensPage() {
         throw new Error(`screens HTTP ${screenResponse.status}`);
       }
 
-      if (!programResponse.ok) {
-        throw new Error(`programs HTTP ${programResponse.status}`);
-      }
-
       if (!groupResponse.ok) {
         throw new Error(`screen groups HTTP ${groupResponse.status}`);
       }
 
       const screenBody = (await screenResponse.json()) as ScreenRecord[];
-      const programBody = (await programResponse.json()) as Program[];
       const groupBody = (await groupResponse.json()) as ScreenGroup[];
       setScreens(screenBody);
-      setPrograms(programBody);
       setScreenGroups(groupBody);
       setSelectedScreenId((currentId) => currentId ?? screenBody[0]?.screenId ?? null);
       setScreenNames((names) => ({
         ...Object.fromEntries(screenBody.map((screen) => [screen.screenId, screen.name])),
         ...names
-      }));
-      setProgramAssignments((assignments) => ({
-        ...Object.fromEntries(screenBody.map((screen) => [screen.screenId, screen.assignedProgramId ?? ""])),
-        ...assignments
       }));
       setGroupDrafts((drafts) => ({
         ...Object.fromEntries(
@@ -131,34 +117,6 @@ export function ScreensPage() {
       setStatus("Screens refreshed.");
     } catch (error) {
       setStatus(error instanceof Error ? `Unable to load screens: ${error.message}` : "Unable to load screens.");
-    }
-  }
-
-  async function assignProgram(screenId: string) {
-    setIsBusy(true);
-    setStatus("Saving program assignment...");
-
-    try {
-      const response = await fetch(apiUrl(`/api/screens/${encodeURIComponent(screenId)}/assign-program`), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          programId: programAssignments[screenId] || null
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      setStatus("Program assignment saved.");
-      await loadScreens();
-    } catch (error) {
-      setStatus(error instanceof Error ? `Assignment failed: ${error.message}` : "Assignment failed.");
-  } finally {
-      setIsBusy(false);
     }
   }
 
@@ -420,34 +378,15 @@ export function ScreensPage() {
     );
   }
 
-  function renderProgramAssignment(screen: ScreenRecord) {
+  function renderAssignmentLink(screen: ScreenRecord) {
     if (screen.status !== "approved") {
       return <span>-</span>;
     }
 
     return (
-      <div className="screen-program-editor">
-        <select
-          aria-label={`Assigned program for ${screen.name}`}
-          onChange={(event) =>
-            setProgramAssignments((assignments) => ({
-              ...assignments,
-              [screen.screenId]: event.target.value
-            }))
-          }
-          value={programAssignments[screen.screenId] ?? screen.assignedProgramId ?? ""}
-        >
-          <option value="">No program assigned</option>
-          {programs.map((program) => (
-            <option key={program.id} value={program.id}>
-              {program.name}
-            </option>
-          ))}
-        </select>
-        <button disabled={isBusy} onClick={() => void assignProgram(screen.screenId)} type="button">
-          Save
-        </button>
-      </div>
+      <a className="screen-assignment-link" href="#assignments">
+        Manage in Assignments
+      </a>
     );
   }
 
@@ -459,7 +398,7 @@ export function ScreensPage() {
         </td>
         <td>{renderNameEditor(screen)}</td>
         <td>{screen.hostname}</td>
-        <td>{renderProgramAssignment(screen)}</td>
+        <td>{renderAssignmentLink(screen)}</td>
         <td>{formatNullable(screen.heartbeat?.networkIp)}</td>
         <td>{formatNullable(screen.heartbeat?.currentProgram)}</td>
         <td>{formatNullable(screen.heartbeat?.currentPlaylist)}</td>
@@ -500,7 +439,7 @@ export function ScreensPage() {
             <dt>Registration Date</dt>
             <dd>{formatDateTime(screen.registeredAt)}</dd>
             <dt>Assigned Program</dt>
-            <dd>{screen.assignedProgramName ?? "No program assigned"}</dd>
+            <dd>Managed in Assignments</dd>
             <dt>Last Assignment</dt>
             <dd>{formatDateTime(screen.lastAssignment)}</dd>
           </dl>
@@ -687,7 +626,7 @@ export function ScreensPage() {
                     <th>Status</th>
                     <th>Screen Name</th>
                     <th>Hostname</th>
-                    <th>Program</th>
+                    <th>Assignment</th>
                     <th>IP</th>
                     <th>Current Program</th>
                     <th>Current Playlist</th>
@@ -719,7 +658,7 @@ export function ScreensPage() {
                     <th>Status</th>
                     <th>Screen Name</th>
                     <th>Hostname</th>
-                    <th>Program</th>
+                    <th>Assignment</th>
                     <th>IP</th>
                     <th>Current Program</th>
                     <th>Current Playlist</th>
