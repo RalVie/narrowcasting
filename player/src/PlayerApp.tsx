@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { Schedule, ScheduleItem, ThemeRegion } from "./schedule/types";
 
@@ -34,12 +34,19 @@ function getScheduleSignature(schedule: Schedule) {
   });
 }
 
-function getItemKey(item: ScheduleItem | null, schedule: Schedule | null, activeIndex: number, playbackEpoch: number) {
+function getItemKey(
+  item: ScheduleItem | null,
+  schedule: Schedule | null,
+  activeIndex: number,
+  playbackEpoch: number,
+  playbackSessionKey: number
+) {
   if (!item || !schedule) {
     return "no-item";
   }
 
-  return `${schedule.version}-${schedule.updatedAt}-${activeIndex}-${playbackEpoch}-${item.id}`;
+  const file = item.type === "image" || item.type === "video" ? item.file : item.title;
+  return `${playbackSessionKey}-${schedule.version}-${schedule.updatedAt}-${activeIndex}-${playbackEpoch}-${item.id}-${file}`;
 }
 
 function getMediaUrl(file: string) {
@@ -144,10 +151,20 @@ export function PlayerApp() {
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [playbackEpoch, setPlaybackEpoch] = useState(0);
+  const [playbackSessionKey, setPlaybackSessionKey] = useState(0);
   const [missingItemMessage, setMissingItemMessage] = useState<string | null>(null);
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
   const [viewportSize, setViewportSize] = useState(getViewportSize);
   const [clockNow, setClockNow] = useState(() => new Date());
+  const playbackSessionKeyRef = useRef(0);
+  const failureTimerRef = useRef<number | null>(null);
+
+  function clearFailureTimer() {
+    if (failureTimerRef.current !== null) {
+      window.clearTimeout(failureTimerRef.current);
+      failureTimerRef.current = null;
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -178,10 +195,21 @@ export function PlayerApp() {
               return;
             }
 
+            console.info("schedule reload applied", {
+              oldSignature: currentSignature,
+              newSignature: nextSignature,
+              itemCount: body.items.length
+            });
             currentSignature = nextSignature;
+            clearFailureTimer();
             setSchedule(body);
             setActiveIndex(0);
             setPlaybackEpoch((epoch) => epoch + 1);
+            setPlaybackSessionKey((key) => {
+              const nextKey = key + 1;
+              playbackSessionKeyRef.current = nextKey;
+              return nextKey;
+            });
             setMissingItemMessage(null);
           }
 
@@ -202,6 +230,7 @@ export function PlayerApp() {
     return () => {
       cancelled = true;
       window.clearInterval(reloadTimer);
+      clearFailureTimer();
     };
   }, []);
 
@@ -229,7 +258,11 @@ export function PlayerApp() {
     return schedule.items[activeIndex % schedule.items.length];
   }, [activeIndex, schedule]);
 
-  const advanceToNextItem = useCallback(() => {
+  const advanceToNextItem = useCallback((sessionKey = playbackSessionKeyRef.current) => {
+    if (sessionKey !== playbackSessionKeyRef.current) {
+      return;
+    }
+
     if (!schedule || schedule.items.length === 0) {
       return;
     }
@@ -243,16 +276,29 @@ export function PlayerApp() {
   }, [schedule]);
 
   const handleActiveItemFailure = useCallback(
-    (message: string) => {
-      setMissingItemMessage(message);
-
-      if (!schedule || schedule.items.length <= 1) {
+    (sessionKey: number, message: string) => {
+      if (sessionKey !== playbackSessionKeyRef.current) {
         return;
       }
 
-      window.setTimeout(() => {
+      clearFailureTimer();
+      setMissingItemMessage(message);
+
+      if (!schedule || schedule.items.length === 0) {
+        return;
+      }
+
+      if (schedule.items.length === 1) {
+        return;
+      }
+
+      failureTimerRef.current = window.setTimeout(() => {
+        if (sessionKey !== playbackSessionKeyRef.current) {
+          return;
+        }
+
         setMissingItemMessage(null);
-        advanceToNextItem();
+        advanceToNextItem(sessionKey);
       }, 300);
     },
     [advanceToNextItem, schedule]
@@ -263,23 +309,34 @@ export function PlayerApp() {
       return null;
     }
 
+    const sessionKey = playbackSessionKey;
+
     if (activeItem.type === "image") {
       return (
         <>
           <img
             alt=""
             className={className}
-            key={getItemKey(activeItem, schedule, activeIndex, playbackEpoch)}
+            key={getItemKey(activeItem, schedule, activeIndex, playbackEpoch, playbackSessionKey)}
             onLoad={() => {
+              if (sessionKey !== playbackSessionKeyRef.current) {
+                return;
+              }
+
+              clearFailureTimer();
               setMissingItemMessage(null);
             }}
             onError={(event) => {
+              if (sessionKey !== playbackSessionKeyRef.current) {
+                return;
+              }
+
               event.currentTarget.dataset.missing = "true";
-              handleActiveItemFailure(`Missing local image: ${activeItem.file}`);
+              handleActiveItemFailure(sessionKey, `Media unavailable: ${activeItem.file}`);
             }}
             src={getMediaUrl(activeItem.file)}
           />
-          <p className="missing-media-message">{missingItemMessage ?? `Missing local image: ${activeItem.file}`}</p>
+          <p className="missing-media-message">{missingItemMessage ?? `Media unavailable: ${activeItem.file}`}</p>
         </>
       );
     }
@@ -290,26 +347,35 @@ export function PlayerApp() {
           <video
             autoPlay
             className={className}
-            key={getItemKey(activeItem, schedule, activeIndex, playbackEpoch)}
+            key={getItemKey(activeItem, schedule, activeIndex, playbackEpoch, playbackSessionKey)}
             muted
             onCanPlay={(event) => {
+              if (sessionKey !== playbackSessionKeyRef.current) {
+                return;
+              }
+
+              clearFailureTimer();
               setMissingItemMessage(null);
               void event.currentTarget.play().catch(() => {
-                advanceToNextItem();
+                advanceToNextItem(sessionKey);
               });
             }}
             onEnded={() => {
-              advanceToNextItem();
+              advanceToNextItem(sessionKey);
             }}
             onError={(event) => {
+              if (sessionKey !== playbackSessionKeyRef.current) {
+                return;
+              }
+
               event.currentTarget.dataset.missing = "true";
-              handleActiveItemFailure(`Missing local video: ${activeItem.file}`);
+              handleActiveItemFailure(sessionKey, `Media unavailable: ${activeItem.file}`);
             }}
             playsInline
             preload="auto"
             src={getMediaUrl(activeItem.file)}
           />
-          <p className="missing-media-message">{missingItemMessage ?? `Missing local video: ${activeItem.file}`}</p>
+          <p className="missing-media-message">{missingItemMessage ?? `Media unavailable: ${activeItem.file}`}</p>
         </>
       );
     }
@@ -410,13 +476,13 @@ export function PlayerApp() {
 
     const durationMs = Math.max(activeItem.duration, 1) * 1000;
     const rotationTimer = window.setTimeout(() => {
-      advanceToNextItem();
+      advanceToNextItem(playbackSessionKey);
     }, durationMs);
 
     return () => {
       window.clearTimeout(rotationTimer);
     };
-  }, [activeItem, advanceToNextItem, schedule]);
+  }, [activeItem, advanceToNextItem, playbackSessionKey, schedule]);
 
   if (!activeItem) {
     const hasEmptyPlaylist = schedule !== null && schedule.items.length === 0;
@@ -471,7 +537,11 @@ export function PlayerApp() {
           >
             {imageRegions.map((region) => renderStaticImageRegion(region, "theme-static-region"))}
             {programRegion && programRegion.visible !== false ? (
-              <div className="theme-program-region" style={getRegionFrameStyle(programRegion)}>
+              <div
+                className="theme-program-region"
+                key={`program-region-${playbackSessionKey}`}
+                style={getRegionFrameStyle(programRegion)}
+              >
                 {renderActiveItem("themed-media")}
               </div>
             ) : null}
