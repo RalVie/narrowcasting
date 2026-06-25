@@ -1,6 +1,6 @@
 # Narrowcasting Phase 7
 
-Single-screen local-first Raspberry Pi digital signage MVP with unified production runtime, safe image/video playback, and program-based scheduling.
+Single-screen local-first Raspberry Pi digital signage MVP with unified production runtime, safe image/video playback, program-based scheduling, and theme layout frames.
 
 ## Boundaries
 
@@ -9,13 +9,13 @@ Single-screen local-first Raspberry Pi digital signage MVP with unified producti
 - Media must be cached locally before playback.
 - Players must continue when the server, internet, or network is offline.
 - MQTT is not implemented yet, but player and agent code leave room for urgent commands later.
-- No authentication, scheduling engine, Cloudflare setup, database, multi-screen support, multiple playlists, drag and drop, MQTT, or commercial multi-tenant features yet.
+- No authentication, advanced scheduling engine, Cloudflare setup, database, multi-screen support, drag and drop, MQTT, or commercial multi-tenant features yet.
 
 ## Parts
 
-- `server`: Node.js, TypeScript, Fastify, health endpoint, status endpoints, image/video media upload/list/delete API, playlist/program/scheduler APIs, generated schedule endpoint, example media serving, and SQLite-ready structure.
-- `dashboard`: React, TypeScript, Vite management shell with system status, read-only schedule preview, basic media library, playlist editor, programs page, and scheduler page.
-- `player`: React, TypeScript, Vite fullscreen-friendly local image playback shell.
+- `server`: Node.js, TypeScript, Fastify, health endpoint, status endpoints, image/video media upload/list/delete API, playlist/program/theme/scheduler APIs, generated schedule endpoint, example media serving, and SQLite-ready structure.
+- `dashboard`: React, TypeScript, Vite management shell with system status, read-only schedule preview, basic media library, playlist editor, programs page, themes page, and scheduler page.
+- `player`: React, TypeScript, Vite fullscreen-friendly local image/video playback shell with optional virtual-canvas theme rendering.
 - `agent`: Node.js, TypeScript config loader, schedule poller, local schedule/media cache writer, and heartbeat placeholder.
 
 ## Install
@@ -54,6 +54,10 @@ The server exposes:
 - `DELETE http://localhost:3000/api/programs/:id`
 - `GET http://localhost:3000/api/scheduler`
 - `PUT http://localhost:3000/api/scheduler`
+- `GET http://localhost:3000/api/themes`
+- `POST http://localhost:3000/api/themes`
+- `PUT http://localhost:3000/api/themes/:id`
+- `DELETE http://localhost:3000/api/themes/:id`
 - `GET http://localhost:3000/api/status`
 - `GET http://localhost:3000/api/player-cache`
 - `GET http://localhost:3000/api/agent-status`
@@ -85,14 +89,25 @@ Reusable playlist records are stored in:
 server/data/playlists.json
 ```
 
-Programs and scheduler blocks are stored in:
+Programs, themes, and scheduler blocks are stored in:
 
 ```text
 server/data/programs.json
+server/data/themes.json
 server/data/scheduler.json
 ```
 
-`GET /api/schedule` is generated from the active scheduler block. The active block selects a program, the program expands to playlists in order, and those playlist media items become the local player schedule. If no scheduler blocks exist, the server falls back to the legacy default playlist path. If no playlist exists, the server falls back to the static example schedule.
+`GET /api/schedule` is generated from the active scheduler block. The active block selects a program and optionally a theme. The program expands to playlists in order, and those playlist media items become the local player schedule. The theme is included as metadata so the player can render the content into a virtual layout frame. If no scheduler blocks exist, the server falls back to the legacy default playlist path. If no playlist exists, the server falls back to the static example schedule.
+
+Default theme fallback:
+
+- `Default Fullscreen`
+- Landscape
+- 1920 x 1080 virtual canvas
+- Black background
+- One program region covering the full canvas
+
+The player scales the virtual canvas to the actual screen. Physical display resolution is not hard-coded.
 
 ```bash
 cd server
@@ -150,7 +165,8 @@ The dashboard includes:
 - A Media Library page for image/video upload, thumbnail preview, refresh, and delete.
 - A Playlists page for adding media, removing items, setting duration, reordering with up/down buttons, and saving the default playlist.
 - A Programs page for creating programs and ordering playlists inside each program.
-- A Scheduler page for assigning programs to date, day, and time blocks.
+- A Themes page for editing virtual canvas size, orientation, background color, and the main program region.
+- A Scheduler page for assigning programs and themes to date, day, and time blocks.
 
 Media upload limits:
 
@@ -224,7 +240,7 @@ Default development ports:
 Programs sit between playlists and the scheduler:
 
 ```text
-Media -> Playlist -> Program -> Scheduler Block -> Player
+Media -> Playlist -> Program -> Theme -> Scheduler Block -> Screen -> Player
 ```
 
 1. Start the server.
@@ -237,6 +253,20 @@ Media -> Playlist -> Program -> Scheduler Block -> Player
 8. Confirm `GET http://localhost:3000/api/schedule` contains the program playlists flattened in program order.
 9. Change the scheduler block to a time or day that is inactive.
 10. Confirm `GET http://localhost:3000/api/schedule` returns `items: []` and the player shows `Playlist is empty` after agent sync.
+
+## Test Theme Layout Frames
+
+Themes are virtual canvas layout frames. Coordinates are stored in virtual canvas units, not physical screen pixels.
+
+1. Start the server.
+2. Open Themes and confirm `Default Fullscreen` exists.
+3. Create a theme with a 1920 x 1080 canvas and a smaller main program region.
+4. Open Scheduler and assign the custom theme to an active program block.
+5. Confirm `GET http://localhost:3000/api/schedule` includes `theme` metadata and the existing `items` array.
+6. Start the agent and confirm it writes the enhanced `schedule.json` unchanged.
+7. Start the player and confirm media renders inside the program region.
+8. Stop the server.
+9. Confirm cached playback continues from the local enhanced schedule.
 
 ## Remote Dashboard Test Procedure
 

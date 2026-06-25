@@ -13,6 +13,7 @@ export type DayOfWeek =
 export interface SchedulerBlock {
   id: string;
   programId: string;
+  themeId?: string;
   startDate?: string;
   endDate?: string;
   daysOfWeek?: DayOfWeek[];
@@ -48,6 +49,10 @@ function normalizeBlock(value: unknown, index: number): SchedulerBlock | null {
     id: typeof candidate.id === "string" && candidate.id.trim() ? candidate.id : `block-${index + 1}`,
     programId: candidate.programId
   };
+
+  if (typeof candidate.themeId === "string" && candidate.themeId.trim()) {
+    block.themeId = candidate.themeId.trim();
+  }
 
   if (typeof candidate.startDate === "string" && datePattern.test(candidate.startDate)) {
     block.startDate = candidate.startDate;

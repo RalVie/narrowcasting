@@ -1,6 +1,7 @@
 import { listPlaylists, getScheduleFromPlaylist } from "../playlist/playlistStore.js";
 import { getProgramsOrDefault } from "../program/programStore.js";
 import { staticSchedule, type Schedule } from "../schedule/staticSchedule.js";
+import { getThemeOrDefault } from "../theme/themeStore.js";
 import { isSchedulerBlockActive, readScheduler } from "./schedulerStore.js";
 
 export async function getGeneratedSchedule(): Promise<Schedule> {
@@ -16,17 +17,23 @@ export async function getGeneratedSchedule(): Promise<Schedule> {
     return {
       version: scheduler.version,
       updatedAt: scheduler.updatedAt,
+      theme: await getThemeOrDefault(),
       items: []
     };
   }
 
-  const [programs, playlists] = await Promise.all([getProgramsOrDefault(), listPlaylists()]);
+  const [programs, playlists, theme] = await Promise.all([
+    getProgramsOrDefault(),
+    listPlaylists(),
+    getThemeOrDefault(activeBlock.themeId)
+  ]);
   const activeProgram = programs.find((program) => program.id === activeBlock.programId);
 
   if (!activeProgram) {
     return {
       version: scheduler.version,
       updatedAt: scheduler.updatedAt,
+      theme,
       items: []
     };
   }
@@ -50,6 +57,7 @@ export async function getGeneratedSchedule(): Promise<Schedule> {
   return {
     version: scheduler.version,
     updatedAt: scheduler.updatedAt || staticSchedule.updatedAt,
+    theme,
     items
   };
 }

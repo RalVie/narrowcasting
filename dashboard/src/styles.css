@@ -369,6 +369,20 @@ button:disabled {
   background: #ffffff;
 }
 
+.theme-form-grid,
+.theme-region-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.theme-region-grid h3 {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
 .playlist-schedule-fields {
   display: grid;
   grid-template-columns: repeat(4, minmax(120px, 1fr));

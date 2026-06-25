@@ -17,6 +17,7 @@ export type DayOfWeek =
 export interface SchedulerBlock {
   id: string;
   programId: string;
+  themeId?: string;
   startDate?: string;
   endDate?: string;
   daysOfWeek?: DayOfWeek[];

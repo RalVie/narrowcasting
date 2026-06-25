@@ -15,6 +15,28 @@ Management is optional.
 
 All media is cached locally before playback.
 
+## Content Flow
+
+```text
+Media -> Playlist -> Program -> Theme -> Scheduler Block -> Screen -> Player
+```
+
+Playlists define ordered media.
+Programs define ordered playlists.
+Themes define a virtual canvas and layout regions.
+Scheduler blocks choose the active program and optional theme.
+
+## Themes
+
+Themes use virtual canvas coordinates, for example:
+
+- Landscape Full HD: 1920 x 1080
+- Portrait Full HD: 1080 x 1920
+
+The player scales the virtual canvas to the real display. Physical display resolution must not be hard-coded.
+
+`Default Fullscreen` is the safe fallback theme. It uses a 1920 x 1080 landscape canvas with one full-canvas program region, preserving existing fullscreen playback.
+
 ## Synchronization
 
 Normal updates use pull-sync.

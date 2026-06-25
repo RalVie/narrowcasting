@@ -84,6 +84,55 @@ export function PlayerApp() {
     setActiveIndex((index) => (index + 1) % schedule.items.length);
   }, [schedule]);
 
+  function renderActiveItem(className: string) {
+    if (!activeItem) {
+      return null;
+    }
+
+    if (activeItem.type === "image") {
+      return (
+        <>
+          <img
+            alt=""
+            className={className}
+            onError={(event) => {
+              event.currentTarget.dataset.missing = "true";
+            }}
+            src={`/media/${encodeURIComponent(activeItem.file)}`}
+          />
+          <p className="missing-media-message">Missing local image: {activeItem.file}</p>
+        </>
+      );
+    }
+
+    if (activeItem.type === "video") {
+      return (
+        <video
+          autoPlay
+          className={className}
+          key={`${activeItem.id}-${schedule?.version}-${activeIndex}-${playbackEpoch}`}
+          muted
+          onCanPlay={(event) => {
+            void event.currentTarget.play().catch(() => {
+              advanceToNextItem();
+            });
+          }}
+          onEnded={() => {
+            advanceToNextItem();
+          }}
+          onError={() => {
+            advanceToNextItem();
+          }}
+          playsInline
+          preload="auto"
+          src={`/media/${encodeURIComponent(activeItem.file)}`}
+        />
+      );
+    }
+
+    return <h1>{activeItem.title}</h1>;
+  }
+
   useEffect(() => {
     if (!activeItem || !schedule || typeof activeItem.duration !== "number") {
       return;
@@ -123,6 +172,56 @@ export function PlayerApp() {
     );
   }
 
+  const theme = schedule?.theme;
+  const programRegion = theme?.regions.find((region) => region.type === "program");
+
+  if (theme && programRegion) {
+    const scale = `min(100vw / ${theme.canvasWidth}, 100vh / ${theme.canvasHeight})`;
+
+    return (
+      <main className="player-shell themed-player-shell">
+        <section
+          className="theme-viewport"
+          style={{
+            backgroundColor: theme.backgroundColor
+          }}
+          aria-label="Local themed playlist playback"
+        >
+          <div
+            className="theme-canvas"
+            style={{
+              width: `${theme.canvasWidth}px`,
+              height: `${theme.canvasHeight}px`,
+              backgroundColor: theme.backgroundColor,
+              transform: `translate(-50%, -50%) scale(calc(${scale}))`
+            }}
+          >
+            <div
+              className="theme-program-region"
+              style={{
+                left: `${programRegion.x}px`,
+                top: `${programRegion.y}px`,
+                width: `${programRegion.width}px`,
+                height: `${programRegion.height}px`
+              }}
+            >
+              {renderActiveItem("themed-media")}
+            </div>
+          </div>
+        </section>
+        <footer className="status-bar">
+          <span>Playback: local</span>
+          <span>Theme: {theme.name}</span>
+          <span>
+            Item {activeIndex + 1} / {schedule?.items.length}
+          </span>
+          <span>Type: {activeItem.type}</span>
+          <span>Loaded: {lastLoadedAt ?? "unknown"}</span>
+        </footer>
+      </main>
+    );
+  }
+
   return (
     <main className="player-shell">
       <section
@@ -132,42 +231,7 @@ export function PlayerApp() {
         aria-label="Local playlist playback"
       >
         <p className="status-label">Local schedule version {schedule?.version}</p>
-        {activeItem.type === "image" ? (
-          <img
-            alt=""
-            className="media-image"
-            onError={(event) => {
-              event.currentTarget.dataset.missing = "true";
-            }}
-            src={`/media/${encodeURIComponent(activeItem.file)}`}
-          />
-        ) : activeItem.type === "video" ? (
-          <video
-            autoPlay
-            className="media-video"
-            key={`${activeItem.id}-${schedule?.version}-${activeIndex}-${playbackEpoch}`}
-            muted
-            onCanPlay={(event) => {
-              void event.currentTarget.play().catch(() => {
-                advanceToNextItem();
-              });
-            }}
-            onEnded={() => {
-              advanceToNextItem();
-            }}
-            onError={() => {
-              advanceToNextItem();
-            }}
-            playsInline
-            preload="auto"
-            src={`/media/${encodeURIComponent(activeItem.file)}`}
-          />
-        ) : (
-          <h1>{activeItem.title}</h1>
-        )}
-        {activeItem.type === "image" ? (
-          <p className="missing-media-message">Missing local image: {activeItem.file}</p>
-        ) : null}
+        {renderActiveItem(activeItem.type === "image" ? "media-image" : "media-video")}
       </section>
       <footer className="status-bar">
         <span>Playback: local</span>

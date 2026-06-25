@@ -7,6 +7,7 @@ import { SchedulerPage } from "./pages/SchedulerPage";
 import { ScreensPage } from "./pages/ScreensPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SystemStatusPage } from "./pages/SystemStatusPage";
+import { ThemesPage } from "./pages/ThemesPage";
 
 const pages = [
   { label: "Dashboard", component: DashboardPage },
@@ -15,6 +16,7 @@ const pages = [
   { label: "Media Library", component: MediaLibraryPage },
   { label: "Playlists", component: PlaylistsPage },
   { label: "Programs", component: ProgramsPage },
+  { label: "Themes", component: ThemesPage },
   { label: "Scheduler", component: SchedulerPage },
   { label: "Screens", component: ScreensPage },
   { label: "Settings", component: SettingsPage }

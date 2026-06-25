@@ -76,3 +76,10 @@ Programs between playlists and scheduler.
 Scheduler blocks activate programs.
 Generated schedule flattens active program playlists.
 Legacy default playlist path remains compatible.
+
+PHASE 8D
+
+Theme layout frame foundation.
+Default Fullscreen virtual canvas.
+Scheduler blocks can select themes.
+Player scales themed program region locally.

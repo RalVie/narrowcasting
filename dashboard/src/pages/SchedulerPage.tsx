@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { apiUrl } from "../api/apiBase";
 import type { DayOfWeek, Program, SchedulerBlock, SchedulerConfig } from "../programTypes";
+import type { Theme } from "../themeTypes";
 
 const refreshIntervalMs = 10_000;
 const daysOfWeek: DayOfWeek[] = [
@@ -26,6 +27,7 @@ function createBlock(programId: string): SchedulerBlock {
   return {
     id: `block-${Date.now()}`,
     programId,
+    themeId: "default-fullscreen",
     startTime: "08:00",
     endTime: "18:00"
   };
@@ -33,6 +35,7 @@ function createBlock(programId: string): SchedulerBlock {
 
 export function SchedulerPage() {
   const [programs, setPrograms] = useState<Program[]>([]);
+  const [themes, setThemes] = useState<Theme[]>([]);
   const [scheduler, setScheduler] = useState<SchedulerConfig>({
     version: 0,
     updatedAt: "",
@@ -69,22 +72,25 @@ export function SchedulerPage() {
     setIsBusy(true);
 
     try {
-      const [programResponse, schedulerResponse] = await Promise.all([
+      const [programResponse, schedulerResponse, themeResponse] = await Promise.all([
         fetch(apiUrl("/api/programs")),
-        fetch(apiUrl("/api/scheduler"))
+        fetch(apiUrl("/api/scheduler")),
+        fetch(apiUrl("/api/themes"))
       ]);
 
-      if (!programResponse.ok || !schedulerResponse.ok) {
+      if (!programResponse.ok || !schedulerResponse.ok || !themeResponse.ok) {
         throw new Error("scheduler data unavailable");
       }
 
       const programBody = (await programResponse.json()) as Program[];
+      const themeBody = (await themeResponse.json()) as Theme[];
       const schedulerBody = (await schedulerResponse.json()) as SchedulerConfig;
       const selectedBlock =
         schedulerBody.blocks.find((block) => block.id === selectedBlockIdRef.current) ??
         schedulerBody.blocks[0];
 
       setPrograms(programBody);
+      setThemes(themeBody);
       setScheduler(schedulerBody);
       selectBlock(selectedBlock?.id ?? "");
       isDirtyRef.current = false;
@@ -153,7 +159,7 @@ export function SchedulerPage() {
 
   function updateBlockField(
     blockId: string,
-    field: "programId" | "startDate" | "endDate" | "startTime" | "endTime",
+    field: "programId" | "themeId" | "startDate" | "endDate" | "startTime" | "endTime",
     value: string
   ) {
     updateBlock(blockId, (block) => {
@@ -269,6 +275,19 @@ export function SchedulerPage() {
                   {programs.map((program) => (
                     <option key={program.id} value={program.id}>
                       {program.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Theme
+                <select
+                  onChange={(event) => updateBlockField(block.id, "themeId", event.target.value)}
+                  value={block.themeId ?? "default-fullscreen"}
+                >
+                  {themes.map((theme) => (
+                    <option key={theme.id} value={theme.id}>
+                      {theme.name}
                     </option>
                   ))}
                 </select>

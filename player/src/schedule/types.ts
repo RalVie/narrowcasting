@@ -23,8 +23,30 @@ export interface VideoScheduleItem {
 
 export type ScheduleItem = TextScheduleItem | ImageScheduleItem | VideoScheduleItem;
 
+export interface ThemeRegion {
+  id: string;
+  name: string;
+  type: "program" | "image" | "text";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface Theme {
+  id: string;
+  name: string;
+  orientation: "landscape" | "portrait";
+  canvasWidth: number;
+  canvasHeight: number;
+  backgroundColor: string;
+  backgroundMediaId?: string;
+  regions: ThemeRegion[];
+}
+
 export interface Schedule {
   version: number;
   updatedAt: string;
+  theme?: Theme;
   items: ScheduleItem[];
 }
