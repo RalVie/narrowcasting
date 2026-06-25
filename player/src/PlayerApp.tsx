@@ -384,14 +384,37 @@ function InstrumentedVideo({
       };
     }
 
-    emit("load skipped", "diagnostic-only patch: relying on native src/preload/autoplay path", videoRef.current, {
-      loadCalled: false,
-      playSkippedReason: "not forcing load() in diagnostic patch"
+    try {
+      videoRef.current.currentTime = 0;
+    } catch {
+      // Some browsers reject currentTime before metadata is available; load/play still follows.
+    }
+
+    videoRef.current.load();
+    emit("mount load called", "reset currentTime then called load()", videoRef.current, {
+      loadCalled: true,
+      playSkippedReason: undefined
     });
-    emit("play skipped", "play() is currently called only from onCanPlay", videoRef.current, {
-      playCalled: false,
-      playSkippedReason: "waiting for canplay handler"
-    });
+
+    void videoRef.current
+      .play()
+      .then(() => {
+        emit("mount play resolved", undefined, videoRef.current, {
+          loadCalled: true,
+          playCalled: true
+        });
+      })
+      .catch((error: unknown) => {
+        emit(
+          "mount play rejected",
+          error instanceof Error ? error.message : String(error),
+          videoRef.current,
+          {
+            loadCalled: true,
+            playCalled: true
+          }
+        );
+      });
 
     const snapshotTimer = window.setTimeout(() => {
       emit("post-mount 250ms snapshot", "checking whether browser began media initialization", videoRef.current, {
