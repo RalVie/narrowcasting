@@ -100,3 +100,12 @@ Properties panel supports Program Region rename, position, and size.
 Program Region duplicate, guarded delete, and alignment tools are available.
 Future region types are visible as disabled extension points.
 Player still renders only the first Program Region.
+
+PHASE 8E.3
+
+Static asset regions.
+Program, Logo, Image, and Text regions are supported.
+Logo and Image regions select image media from the Media Library.
+Text regions render static styled text.
+Player renders theme background, image regions, logo regions, the first Program Region, then text regions.
+Agent caches image files referenced by static theme regions through the existing media sync path.

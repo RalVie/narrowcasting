@@ -1,14 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import type { PointerEvent } from "react";
 import { apiUrl } from "../api/apiBase";
-import type { Theme, ThemeRegion } from "../themeTypes";
+import type { MediaItem } from "../mediaTypes";
+import type { Theme, ThemeObjectFit, ThemeRegion, ThemeRegionType, ThemeTextAlign } from "../themeTypes";
 
 const refreshIntervalMs = 10_000;
 const defaultThemeId = "default-fullscreen";
 const minimumRegionSize = 40;
 const defaultSafeArea = 80;
 const resizeHandles = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
-const futureRegionTypes = ["Logo", "Clock", "Ticker", "Weather", "RSS", "QR Code", "Image", "Video", "Text"];
+const addableRegionTypes: Array<{ label: string; type: ThemeRegionType }> = [
+  { label: "Program", type: "program" },
+  { label: "Logo", type: "logo" },
+  { label: "Image", type: "image" },
+  { label: "Text", type: "text" }
+];
+const futureRegionTypes = ["Clock", "Ticker", "Weather", "RSS", "QR Code", "Video"];
 const regionColors: Record<string, { color: string; background: string }> = {
   program: { color: "#30b56a", background: "rgb(48 181 106 / 28%)" },
   logo: { color: "#4777d9", background: "rgb(71 119 217 / 26%)" },
@@ -18,6 +25,8 @@ const regionColors: Record<string, { color: string; background: string }> = {
   rss: { color: "#ef8a24", background: "rgb(239 138 36 / 26%)" },
   emergency: { color: "#d94343", background: "rgb(217 67 67 / 28%)" }
 };
+const objectFitOptions: ThemeObjectFit[] = ["contain", "cover", "stretch", "center"];
+const textAlignOptions: ThemeTextAlign[] = ["left", "center", "right"];
 
 type ResizeHandle = (typeof resizeHandles)[number];
 type Interaction =
@@ -44,9 +53,45 @@ function defaultRegion(theme: Theme): ThemeRegion {
       x: 0,
       y: 0,
       width: theme.canvasWidth,
-      height: theme.canvasHeight
+      height: theme.canvasHeight,
+      visible: true,
+      locked: false,
+      opacity: 1
     }
   );
+}
+
+function getDefaultRegionName(type: ThemeRegionType, count: number) {
+  const label = type === "program" ? "Program Region" : type === "logo" ? "Logo" : type === "image" ? "Image" : "Text";
+  return count === 0 ? label : `${label} ${count + 1}`;
+}
+
+function createRegion(type: ThemeRegionType, theme: Theme, gridSize: number, snapToGrid: boolean): ThemeRegion {
+  const count = theme.regions.filter((region) => region.type === type).length;
+  const baseSize = type === "logo" ? 240 : type === "text" ? 520 : 960;
+  const baseHeight = type === "logo" ? 160 : type === "text" ? 180 : 540;
+
+  return {
+    id: `${type}-region-${Date.now()}`,
+    name: getDefaultRegionName(type, count),
+    type,
+    x: snapValue(80 + theme.regions.length * 30, snapToGrid, gridSize),
+    y: snapValue(80 + theme.regions.length * 30, snapToGrid, gridSize),
+    width: Math.min(baseSize, theme.canvasWidth),
+    height: Math.min(baseHeight, theme.canvasHeight),
+    objectFit: type === "image" || type === "logo" ? "contain" : undefined,
+    opacity: 1,
+    visible: true,
+    locked: false,
+    text: type === "text" ? "Static text" : undefined,
+    font: type === "text" ? "Inter" : undefined,
+    fontSize: type === "text" ? 64 : undefined,
+    align: type === "text" ? "center" : undefined,
+    textColor: type === "text" ? "#ffffff" : undefined,
+    backgroundColor: type === "text" ? "#000000" : undefined,
+    padding: type === "text" ? 24 : undefined,
+    cornerRadius: type === "text" ? 8 : 0
+  };
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -68,6 +113,7 @@ function getPointerPosition(event: PointerEvent<HTMLElement>, canvasElement: HTM
 
 export function ThemesPage() {
   const [themes, setThemes] = useState<Theme[]>([]);
+  const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [selectedThemeId, setSelectedThemeId] = useState(defaultThemeId);
   const [theme, setTheme] = useState<Theme>({
     id: defaultThemeId,
@@ -84,7 +130,10 @@ export function ThemesPage() {
         x: 0,
         y: 0,
         width: 1920,
-        height: 1080
+        height: 1080,
+        visible: true,
+        locked: false,
+        opacity: 1
       }
     ]
   });
@@ -154,6 +203,21 @@ export function ThemesPage() {
     }
   }
 
+  async function loadMedia() {
+    try {
+      const response = await fetch(apiUrl("/api/media"));
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const body = (await response.json()) as MediaItem[];
+      setMediaItems(body.filter((item) => item.type === "image"));
+    } catch (error) {
+      setStatus(error instanceof Error ? `Unable to load media: ${error.message}` : "Unable to load media.");
+    }
+  }
+
   function updateTheme(updater: (currentTheme: Theme) => Theme) {
     setTheme((currentTheme) => updater(currentTheme));
     markDirty();
@@ -179,6 +243,24 @@ export function ThemesPage() {
       const region = {
         ...selectedRegion,
         [field]: value
+      };
+
+      return {
+        ...currentTheme,
+        regions: currentTheme.regions.some((item) => item.id === region.id)
+          ? currentTheme.regions.map((item) => (item.id === region.id ? region : item))
+          : [...currentTheme.regions, region]
+      };
+    });
+  }
+
+  function patchSelectedRegion(patch: Partial<ThemeRegion>) {
+    updateTheme((currentTheme) => {
+      const selectedRegion = currentTheme.regions.find((region) => region.id === selectedRegionIdRef.current) ??
+        defaultRegion(currentTheme);
+      const region = {
+        ...selectedRegion,
+        ...patch
       };
 
       return {
@@ -228,6 +310,13 @@ export function ThemesPage() {
   }
 
   function beginMove(event: PointerEvent<HTMLDivElement>, region: ThemeRegion) {
+    selectedRegionIdRef.current = region.id;
+    setSelectedRegionId(region.id);
+
+    if (region.locked) {
+      return;
+    }
+
     if (!canvasRef.current) {
       return;
     }
@@ -240,12 +329,17 @@ export function ThemesPage() {
       pointerY: pointer.y,
       region
     };
-    selectedRegionIdRef.current = region.id;
-    setSelectedRegionId(region.id);
     setIsInteracting(true);
   }
 
   function beginResize(event: PointerEvent<HTMLButtonElement>, handle: ResizeHandle, region: ThemeRegion) {
+    selectedRegionIdRef.current = region.id;
+    setSelectedRegionId(region.id);
+
+    if (region.locked) {
+      return;
+    }
+
     if (!canvasRef.current) {
       return;
     }
@@ -260,8 +354,6 @@ export function ThemesPage() {
       pointerY: pointer.y,
       region
     };
-    selectedRegionIdRef.current = region.id;
-    setSelectedRegionId(region.id);
     setIsInteracting(true);
   }
 
@@ -338,17 +430,8 @@ export function ThemesPage() {
     setIsInteracting(false);
   }
 
-  function addProgramRegion() {
-    const programCount = theme.regions.filter((region) => region.type === "program").length;
-    const region: ThemeRegion = {
-      id: `program-region-${Date.now()}`,
-      name: programCount === 0 ? "Program Region" : `Program Region ${programCount + 1}`,
-      type: "program",
-      x: snapValue(80 + programCount * 40, snapToGrid, gridSize),
-      y: snapValue(80 + programCount * 40, snapToGrid, gridSize),
-      width: Math.min(960, theme.canvasWidth),
-      height: Math.min(540, theme.canvasHeight)
-    };
+  function addRegion(type: ThemeRegionType) {
+    const region = createRegion(type, theme, gridSize, snapToGrid);
 
     updateRegionGeometry(constrainRegion(region));
     selectedRegionIdRef.current = region.id;
@@ -358,7 +441,7 @@ export function ThemesPage() {
   function duplicateSelectedRegion() {
     const selectedRegion = theme.regions.find((region) => region.id === selectedRegionIdRef.current);
 
-    if (!selectedRegion || selectedRegion.type !== "program") {
+    if (!selectedRegion) {
       return;
     }
 
@@ -373,6 +456,31 @@ export function ThemesPage() {
     updateRegionGeometry(region);
     selectedRegionIdRef.current = region.id;
     setSelectedRegionId(region.id);
+  }
+
+  function moveSelectedRegion(direction: "up" | "down") {
+    const selectedRegionIndex = theme.regions.findIndex((region) => region.id === selectedRegionIdRef.current);
+
+    if (selectedRegionIndex < 0) {
+      return;
+    }
+
+    const nextIndex = direction === "up" ? selectedRegionIndex - 1 : selectedRegionIndex + 1;
+
+    if (nextIndex < 0 || nextIndex >= theme.regions.length) {
+      return;
+    }
+
+    updateTheme((currentTheme) => {
+      const regions = [...currentTheme.regions];
+      const [region] = regions.splice(selectedRegionIndex, 1);
+      regions.splice(nextIndex, 0, region);
+
+      return {
+        ...currentTheme,
+        regions
+      };
+    });
   }
 
   function deleteSelectedRegion() {
@@ -527,6 +635,7 @@ export function ThemesPage() {
 
   useEffect(() => {
     void loadThemes();
+    void loadMedia();
     const timer = window.setInterval(() => void loadThemes(), refreshIntervalMs);
     return () => window.clearInterval(timer);
   }, []);
@@ -557,7 +666,8 @@ export function ThemesPage() {
       width: `${(region.width / theme.canvasWidth) * 100}%`,
       height: `${(region.height / theme.canvasHeight) * 100}%`,
       borderColor: colors.color,
-      backgroundColor: colors.background
+      backgroundColor: colors.background,
+      opacity: region.visible === false ? 0.36 : region.opacity ?? 1
     };
   }
 
@@ -614,7 +724,11 @@ export function ThemesPage() {
             </button>
             {theme.regions.map((region) => (
               <button
-                className={region.id === selectedRegion.id ? "theme-layer-item selected" : "theme-layer-item"}
+                className={[
+                  region.id === selectedRegion.id ? "theme-layer-item selected" : "theme-layer-item",
+                  region.visible === false ? "hidden" : "",
+                  region.locked ? "locked" : ""
+                ].join(" ")}
                 key={region.id}
                 onClick={() => {
                   selectedRegionIdRef.current = region.id;
@@ -626,17 +740,30 @@ export function ThemesPage() {
                   className="theme-layer-color"
                   style={{ backgroundColor: regionColors[region.type]?.color ?? regionColors.program.color }}
                 />
-                {region.name}
+                <span className="theme-layer-main">
+                  <strong>{region.name}</strong>
+                  <span>{region.type}</span>
+                </span>
               </button>
             ))}
+            <div className="theme-layer-actions">
+              <button disabled={theme.regions.findIndex((region) => region.id === selectedRegion.id) <= 0} onClick={() => moveSelectedRegion("up")} type="button">
+                Up
+              </button>
+              <button disabled={theme.regions.findIndex((region) => region.id === selectedRegion.id) >= theme.regions.length - 1} onClick={() => moveSelectedRegion("down")} type="button">
+                Down
+              </button>
+            </div>
           </div>
 
           <label className="add-region-control">
             + Add Region
             <select
               onChange={(event) => {
-                if (event.target.value === "program") {
-                  addProgramRegion();
+                const type = event.target.value as ThemeRegionType;
+
+                if (addableRegionTypes.some((item) => item.type === type)) {
+                  addRegion(type);
                 }
 
                 event.target.value = "";
@@ -644,7 +771,11 @@ export function ThemesPage() {
               value=""
             >
               <option value="">Choose type</option>
-              <option value="program">Program</option>
+              {addableRegionTypes.map((item) => (
+                <option key={item.type} value={item.type}>
+                  {item.label}
+                </option>
+              ))}
               {futureRegionTypes.map((type) => (
                 <option disabled key={type} value={type.toLowerCase()}>
                   {type} - Coming in future version
@@ -769,8 +900,27 @@ export function ThemesPage() {
               <input readOnly type="text" value={selectedRegion.type} />
             </label>
 
+            <div className="theme-property-toggles">
+              <label>
+                Visible
+                <input
+                  checked={selectedRegion.visible !== false}
+                  onChange={(event) => patchSelectedRegion({ visible: event.target.checked })}
+                  type="checkbox"
+                />
+              </label>
+              <label>
+                Locked
+                <input
+                  checked={selectedRegion.locked === true}
+                  onChange={(event) => patchSelectedRegion({ locked: event.target.checked })}
+                  type="checkbox"
+                />
+              </label>
+            </div>
+
             <div className="theme-property-actions">
-              <button disabled={selectedRegion.type !== "program"} onClick={duplicateSelectedRegion} type="button">
+              <button onClick={duplicateSelectedRegion} type="button">
                 Duplicate
               </button>
               <button
@@ -793,7 +943,152 @@ export function ThemesPage() {
               <button disabled type="button">Distribute - Coming later</button>
             </div>
 
-            <div className="theme-disabled-properties">
+            {(selectedRegion.type === "logo" || selectedRegion.type === "image") ? (
+              <div className="theme-dynamic-properties">
+                <label>
+                  Image
+                  <select
+                    onChange={(event) => {
+                      const media = mediaItems.find((item) => item.id === event.target.value);
+                      patchSelectedRegion({
+                        mediaId: media?.id,
+                        file: media?.filename
+                      });
+                    }}
+                    value={selectedRegion.mediaId ?? ""}
+                  >
+                    <option value="">Select image</option>
+                    {mediaItems.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.filename}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Object Fit
+                  <select
+                    onChange={(event) => patchSelectedRegion({ objectFit: event.target.value as ThemeObjectFit })}
+                    value={selectedRegion.objectFit ?? "contain"}
+                  >
+                    {objectFitOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Opacity
+                  <input
+                    max="1"
+                    min="0"
+                    onChange={(event) => patchSelectedRegion({ opacity: Number(event.target.value) })}
+                    step="0.05"
+                    type="number"
+                    value={selectedRegion.opacity ?? 1}
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            {selectedRegion.type === "text" ? (
+              <div className="theme-dynamic-properties">
+                <label>
+                  Text
+                  <textarea
+                    onChange={(event) => patchSelectedRegion({ text: event.target.value })}
+                    rows={4}
+                    value={selectedRegion.text ?? ""}
+                  />
+                </label>
+                <label>
+                  Font
+                  <input
+                    onChange={(event) => patchSelectedRegion({ font: event.target.value })}
+                    type="text"
+                    value={selectedRegion.font ?? "Inter"}
+                  />
+                </label>
+                <label>
+                  Font Size
+                  <input
+                    min="1"
+                    onChange={(event) => patchSelectedRegion({ fontSize: Number(event.target.value) })}
+                    type="number"
+                    value={selectedRegion.fontSize ?? 64}
+                  />
+                </label>
+                <div className="theme-property-toggles">
+                  <label>
+                    Bold
+                    <input
+                      checked={selectedRegion.bold === true}
+                      onChange={(event) => patchSelectedRegion({ bold: event.target.checked })}
+                      type="checkbox"
+                    />
+                  </label>
+                  <label>
+                    Italic
+                    <input
+                      checked={selectedRegion.italic === true}
+                      onChange={(event) => patchSelectedRegion({ italic: event.target.checked })}
+                      type="checkbox"
+                    />
+                  </label>
+                </div>
+                <label>
+                  Alignment
+                  <select
+                    onChange={(event) => patchSelectedRegion({ align: event.target.value as ThemeTextAlign })}
+                    value={selectedRegion.align ?? "center"}
+                  >
+                    {textAlignOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Text Color
+                  <input
+                    onChange={(event) => patchSelectedRegion({ textColor: event.target.value })}
+                    type="color"
+                    value={selectedRegion.textColor ?? "#ffffff"}
+                  />
+                </label>
+                <label>
+                  Background Color
+                  <input
+                    onChange={(event) => patchSelectedRegion({ backgroundColor: event.target.value })}
+                    type="color"
+                    value={selectedRegion.backgroundColor ?? "#000000"}
+                  />
+                </label>
+                <label>
+                  Padding
+                  <input
+                    min="0"
+                    onChange={(event) => patchSelectedRegion({ padding: Number(event.target.value) })}
+                    type="number"
+                    value={selectedRegion.padding ?? 0}
+                  />
+                </label>
+                <label>
+                  Corner Radius
+                  <input
+                    min="0"
+                    onChange={(event) => patchSelectedRegion({ cornerRadius: Number(event.target.value) })}
+                    type="number"
+                    value={selectedRegion.cornerRadius ?? 0}
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            {selectedRegion.type === "program" ? (
+              <div className="theme-disabled-properties">
               <label>
                 Opacity
                 <input disabled value="Coming later" readOnly />
@@ -810,15 +1105,8 @@ export function ThemesPage() {
                 Object Fit
                 <input disabled value="Coming later" readOnly />
               </label>
-              <label>
-                Locked
-                <input disabled readOnly type="checkbox" />
-              </label>
-              <label>
-                Visible
-                <input checked disabled readOnly type="checkbox" />
-              </label>
-            </div>
+              </div>
+            ) : null}
 
             <details className="theme-advanced-panel" open={isAdvancedOpen} onToggle={(event) => setIsAdvancedOpen(event.currentTarget.open)}>
               <summary>Advanced</summary>

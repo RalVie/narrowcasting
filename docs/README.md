@@ -109,7 +109,17 @@ Default theme fallback:
 
 The player scales the virtual canvas to the actual screen. Physical display resolution is not hard-coded.
 
-Theme layouts are stored as a generic `regions[]` collection. The dashboard editor is prepared for future region types, but only Program Regions are enabled in the current phase. The player renders the first Program Region and ignores additional regions until a later playback phase defines multi-region rendering.
+Theme layouts are stored as a generic `regions[]` collection. The dashboard editor currently supports Program, Logo, Image, and Text regions. Logo and Image regions use image files from the Media Library. Text regions render static text only.
+
+Player rendering order is:
+
+1. Background
+2. Image regions
+3. Logo regions
+4. First Program Region
+5. Text regions
+
+Static region media is synced to the player cache through the existing agent media sync path.
 
 ```bash
 cd server
@@ -167,7 +177,7 @@ The dashboard includes:
 - A Media Library page for image/video upload, thumbnail preview, refresh, and delete.
 - A Playlists page for adding media, removing items, setting duration, reordering with up/down buttons, and saving the default playlist.
 - A Programs page for creating programs and ordering playlists inside each program.
-- A Themes page with a visual region designer, Layers panel, canvas controls, region properties, and Program Region editing.
+- A Themes page with a visual region designer, Layers panel, canvas controls, region properties, Program Region editing, and static Logo/Image/Text regions.
 - A Scheduler page for assigning programs and themes to date, day, and time blocks.
 
 Media upload limits:
@@ -267,13 +277,16 @@ Themes are virtual canvas layout frames. Coordinates are stored in virtual canva
 5. Rename the region in Properties and confirm the Layers panel updates.
 6. Use alignment controls such as Center H, Center V, and Match Canvas.
 7. Duplicate the Program Region and confirm the last Program Region cannot be deleted.
-8. Save the theme, refresh, and confirm the layout is restored from JSON.
-9. Open Scheduler and assign the custom theme to an active program block.
-10. Confirm `GET http://localhost:3000/api/schedule` includes `theme` metadata and the existing `items` array.
-11. Start the agent and confirm it writes the enhanced `schedule.json` unchanged.
-12. Start the player and confirm media renders inside the first Program Region.
-13. Stop the server.
-14. Confirm cached playback continues from the local enhanced schedule.
+8. Add a Logo Region, select an image from the Media Library, and save.
+9. Add an Image Region, select an image from the Media Library, choose object fit, and save.
+10. Add a Text Region, enter text, style it, and save.
+11. Refresh Themes and confirm all regions are restored from JSON.
+12. Open Scheduler and assign the custom theme to an active program block.
+13. Confirm `GET http://localhost:3000/api/schedule` includes `theme` metadata and the existing `items` array.
+14. Start the agent and confirm it writes the enhanced `schedule.json` and caches static region image files.
+15. Start the player and confirm media renders in this order: background, images, logos, program, text.
+16. Stop the server.
+17. Confirm cached playback continues from the local enhanced schedule.
 
 ## Remote Dashboard Test Procedure
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { Schedule } from "./schedule/types";
+import type { CSSProperties } from "react";
+import type { Schedule, ThemeRegion } from "./schedule/types";
 
 const reloadIntervalMs = 30_000;
 
@@ -21,6 +22,29 @@ function isSchedule(value: unknown): value is Schedule {
     typeof schedule.updatedAt === "string" &&
     Array.isArray(schedule.items)
   );
+}
+
+function getRegionFrameStyle(region: ThemeRegion): CSSProperties {
+  return {
+    left: `${region.x}px`,
+    top: `${region.y}px`,
+    width: `${region.width}px`,
+    height: `${region.height}px`,
+    opacity: region.opacity ?? 1,
+    borderRadius: `${region.cornerRadius ?? 0}px`
+  };
+}
+
+function getObjectFit(region: ThemeRegion): CSSProperties["objectFit"] {
+  if (region.objectFit === "stretch") {
+    return "fill";
+  }
+
+  if (region.objectFit === "center") {
+    return "none";
+  }
+
+  return region.objectFit ?? "contain";
 }
 
 export function PlayerApp() {
@@ -152,6 +176,55 @@ export function PlayerApp() {
     return <h1>{activeItem.title}</h1>;
   }
 
+  function renderStaticImageRegion(region: ThemeRegion, className: string) {
+    if (region.visible === false || !region.file) {
+      return null;
+    }
+
+    return (
+      <div className={className} key={region.id} style={getRegionFrameStyle(region)}>
+        <img
+          alt=""
+          className="theme-static-image"
+          src={`/media/${encodeURIComponent(region.file)}`}
+          style={{
+            objectFit: getObjectFit(region)
+          }}
+        />
+      </div>
+    );
+  }
+
+  function renderTextRegion(region: ThemeRegion) {
+    if (region.visible === false) {
+      return null;
+    }
+
+    return (
+      <div
+        className="theme-text-region"
+        key={region.id}
+        style={{
+          ...getRegionFrameStyle(region),
+          alignItems: "center",
+          backgroundColor: region.backgroundColor ?? "transparent",
+          color: region.textColor ?? "#ffffff",
+          display: "flex",
+          fontFamily: region.font ?? "Inter, ui-sans-serif, system-ui, sans-serif",
+          fontSize: `${region.fontSize ?? 48}px`,
+          fontStyle: region.italic ? "italic" : "normal",
+          fontWeight: region.bold ? 700 : 400,
+          justifyContent:
+            region.align === "right" ? "flex-end" : region.align === "left" ? "flex-start" : "center",
+          padding: `${region.padding ?? 0}px`,
+          textAlign: region.align ?? "center"
+        }}
+      >
+        {region.text ?? ""}
+      </div>
+    );
+  }
+
   useEffect(() => {
     if (!activeItem || !schedule || typeof activeItem.duration !== "number") {
       return;
@@ -194,11 +267,14 @@ export function PlayerApp() {
   const theme = schedule?.theme;
   const programRegion = theme?.regions.find((region) => region.type === "program");
 
-  if (theme && programRegion) {
+  if (theme) {
     const scale = Math.min(
       viewportSize.width / theme.canvasWidth,
       viewportSize.height / theme.canvasHeight
     );
+    const imageRegions = theme.regions.filter((region) => region.type === "image");
+    const logoRegions = theme.regions.filter((region) => region.type === "logo");
+    const textRegions = theme.regions.filter((region) => region.type === "text");
 
     return (
       <main className="player-shell themed-player-shell">
@@ -218,17 +294,14 @@ export function PlayerApp() {
               transform: `scale(${Number.isFinite(scale) ? scale : 1})`
             }}
           >
-            <div
-              className="theme-program-region"
-              style={{
-                left: `${programRegion.x}px`,
-                top: `${programRegion.y}px`,
-                width: `${programRegion.width}px`,
-                height: `${programRegion.height}px`
-              }}
-            >
-              {renderActiveItem("themed-media")}
-            </div>
+            {imageRegions.map((region) => renderStaticImageRegion(region, "theme-static-region"))}
+            {logoRegions.map((region) => renderStaticImageRegion(region, "theme-logo-region"))}
+            {programRegion && programRegion.visible !== false ? (
+              <div className="theme-program-region" style={getRegionFrameStyle(programRegion)}>
+                {renderActiveItem("themed-media")}
+              </div>
+            ) : null}
+            {textRegions.map((region) => renderTextRegion(region))}
           </div>
         </section>
         <footer className="status-bar">

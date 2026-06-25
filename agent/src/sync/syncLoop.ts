@@ -75,10 +75,22 @@ async function syncMediaFile(config: AgentConfig, file: string) {
 }
 
 async function syncMediaFiles(config: AgentConfig, schedule: Schedule) {
+  const files = new Set<string>();
+
   for (const item of schedule.items) {
     if (item.type === "image" || item.type === "video") {
-      await syncMediaFile(config, item.file);
+      files.add(item.file);
     }
+  }
+
+  for (const region of schedule.theme?.regions ?? []) {
+    if ((region.type === "logo" || region.type === "image") && region.file) {
+      files.add(region.file);
+    }
+  }
+
+  for (const file of files) {
+    await syncMediaFile(config, file);
   }
 }
 

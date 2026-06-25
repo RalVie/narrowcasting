@@ -26,11 +26,27 @@ export type ScheduleItem = TextScheduleItem | ImageScheduleItem | VideoScheduleI
 export interface ThemeRegion {
   id: string;
   name: string;
-  type: "program" | "image" | "text";
+  type: "program" | "logo" | "image" | "text";
   x: number;
   y: number;
   width: number;
   height: number;
+  mediaId?: string;
+  file?: string;
+  objectFit?: "contain" | "cover" | "stretch" | "center";
+  opacity?: number;
+  visible?: boolean;
+  locked?: boolean;
+  text?: string;
+  font?: string;
+  fontSize?: number;
+  bold?: boolean;
+  italic?: boolean;
+  align?: "left" | "center" | "right";
+  textColor?: string;
+  backgroundColor?: string;
+  padding?: number;
+  cornerRadius?: number;
 }
 
 export interface Theme {

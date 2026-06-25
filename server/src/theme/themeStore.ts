@@ -2,7 +2,9 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 export type ThemeOrientation = "landscape" | "portrait";
-export type ThemeRegionType = "program" | "image" | "text";
+export type ThemeRegionType = "program" | "logo" | "image" | "text";
+export type ThemeObjectFit = "contain" | "cover" | "stretch" | "center";
+export type ThemeTextAlign = "left" | "center" | "right";
 
 export interface ThemeRegion {
   id: string;
@@ -12,6 +14,22 @@ export interface ThemeRegion {
   y: number;
   width: number;
   height: number;
+  mediaId?: string;
+  file?: string;
+  objectFit?: ThemeObjectFit;
+  opacity?: number;
+  visible?: boolean;
+  locked?: boolean;
+  text?: string;
+  font?: string;
+  fontSize?: number;
+  bold?: boolean;
+  italic?: boolean;
+  align?: ThemeTextAlign;
+  textColor?: string;
+  backgroundColor?: string;
+  padding?: number;
+  cornerRadius?: number;
 }
 
 export interface Theme {
@@ -29,6 +47,9 @@ export interface Theme {
 const themesPath = resolve(process.cwd(), "data", "themes.json");
 const defaultThemeId = "default-fullscreen";
 const colorPattern = /^#[0-9a-fA-F]{6}$/;
+const allowedRegionTypes = new Set<ThemeRegionType>(["program", "logo", "image", "text"]);
+const allowedObjectFits = new Set<ThemeObjectFit>(["contain", "cover", "stretch", "center"]);
+const allowedTextAlignments = new Set<ThemeTextAlign>(["left", "center", "right"]);
 
 export const defaultTheme: Theme = {
   id: defaultThemeId,
@@ -69,13 +90,33 @@ function toNumber(value: unknown, fallback: number) {
   return Number.isFinite(numberValue) ? numberValue : fallback;
 }
 
+function toBoolean(value: unknown, fallback: boolean) {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function toOptionalString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function toOpacity(value: unknown) {
+  return Math.min(Math.max(toNumber(value, 1), 0), 1);
+}
+
 function normalizeRegion(value: unknown, index: number): ThemeRegion | null {
   if (!value || typeof value !== "object") {
     return null;
   }
 
   const candidate = value as Partial<ThemeRegion>;
-  const type = candidate.type === "image" || candidate.type === "text" ? candidate.type : "program";
+  const type = allowedRegionTypes.has(candidate.type as ThemeRegionType)
+    ? (candidate.type as ThemeRegionType)
+    : "program";
+  const objectFit = allowedObjectFits.has(candidate.objectFit as ThemeObjectFit)
+    ? (candidate.objectFit as ThemeObjectFit)
+    : undefined;
+  const align = allowedTextAlignments.has(candidate.align as ThemeTextAlign)
+    ? (candidate.align as ThemeTextAlign)
+    : undefined;
 
   return {
     id: typeof candidate.id === "string" && candidate.id.trim() ? candidate.id.trim() : `region-${index + 1}`,
@@ -84,7 +125,29 @@ function normalizeRegion(value: unknown, index: number): ThemeRegion | null {
     x: toNumber(candidate.x, 0),
     y: toNumber(candidate.y, 0),
     width: toPositiveNumber(candidate.width, defaultTheme.canvasWidth),
-    height: toPositiveNumber(candidate.height, defaultTheme.canvasHeight)
+    height: toPositiveNumber(candidate.height, defaultTheme.canvasHeight),
+    mediaId: toOptionalString(candidate.mediaId),
+    file: toOptionalString(candidate.file),
+    objectFit,
+    opacity: toOpacity(candidate.opacity),
+    visible: toBoolean(candidate.visible, true),
+    locked: toBoolean(candidate.locked, false),
+    text: typeof candidate.text === "string" ? candidate.text : undefined,
+    font: toOptionalString(candidate.font),
+    fontSize: toPositiveNumber(candidate.fontSize, 48),
+    bold: toBoolean(candidate.bold, false),
+    italic: toBoolean(candidate.italic, false),
+    align,
+    textColor:
+      typeof candidate.textColor === "string" && colorPattern.test(candidate.textColor)
+        ? candidate.textColor
+        : undefined,
+    backgroundColor:
+      typeof candidate.backgroundColor === "string" && colorPattern.test(candidate.backgroundColor)
+        ? candidate.backgroundColor
+        : undefined,
+    padding: Math.max(toNumber(candidate.padding, 0), 0),
+    cornerRadius: Math.max(toNumber(candidate.cornerRadius, 0), 0)
   };
 }
 
