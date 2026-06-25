@@ -383,6 +383,243 @@ button:disabled {
   letter-spacing: 0;
 }
 
+.theme-designer-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.theme-list-panel,
+.theme-designer-panel {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  border: 1px solid #d9dfd4;
+  border-radius: 8px;
+  padding: 14px;
+  background: #f8faf6;
+}
+
+.theme-list-panel h3 {
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
+.theme-list {
+  display: grid;
+  gap: 8px;
+}
+
+.theme-list-item {
+  text-align: left;
+}
+
+.theme-list-item.selected {
+  border-color: #4777d9;
+  color: #0f2f72;
+  background: #eaf1ff;
+}
+
+.theme-toolbar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.theme-toolbar label,
+.theme-advanced-panel label {
+  display: grid;
+  gap: 4px;
+  color: #647064;
+  font-size: 13px;
+}
+
+.theme-toolbar input,
+.theme-toolbar select,
+.theme-advanced-panel input,
+.theme-advanced-panel select {
+  border: 1px solid #b9c8bd;
+  border-radius: 6px;
+  padding: 8px;
+  color: #17201a;
+  font: inherit;
+}
+
+.theme-toolbar input[type="checkbox"] {
+  width: auto;
+  justify-self: start;
+}
+
+.theme-canvas-frame {
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  border: 1px solid #d9dfd4;
+  border-radius: 8px;
+  padding: 18px;
+  background: #e7ece5;
+}
+
+.theme-design-canvas {
+  position: relative;
+  width: min(100%, 920px);
+  overflow: hidden;
+  border: 1px solid #1a241e;
+  border-radius: 6px;
+  box-shadow: 0 16px 40px rgb(23 32 26 / 18%);
+  touch-action: none;
+}
+
+.theme-safe-area {
+  position: absolute;
+  border: 1px dashed rgb(255 255 255 / 70%);
+  pointer-events: none;
+}
+
+.theme-center-guide {
+  position: absolute;
+  pointer-events: none;
+  background: rgb(255 255 255 / 42%);
+}
+
+.theme-center-guide.vertical {
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+}
+
+.theme-center-guide.horizontal {
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: 1px;
+}
+
+.theme-region {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  border: 2px solid #30b56a;
+  border-radius: 8px;
+  color: #effcf3;
+  background: rgb(48 181 106 / 28%);
+  cursor: move;
+  outline: none;
+  touch-action: none;
+}
+
+.theme-region.selected {
+  border-color: #4777d9;
+  box-shadow: 0 0 0 2px rgb(71 119 217 / 32%);
+}
+
+.theme-region-name {
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: #ffffff;
+  background: rgb(0 0 0 / 48%);
+  font-size: 13px;
+  pointer-events: none;
+}
+
+.theme-region-label {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 2;
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: #ffffff;
+  background: rgb(0 0 0 / 72%);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.theme-resize-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  padding: 0;
+  background: #4777d9;
+}
+
+.theme-resize-handle.nw {
+  top: -7px;
+  left: -7px;
+  cursor: nwse-resize;
+}
+
+.theme-resize-handle.n {
+  top: -7px;
+  left: calc(50% - 6px);
+  cursor: ns-resize;
+}
+
+.theme-resize-handle.ne {
+  top: -7px;
+  right: -7px;
+  cursor: nesw-resize;
+}
+
+.theme-resize-handle.e {
+  top: calc(50% - 6px);
+  right: -7px;
+  cursor: ew-resize;
+}
+
+.theme-resize-handle.se {
+  right: -7px;
+  bottom: -7px;
+  cursor: nwse-resize;
+}
+
+.theme-resize-handle.s {
+  bottom: -7px;
+  left: calc(50% - 6px);
+  cursor: ns-resize;
+}
+
+.theme-resize-handle.sw {
+  bottom: -7px;
+  left: -7px;
+  cursor: nesw-resize;
+}
+
+.theme-resize-handle.w {
+  top: calc(50% - 6px);
+  left: -7px;
+  cursor: ew-resize;
+}
+
+.theme-advanced-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.theme-advanced-panel summary {
+  cursor: pointer;
+  color: #2b4938;
+  font-weight: 700;
+}
+
+.theme-json-preview {
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid #d9dfd4;
+  border-radius: 8px;
+  padding: 12px;
+  color: #dce8e1;
+  background: #101512;
+  font-size: 12px;
+}
+
 .playlist-schedule-fields {
   display: grid;
   grid-template-columns: repeat(4, minmax(120px, 1fr));
