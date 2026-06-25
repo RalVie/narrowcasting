@@ -4,6 +4,7 @@ export interface PlaylistItem {
   type: "image" | "video";
   file: string;
   duration: number;
+  durationMode?: "auto" | "clip";
 }
 
 export interface Playlist {

@@ -19,6 +19,7 @@ export interface VideoScheduleItem {
   type: "video";
   file: string;
   duration?: number;
+  durationMode?: "auto" | "clip";
 }
 
 export type ScheduleItem = TextScheduleItem | ImageScheduleItem | VideoScheduleItem;

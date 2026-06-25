@@ -71,7 +71,8 @@ export async function getGeneratedSchedule(): Promise<Schedule> {
       mediaId: item.mediaId,
       type: item.type,
       file: item.file,
-      duration: item.duration
+      duration: item.duration,
+      durationMode: item.durationMode
     }));
   });
   const activePlaylists = activeProgram.playlistIds

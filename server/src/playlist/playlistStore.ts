@@ -8,6 +8,7 @@ export interface PlaylistItem {
   type: "image" | "video";
   file: string;
   duration: number;
+  durationMode?: "auto" | "clip";
   startDate?: string;
   endDate?: string;
   daysOfWeek?: DayOfWeek[];
@@ -83,7 +84,9 @@ function normalizePlaylistItems(items: unknown): PlaylistItem[] {
         mediaId: candidate.mediaId,
         type: candidate.type,
         file: candidate.file,
-        duration: Math.max(Number(candidate.duration ?? 10), 1)
+        duration: Math.max(Number(candidate.duration ?? 10), 1),
+        durationMode:
+          candidate.type === "video" && candidate.durationMode === "clip" ? "clip" : undefined
       };
 
       if (typeof candidate.startDate === "string" && datePattern.test(candidate.startDate)) {
@@ -395,7 +398,8 @@ export async function getScheduleFromPlaylist(): Promise<Schedule> {
         mediaId: item.mediaId,
         type: item.type,
         file: item.file,
-        duration: item.duration
+        duration: item.duration,
+        durationMode: item.durationMode
       }))
   };
 }

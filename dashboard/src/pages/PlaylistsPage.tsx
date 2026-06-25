@@ -13,7 +13,8 @@ function createPlaylistItem(media: MediaItem): PlaylistItem {
     mediaId: media.id,
     type: media.type,
     file: media.filename,
-    duration: 10
+    duration: 10,
+    durationMode: media.type === "video" ? "auto" : undefined
   };
 }
 
@@ -186,7 +187,13 @@ export function PlaylistsPage() {
     setPlaylist((currentPlaylist) => ({
       ...currentPlaylist,
       items: currentPlaylist.items.map((item) =>
-        item.id === id ? { ...item, duration: Math.max(duration, 1) } : item
+        item.id === id
+          ? {
+              ...item,
+              duration: Math.max(duration, 1),
+              durationMode: item.type === "video" ? "clip" : item.durationMode
+            }
+          : item
       )
     }));
     markDirty();

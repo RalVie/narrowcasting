@@ -316,13 +316,26 @@ function InstrumentedVideo({
   videoKey
 }: InstrumentedVideoProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const clipTimerRef = useRef<number | null>(null);
   const watchdogTimerRef = useRef<number | null>(null);
+
+  function clearVideoClipTimer() {
+    if (clipTimerRef.current !== null) {
+      window.clearTimeout(clipTimerRef.current);
+      clipTimerRef.current = null;
+    }
+  }
 
   function clearVideoWatchdog() {
     if (watchdogTimerRef.current !== null) {
       window.clearTimeout(watchdogTimerRef.current);
       watchdogTimerRef.current = null;
     }
+  }
+
+  function clearVideoTimers() {
+    clearVideoClipTimer();
+    clearVideoWatchdog();
   }
 
   const emit = useCallback(
@@ -456,7 +469,7 @@ function InstrumentedVideo({
     });
 
     return () => {
-      clearVideoWatchdog();
+      clearVideoTimers();
       window.clearTimeout(snapshotTimer);
       window.cancelAnimationFrame(animationFrame);
       emit("unmount", "component cleanup", videoRef.current);
@@ -493,12 +506,12 @@ function InstrumentedVideo({
           });
       }}
       onEnded={(event) => {
-        clearVideoWatchdog();
+        clearVideoTimers();
         emit("ended", undefined, event.currentTarget);
         onAdvance(sessionKey, "video ended");
       }}
       onError={(event) => {
-        clearVideoWatchdog();
+        clearVideoTimers();
         event.currentTarget.dataset.missing = "true";
         emit("error", "media element error", event.currentTarget);
         onFailure(sessionKey, `Media unavailable: ${item.file}`);
@@ -524,6 +537,16 @@ function InstrumentedVideo({
       }}
       onPlaying={(event) => {
         emit("playing", undefined, event.currentTarget);
+
+        if (item.durationMode === "clip" && typeof item.duration === "number") {
+          clearVideoClipTimer();
+          const clipDurationMs = Math.max(item.duration, 1) * 1000;
+          emit("video clip timer scheduled", `explicit clip duration ${item.duration}s`, event.currentTarget);
+          clipTimerRef.current = window.setTimeout(() => {
+            emit("video clip timer fired", undefined, event.currentTarget);
+            onAdvance(sessionKey, "video clip timer fired");
+          }, clipDurationMs);
+        }
       }}
       playsInline
       preload="auto"
