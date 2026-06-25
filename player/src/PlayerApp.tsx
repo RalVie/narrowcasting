@@ -18,6 +18,24 @@ interface ScheduleDebugInfo {
   status: string;
 }
 
+interface VideoDebugEvent {
+  time: string;
+  event: string;
+  itemId: string;
+  itemIndex: number;
+  cycleId: number;
+  sessionKey: number;
+  epoch: number;
+  videoKey: string;
+  src: string;
+  currentTime: number | null;
+  paused: boolean | null;
+  ended: boolean | null;
+  readyState: number | null;
+  networkState: number | null;
+  note?: string;
+}
+
 function getViewportSize() {
   return {
     width: window.innerWidth,
@@ -74,6 +92,26 @@ function getItemKey(
 
 function getMediaUrl(file: string) {
   return `/media/${encodeURIComponent(file)}`;
+}
+
+function getVideoElementState(video: HTMLVideoElement | null) {
+  if (!video) {
+    return {
+      currentTime: null,
+      paused: null,
+      ended: null,
+      readyState: null,
+      networkState: null
+    };
+  }
+
+  return {
+    currentTime: Number.isFinite(video.currentTime) ? Number(video.currentTime.toFixed(3)) : null,
+    paused: video.paused,
+    ended: video.ended,
+    readyState: video.readyState,
+    networkState: video.networkState
+  };
 }
 
 function probeImage(file: string) {
@@ -216,11 +254,137 @@ function formatClock(date: Date, format: ThemeRegion["clockFormat"] = "HH:mm") {
   return `${hours}:${minutes}`;
 }
 
+interface InstrumentedVideoProps {
+  activeIndex: number;
+  className: string;
+  debugEnabled: boolean;
+  item: Extract<ScheduleItem, { type: "video" }>;
+  onAdvance: (sessionKey: number) => void;
+  onDebugEvent: (event: VideoDebugEvent) => void;
+  onFailure: (sessionKey: number, message: string) => void;
+  playbackEpoch: number;
+  programCycleId: number;
+  sessionKey: number;
+  src: string;
+  videoKey: string;
+}
+
+function InstrumentedVideo({
+  activeIndex,
+  className,
+  debugEnabled,
+  item,
+  onAdvance,
+  onDebugEvent,
+  onFailure,
+  playbackEpoch,
+  programCycleId,
+  sessionKey,
+  src,
+  videoKey
+}: InstrumentedVideoProps) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  const emit = useCallback(
+    (event: string, note?: string, video: HTMLVideoElement | null = videoRef.current) => {
+      const debugEvent: VideoDebugEvent = {
+        time: new Date().toLocaleTimeString(),
+        event,
+        itemId: item.id,
+        itemIndex: activeIndex,
+        cycleId: programCycleId,
+        sessionKey,
+        epoch: playbackEpoch,
+        videoKey,
+        src,
+        ...getVideoElementState(video),
+        note
+      };
+
+      if (debugEnabled) {
+        console.info("video lifecycle", debugEvent);
+      }
+
+      onDebugEvent(debugEvent);
+    },
+    [
+      activeIndex,
+      debugEnabled,
+      item.id,
+      onDebugEvent,
+      playbackEpoch,
+      programCycleId,
+      sessionKey,
+      src,
+      videoKey
+    ]
+  );
+
+  useEffect(() => {
+    emit("mount");
+
+    return () => {
+      emit("unmount");
+    };
+  }, [emit]);
+
+  return (
+    <video
+      autoPlay
+      className={className}
+      key={videoKey}
+      muted
+      onCanPlay={(event) => {
+        emit("canplay", "play() called", event.currentTarget);
+        void event.currentTarget
+          .play()
+          .then(() => {
+            emit("play resolved", undefined, event.currentTarget);
+          })
+          .catch((error: unknown) => {
+            emit(
+              "play rejected",
+              error instanceof Error ? error.message : String(error),
+              event.currentTarget
+            );
+            onAdvance(sessionKey);
+          });
+      }}
+      onEnded={(event) => {
+        emit("ended", undefined, event.currentTarget);
+        onAdvance(sessionKey);
+      }}
+      onError={(event) => {
+        event.currentTarget.dataset.missing = "true";
+        emit("error", "media element error", event.currentTarget);
+        onFailure(sessionKey, `Media unavailable: ${item.file}`);
+      }}
+      onLoadedMetadata={(event) => {
+        emit("loadedmetadata", undefined, event.currentTarget);
+      }}
+      onPause={(event) => {
+        emit("pause", undefined, event.currentTarget);
+      }}
+      onPlay={(event) => {
+        emit("play event", undefined, event.currentTarget);
+      }}
+      onPlaying={(event) => {
+        emit("playing", undefined, event.currentTarget);
+      }}
+      playsInline
+      preload="auto"
+      ref={videoRef}
+      src={src}
+    />
+  );
+}
+
 export function PlayerApp() {
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [playbackEpoch, setPlaybackEpoch] = useState(0);
   const [playbackSessionKey, setPlaybackSessionKey] = useState(0);
+  const [programCycleId, setProgramCycleId] = useState(0);
   const [missingItemMessage, setMissingItemMessage] = useState<string | null>(null);
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
   const [viewportSize, setViewportSize] = useState(getViewportSize);
@@ -235,7 +399,9 @@ export function PlayerApp() {
     reloadCount: readScheduleReloadCount(),
     status: "waiting"
   }));
+  const [videoDebugEvents, setVideoDebugEvents] = useState<VideoDebugEvent[]>([]);
   const playbackSessionKeyRef = useRef(0);
+  const programCycleIdRef = useRef(0);
   const failureTimerRef = useRef<number | null>(null);
 
   function clearFailureTimer() {
@@ -244,6 +410,18 @@ export function PlayerApp() {
       failureTimerRef.current = null;
     }
   }
+
+  const appendVideoDebugEvent = useCallback((event: VideoDebugEvent) => {
+    setVideoDebugEvents((events) => [...events, event].slice(-8));
+  }, []);
+
+  const bumpProgramCycle = useCallback(() => {
+    setProgramCycleId((cycleId) => {
+      const nextCycleId = cycleId + 1;
+      programCycleIdRef.current = nextCycleId;
+      return nextCycleId;
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -341,6 +519,9 @@ export function PlayerApp() {
             clearFailureTimer();
             setSchedule(body);
             setActiveIndex(0);
+            setProgramCycleId(0);
+            programCycleIdRef.current = 0;
+            setVideoDebugEvents([]);
             setPlaybackEpoch((epoch) => epoch + 1);
             setPlaybackSessionKey((key) => {
               const nextKey = key + 1;
@@ -420,12 +601,21 @@ export function PlayerApp() {
     }
 
     if (schedule.items.length === 1) {
+      bumpProgramCycle();
       setPlaybackEpoch((epoch) => epoch + 1);
       return;
     }
 
-    setActiveIndex((index) => (index + 1) % schedule.items.length);
-  }, [schedule]);
+    setActiveIndex((index) => {
+      const nextIndex = (index + 1) % schedule.items.length;
+
+      if (nextIndex === 0) {
+        bumpProgramCycle();
+      }
+
+      return nextIndex;
+    });
+  }, [bumpProgramCycle, schedule]);
 
   const handleActiveItemFailure = useCallback(
     (sessionKey: number, message: string) => {
@@ -494,38 +684,37 @@ export function PlayerApp() {
     }
 
     if (activeItem.type === "video") {
+      const videoKey = getItemKey(activeItem, schedule, activeIndex, playbackEpoch, playbackSessionKey);
+      const src = getMediaUrl(activeItem.file);
+
       return (
         <>
-          <video
-            autoPlay
+          <InstrumentedVideo
+            activeIndex={activeIndex}
             className={className}
-            key={getItemKey(activeItem, schedule, activeIndex, playbackEpoch, playbackSessionKey)}
-            muted
-            onCanPlay={(event) => {
-              if (sessionKey !== playbackSessionKeyRef.current) {
+            debugEnabled={debugInfo.enabled}
+            item={activeItem}
+            key={videoKey}
+            onAdvance={(incomingSessionKey) => {
+              if (incomingSessionKey !== playbackSessionKeyRef.current) {
                 return;
               }
 
-              clearFailureTimer();
-              setMissingItemMessage(null);
-              void event.currentTarget.play().catch(() => {
-                advanceToNextItem(sessionKey);
-              });
+              advanceToNextItem(incomingSessionKey);
             }}
-            onEnded={() => {
-              advanceToNextItem(sessionKey);
-            }}
-            onError={(event) => {
-              if (sessionKey !== playbackSessionKeyRef.current) {
+            onDebugEvent={appendVideoDebugEvent}
+            onFailure={(incomingSessionKey, message) => {
+              if (incomingSessionKey !== playbackSessionKeyRef.current) {
                 return;
               }
 
-              event.currentTarget.dataset.missing = "true";
-              handleActiveItemFailure(sessionKey, `Media unavailable: ${activeItem.file}`);
+              handleActiveItemFailure(incomingSessionKey, message);
             }}
-            playsInline
-            preload="auto"
-            src={getMediaUrl(activeItem.file)}
+            playbackEpoch={playbackEpoch}
+            programCycleId={programCycleId}
+            sessionKey={sessionKey}
+            src={src}
+            videoKey={videoKey}
           />
           <p className="missing-media-message">{missingItemMessage ?? `Media unavailable: ${activeItem.file}`}</p>
         </>
@@ -550,6 +739,22 @@ export function PlayerApp() {
         <span>Reload: {debugInfo.reloadTriggered ? "yes" : "no"}</span>
         <span>Reload count: {debugInfo.reloadCount}</span>
         <span>Status: {debugInfo.status}</span>
+        <span>Cycle: {programCycleId}</span>
+        <span>Media: {activeItem?.id ?? "none"}</span>
+        {videoDebugEvents.length > 0 ? (
+          <div className="video-debug-events">
+            <strong>Video</strong>
+            {videoDebugEvents.map((event, index) => (
+              <span key={`${event.time}-${event.event}-${index}`}>
+                {event.time} {event.event} i:{event.itemIndex} c:{event.cycleId} e:{event.epoch} r:
+                {event.readyState ?? "-"} n:{event.networkState ?? "-"} p:
+                {event.paused === null ? "-" : event.paused ? "yes" : "no"} end:
+                {event.ended === null ? "-" : event.ended ? "yes" : "no"} t:
+                {event.currentTime ?? "-"} {event.note ? `(${event.note})` : ""}
+              </span>
+            ))}
+          </div>
+        ) : null}
       </aside>
     );
   }
