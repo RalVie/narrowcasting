@@ -7,6 +7,9 @@ export interface ScreenRecord {
   playerId: string;
   name: string;
   status: "pending" | "approved";
+  assignedProgramId?: string | null;
+  assignedProgramName?: string | null;
+  lastAssignment?: string | null;
   registeredAt: string;
   lastSeen: string;
   version: string;
@@ -148,6 +151,9 @@ function normalizeScreen(value: unknown): ScreenRecord | null {
     playerId: candidate.playerId,
     name: sanitizeText(candidate.name, "Unnamed Screen"),
     status: candidate.status === "approved" ? "approved" : "pending",
+    assignedProgramId: sanitizeNullableText(candidate.assignedProgramId),
+    assignedProgramName: sanitizeNullableText(candidate.assignedProgramName),
+    lastAssignment: sanitizeNullableText(candidate.lastAssignment),
     registeredAt: sanitizeText(candidate.registeredAt, candidate.lastSeen ?? ""),
     lastSeen: sanitizeText(candidate.lastSeen, ""),
     version: sanitizeText(candidate.version, "unknown"),
@@ -197,6 +203,9 @@ export async function registerScreen(input: ScreenRegistrationInput): Promise<Sc
     playerId,
     name: existingScreen?.name ?? `Screen ${screens.length + 1}`,
     status: existingScreen?.status ?? "pending",
+    assignedProgramId: existingScreen?.assignedProgramId ?? null,
+    assignedProgramName: existingScreen?.assignedProgramName ?? null,
+    lastAssignment: existingScreen?.lastAssignment ?? null,
     registeredAt: existingScreen?.registeredAt ?? now,
     lastSeen: now,
     version: sanitizeText(input.version, existingScreen?.version ?? "unknown"),
@@ -248,6 +257,34 @@ export async function renameScreen(screenId: string, name: unknown): Promise<Scr
 
   await writeScreens(screens.map((item) => (item.screenId === screenId ? renamedScreen : item)));
   return renamedScreen;
+}
+
+export async function getScreenById(screenId: string): Promise<ScreenRecord | null> {
+  const screens = await listScreens();
+  return screens.find((screen) => screen.screenId === screenId) ?? null;
+}
+
+export async function assignProgramToScreen(
+  screenId: string,
+  programId: unknown,
+  programName: unknown
+): Promise<ScreenRecord | null> {
+  const screens = await listScreens();
+  const screen = screens.find((item) => item.screenId === screenId);
+
+  if (!screen) {
+    return null;
+  }
+
+  const assignedScreen: ScreenRecord = {
+    ...screen,
+    assignedProgramId: sanitizeNullableText(programId),
+    assignedProgramName: sanitizeNullableText(programName),
+    lastAssignment: new Date().toISOString()
+  };
+
+  await writeScreens(screens.map((item) => (item.screenId === screenId ? assignedScreen : item)));
+  return assignedScreen;
 }
 
 export async function updateScreenHeartbeat(

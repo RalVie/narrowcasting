@@ -1,5 +1,5 @@
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { mkdir, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { networkInterfaces } from "node:os";
 import { extname, join, relative, resolve } from "node:path";
@@ -218,6 +218,33 @@ async function discoverServer(knownUrl) {
   return scanSubnetForServer();
 }
 
+async function readRequestJson(request) {
+  const chunks = [];
+
+  for await (const chunk of request) {
+    chunks.push(chunk);
+  }
+
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+async function savePlayerRegistration(body) {
+  const registration = {
+    screenId: typeof body?.screenId === "string" ? body.screenId : null,
+    playerId: typeof body?.playerId === "string" ? body.playerId : null,
+    serverUrl: normalizeServerUrl(body?.serverUrl) ?? null,
+    updatedAt: new Date().toISOString()
+  };
+
+  await mkdir(resolve(publicRoot, "data"), { recursive: true });
+  await writeFile(
+    resolve(publicRoot, "data", "player-registration.json"),
+    `${JSON.stringify(registration, null, 2)}\n`,
+    "utf8"
+  );
+  return registration;
+}
+
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
   const path = url.pathname;
@@ -238,6 +265,17 @@ const server = createServer(async (request, response) => {
     sendJson(response, 404, {
       error: "Narrowcasting server not found"
     });
+    return;
+  }
+
+  if (path === "/api/player-registration" && request.method === "POST") {
+    try {
+      const body = await readRequestJson(request);
+      const registration = await savePlayerRegistration(body);
+      sendJson(response, 200, registration);
+    } catch {
+      sendJson(response, 400, { error: "invalid registration payload" });
+    }
     return;
   }
 

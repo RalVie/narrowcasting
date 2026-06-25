@@ -367,6 +367,24 @@ function reloadPlayerForSchedule(signature: string, debugEnabled: boolean) {
   window.location.href = `/player?reload=${Date.now()}${debugEnabled ? "&debug=1" : ""}`;
 }
 
+async function persistPlayerRegistration(screenId: string, playerId: string, serverUrl: string) {
+  try {
+    await fetch("/api/player-registration", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        screenId,
+        playerId,
+        serverUrl
+      })
+    });
+  } catch {
+    // Development Vite server may not expose this helper. Browser registration still works.
+  }
+}
+
 function getRegionFrameStyle(region: ThemeRegion): CSSProperties {
   return {
     left: `${region.x}px`,
@@ -815,6 +833,7 @@ export function PlayerApp() {
 
         if (body?.status === "approved" && typeof body.screenId === "string") {
           writeLocalStorage(screenIdKey, body.screenId);
+          void persistPlayerRegistration(body.screenId, registration.playerId, serverUrl);
           setRegistration((state) => ({
             ...state,
             screenId: body.screenId,
@@ -860,6 +879,18 @@ export function PlayerApp() {
       return;
     }
 
+    void persistPlayerRegistration(
+      registration.screenId,
+      registration.playerId,
+      registration.serverUrl
+    );
+  }, [registration.playerId, registration.screenId, registration.serverUrl]);
+
+  useEffect(() => {
+    if (!registration.screenId || !registration.serverUrl) {
+      return;
+    }
+
     let cancelled = false;
     const screenId = registration.screenId;
     const serverUrl = registration.serverUrl;
@@ -878,7 +909,7 @@ export function PlayerApp() {
         uptime: Math.round(window.performance.now() / 1000),
         currentTime: now,
         lastSeen: now,
-        currentProgram: null,
+        currentProgram: currentSchedule?.assignedProgramName ?? null,
         currentPlaylist: null,
         currentMedia,
         currentMediaType: active?.type ?? null,
@@ -1620,17 +1651,30 @@ export function PlayerApp() {
 
   if (!activeItem) {
     const hasEmptyPlaylist = schedule !== null && schedule.items.length === 0;
+    const hasNoProgramAssignment = schedule?.assignmentStatus === "unassigned";
 
     return (
       <main className="player-shell">
         <section className="playback-surface" aria-label="Local playlist playback">
           <p className="status-label">
-            {hasEmptyPlaylist ? `Local schedule version ${schedule.version}` : "Waiting for local schedule"}
+            {hasNoProgramAssignment
+              ? "Screen assignment"
+              : hasEmptyPlaylist
+                ? `Local schedule version ${schedule.version}`
+                : "Waiting for local schedule"}
           </p>
-          <h1>{hasEmptyPlaylist ? "Playlist is empty" : "Waiting for local schedule"}</h1>
+          <h1>
+            {hasNoProgramAssignment
+              ? "No program assigned."
+              : hasEmptyPlaylist
+                ? "Playlist is empty"
+                : "Waiting for local schedule"}
+          </h1>
         </section>
         <footer className="status-bar">
-          <span>Playback: {hasEmptyPlaylist ? "empty playlist" : "waiting"}</span>
+          <span>
+            Playback: {hasNoProgramAssignment ? "no program assigned" : hasEmptyPlaylist ? "empty playlist" : "waiting"}
+          </span>
           <span>Schedule: {hasEmptyPlaylist ? `version ${schedule.version}` : "not cached"}</span>
           <span>Reload: every 30s</span>
         </footer>

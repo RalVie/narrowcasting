@@ -3,6 +3,9 @@ export interface ScreenRecord {
   playerId: string;
   name: string;
   status: "pending" | "approved";
+  assignedProgramId?: string | null;
+  assignedProgramName?: string | null;
+  lastAssignment?: string | null;
   registeredAt: string;
   lastSeen: string;
   version: string;

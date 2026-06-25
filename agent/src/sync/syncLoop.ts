@@ -17,7 +17,11 @@ function isSchedule(value: unknown): value is Schedule {
 }
 
 async function fetchSchedule(config: AgentConfig): Promise<Schedule> {
-  const response = await fetch(`${config.serverUrl}/api/schedule`);
+  const screenId = await readScreenId(config);
+  const scheduleUrl = screenId
+    ? `${config.serverUrl}/api/schedule?screenId=${encodeURIComponent(screenId)}`
+    : `${config.serverUrl}/api/schedule`;
+  const response = await fetch(scheduleUrl);
 
   if (!response.ok) {
     throw new Error(`schedule request failed with HTTP ${response.status}`);
@@ -30,6 +34,25 @@ async function fetchSchedule(config: AgentConfig): Promise<Schedule> {
   }
 
   return body;
+}
+
+async function readScreenId(config: AgentConfig): Promise<string | null> {
+  if (config.screenId) {
+    return config.screenId;
+  }
+
+  try {
+    const content = await readFile(config.registrationPath, "utf8");
+    const value = JSON.parse(content) as { screenId?: unknown };
+
+    if (typeof value.screenId === "string" && value.screenId.trim()) {
+      return value.screenId.trim();
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
 }
 
 async function saveSchedule(config: AgentConfig, schedule: Schedule) {
@@ -182,6 +205,7 @@ export function startSyncLoop(config: AgentConfig) {
     cacheDir: config.cacheDir,
     mediaDir: config.mediaDir,
     schedulePath: config.schedulePath,
+    registrationPath: config.registrationPath,
     statusPath: config.statusPath,
     serverUrl: config.serverUrl,
     intervalMs: config.syncIntervalMs

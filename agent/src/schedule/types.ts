@@ -50,6 +50,9 @@ export interface Theme {
 export interface Schedule {
   version: number;
   updatedAt: string;
+  assignmentStatus?: "assigned" | "unassigned";
+  assignedProgramId?: string | null;
+  assignedProgramName?: string | null;
   theme?: Theme;
   items: ScheduleItem[];
 }

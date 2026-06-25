@@ -27,5 +27,8 @@ export type ScheduleItem = TextScheduleItem | ImageScheduleItem | VideoScheduleI
 export interface Schedule {
   version: number;
   updatedAt: string;
+  assignmentStatus?: "assigned" | "unassigned";
+  assignedProgramId?: string | null;
+  assignedProgramName?: string | null;
   items: ScheduleItem[];
 }

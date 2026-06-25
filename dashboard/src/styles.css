@@ -751,7 +751,14 @@ button:disabled {
   align-items: center;
 }
 
-.screen-name-editor input {
+.screen-program-editor {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.screen-name-editor input,
+.screen-program-editor select {
   min-width: 150px;
   border: 1px solid #b9c8bd;
   border-radius: 6px;
