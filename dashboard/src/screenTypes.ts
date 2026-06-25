@@ -43,3 +43,12 @@ export interface ScreenHeartbeat {
   lastScheduleSignature: string | null;
   playbackError?: string | null;
 }
+
+export interface ScreenGroup {
+  groupId: string;
+  name: string;
+  description?: string | null;
+  screenIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
