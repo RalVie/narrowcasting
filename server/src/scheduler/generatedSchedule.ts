@@ -4,6 +4,27 @@ import { staticSchedule, type Schedule } from "../schedule/staticSchedule.js";
 import { getThemeOrDefault } from "../theme/themeStore.js";
 import { isSchedulerBlockActive, readScheduler } from "./schedulerStore.js";
 
+function hashScheduleVersion(value: unknown) {
+  const text = JSON.stringify(value);
+  let hash = 2166136261;
+
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return hash >>> 0;
+}
+
+function getLatestUpdatedAt(values: string[]) {
+  const latestTime = values
+    .map((value) => Date.parse(value))
+    .filter((value) => Number.isFinite(value))
+    .reduce((latest, value) => Math.max(latest, value), 0);
+
+  return latestTime > 0 ? new Date(latestTime).toISOString() : staticSchedule.updatedAt;
+}
+
 export async function getGeneratedSchedule(): Promise<Schedule> {
   const scheduler = await readScheduler();
 
@@ -53,10 +74,29 @@ export async function getGeneratedSchedule(): Promise<Schedule> {
       duration: item.duration
     }));
   });
+  const activePlaylists = activeProgram.playlistIds
+    .map((playlistId) => playlists.find((candidate) => candidate.id === playlistId))
+    .filter((playlist) => playlist !== undefined);
+  const scheduleContent = {
+    schedulerVersion: scheduler.version,
+    schedulerUpdatedAt: scheduler.updatedAt,
+    activeBlock,
+    activeProgram,
+    playlistVersions: activePlaylists.map((playlist) => ({
+      id: playlist.id,
+      version: playlist.version,
+      updatedAt: playlist.updatedAt
+    })),
+    theme,
+    items
+  };
 
   return {
-    version: scheduler.version,
-    updatedAt: scheduler.updatedAt || staticSchedule.updatedAt,
+    version: hashScheduleVersion(scheduleContent),
+    updatedAt: getLatestUpdatedAt([
+      scheduler.updatedAt,
+      ...activePlaylists.map((playlist) => playlist.updatedAt)
+    ]),
     theme,
     items
   };

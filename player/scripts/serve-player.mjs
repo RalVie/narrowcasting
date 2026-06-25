@@ -48,13 +48,39 @@ async function sendFile(response, root, requestPath) {
     response.writeHead(200, {
       "Content-Type": contentTypes.get(extname(filePath).toLowerCase()) ?? "application/octet-stream",
       "Content-Length": fileStat.size,
-      "Cache-Control": "no-store"
+      ...getCacheHeaders(cleanPath)
     });
     createReadStream(filePath).pipe(response);
   } catch {
     response.writeHead(404);
     response.end("Not found");
   }
+}
+
+function getCacheHeaders(cleanPath) {
+  if (cleanPath === "index.html" || cleanPath === "data/schedule.json" || cleanPath.startsWith("data/")) {
+    return {
+      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      Expires: "0",
+      Pragma: "no-cache"
+    };
+  }
+
+  if (cleanPath.startsWith("assets/")) {
+    return {
+      "Cache-Control": "public, max-age=31536000, immutable"
+    };
+  }
+
+  if (cleanPath.startsWith("media/")) {
+    return {
+      "Cache-Control": "public, max-age=3600"
+    };
+  }
+
+  return {
+    "Cache-Control": "no-store"
+  };
 }
 
 const server = createServer(async (request, response) => {

@@ -4,6 +4,19 @@ import type { Schedule, ScheduleItem, ThemeRegion } from "./schedule/types";
 
 const reloadIntervalMs = 30_000;
 const mediaProbeTimeoutMs = 2_500;
+const appliedScheduleSignatureKey = "narrowcasting:last-applied-schedule-signature";
+const scheduleReloadCountKey = "narrowcasting:schedule-reload-count";
+
+interface ScheduleDebugInfo {
+  enabled: boolean;
+  lastPollAt: string | null;
+  currentSignature: string | null;
+  fetchedSignature: string | null;
+  itemCount: number | null;
+  reloadTriggered: boolean;
+  reloadCount: number;
+  status: string;
+}
 
 function getViewportSize() {
   return {
@@ -26,12 +39,22 @@ function isSchedule(value: unknown): value is Schedule {
 }
 
 function getScheduleSignature(schedule: Schedule) {
-  return JSON.stringify({
-    version: schedule.version,
-    updatedAt: schedule.updatedAt,
-    items: schedule.items,
-    theme: schedule.theme
-  });
+  return JSON.stringify(schedule);
+}
+
+function getShortSignature(signature: string | null) {
+  if (!signature) {
+    return "none";
+  }
+
+  let hash = 2166136261;
+
+  for (let index = 0; index < signature.length; index += 1) {
+    hash ^= signature.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 function getItemKey(
@@ -104,6 +127,52 @@ async function probeFirstMediaItem(schedule: Schedule) {
   return probeVideo(firstMediaItem.file);
 }
 
+function readStoredScheduleSignature() {
+  try {
+    return window.sessionStorage.getItem(appliedScheduleSignatureKey);
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredScheduleSignature(signature: string) {
+  try {
+    window.sessionStorage.setItem(appliedScheduleSignatureKey, signature);
+  } catch {
+    // Session storage can be unavailable in hardened browser profiles.
+  }
+}
+
+function readScheduleReloadCount() {
+  try {
+    return Number(window.sessionStorage.getItem(scheduleReloadCountKey) ?? "0") || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeScheduleReloadCount(count: number) {
+  try {
+    window.sessionStorage.setItem(scheduleReloadCountKey, String(count));
+  } catch {
+    // Session storage can be unavailable in hardened browser profiles.
+  }
+}
+
+function isDebugEnabled() {
+  return new URLSearchParams(window.location.search).get("debug") === "1";
+}
+
+function hasReloadMarker() {
+  return new URLSearchParams(window.location.search).has("reload");
+}
+
+function reloadPlayerForSchedule(signature: string, debugEnabled: boolean) {
+  writeStoredScheduleSignature(signature);
+  writeScheduleReloadCount(readScheduleReloadCount() + 1);
+  window.location.href = `/player?reload=${Date.now()}${debugEnabled ? "&debug=1" : ""}`;
+}
+
 function getRegionFrameStyle(region: ThemeRegion): CSSProperties {
   return {
     left: `${region.x}px`,
@@ -156,6 +225,16 @@ export function PlayerApp() {
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
   const [viewportSize, setViewportSize] = useState(getViewportSize);
   const [clockNow, setClockNow] = useState(() => new Date());
+  const [debugInfo, setDebugInfo] = useState<ScheduleDebugInfo>(() => ({
+    enabled: isDebugEnabled(),
+    lastPollAt: null,
+    currentSignature: null,
+    fetchedSignature: null,
+    itemCount: null,
+    reloadTriggered: false,
+    reloadCount: readScheduleReloadCount(),
+    status: "waiting"
+  }));
   const playbackSessionKeyRef = useRef(0);
   const failureTimerRef = useRef<number | null>(null);
 
@@ -171,14 +250,27 @@ export function PlayerApp() {
     let currentSignature: string | null = null;
 
     async function loadSchedule() {
+      const polledAt = new Date().toLocaleTimeString();
+
       try {
         const response = await fetch(`/data/schedule.json?t=${Date.now()}`, {
-          cache: "no-store"
+          cache: "no-store",
+          headers: {
+            "Cache-Control": "no-cache",
+            Pragma: "no-cache"
+          }
         });
 
         if (!response.ok) {
           if (!cancelled) {
             setSchedule((existingSchedule) => existingSchedule);
+            setDebugInfo((info) => ({
+              ...info,
+              lastPollAt: polledAt,
+              fetchedSignature: null,
+              reloadTriggered: false,
+              status: `fetch failed: HTTP ${response.status}`
+            }));
           }
           return;
         }
@@ -187,6 +279,39 @@ export function PlayerApp() {
 
         if (isSchedule(body) && !cancelled) {
           const nextSignature = getScheduleSignature(body);
+          const storedSignature = readStoredScheduleSignature();
+          const debugEnabled = isDebugEnabled();
+          const shouldReload =
+            currentSignature !== null &&
+            nextSignature !== currentSignature &&
+            !(storedSignature === nextSignature && hasReloadMarker());
+
+          setDebugInfo((info) => ({
+            ...info,
+            lastPollAt: polledAt,
+            currentSignature,
+            fetchedSignature: nextSignature,
+            itemCount: body.items.length,
+            reloadTriggered: shouldReload,
+            reloadCount: readScheduleReloadCount(),
+            status: shouldReload
+              ? "signature changed; reloading"
+              : nextSignature === currentSignature
+                ? "unchanged"
+                : "signature changed; applying"
+          }));
+
+          if (shouldReload) {
+            console.info("schedule signature changed; reloading player document", {
+              oldSignature: currentSignature,
+              newSignature: nextSignature,
+              oldShortSignature: getShortSignature(currentSignature),
+              newShortSignature: getShortSignature(nextSignature),
+              itemCount: body.items.length
+            });
+            reloadPlayerForSchedule(nextSignature, debugEnabled);
+            return;
+          }
 
           if (nextSignature !== currentSignature) {
             await probeFirstMediaItem(body);
@@ -198,9 +323,21 @@ export function PlayerApp() {
             console.info("schedule reload applied", {
               oldSignature: currentSignature,
               newSignature: nextSignature,
+              oldShortSignature: getShortSignature(currentSignature),
+              newShortSignature: getShortSignature(nextSignature),
               itemCount: body.items.length
             });
             currentSignature = nextSignature;
+            writeStoredScheduleSignature(nextSignature);
+            setDebugInfo((info) => ({
+              ...info,
+              currentSignature: nextSignature,
+              fetchedSignature: nextSignature,
+              itemCount: body.items.length,
+              reloadTriggered: false,
+              reloadCount: readScheduleReloadCount(),
+              status: "applied"
+            }));
             clearFailureTimer();
             setSchedule(body);
             setActiveIndex(0);
@@ -214,10 +351,25 @@ export function PlayerApp() {
           }
 
           setLastLoadedAt(new Date().toLocaleTimeString());
+        } else if (!cancelled) {
+          setDebugInfo((info) => ({
+            ...info,
+            lastPollAt: polledAt,
+            fetchedSignature: null,
+            reloadTriggered: false,
+            status: "invalid schedule"
+          }));
         }
-      } catch {
+      } catch (error) {
         if (!cancelled) {
           setSchedule((existingSchedule) => existingSchedule);
+          setDebugInfo((info) => ({
+            ...info,
+            lastPollAt: polledAt,
+            fetchedSignature: null,
+            reloadTriggered: false,
+            status: error instanceof Error ? `fetch error: ${error.message}` : "fetch error"
+          }));
         }
       }
     }
@@ -383,6 +535,25 @@ export function PlayerApp() {
     return <h1>{activeItem.title}</h1>;
   }
 
+  function renderDebugOverlay() {
+    if (!debugInfo.enabled) {
+      return null;
+    }
+
+    return (
+      <aside className="schedule-debug-overlay" aria-label="Schedule debug">
+        <strong>Schedule debug</strong>
+        <span>Poll: {debugInfo.lastPollAt ?? "never"}</span>
+        <span>Current: {getShortSignature(debugInfo.currentSignature)}</span>
+        <span>Fetched: {getShortSignature(debugInfo.fetchedSignature)}</span>
+        <span>Items: {debugInfo.itemCount ?? "-"}</span>
+        <span>Reload: {debugInfo.reloadTriggered ? "yes" : "no"}</span>
+        <span>Reload count: {debugInfo.reloadCount}</span>
+        <span>Status: {debugInfo.status}</span>
+      </aside>
+    );
+  }
+
   function renderStaticImageRegion(region: ThemeRegion, className: string) {
     if (region.visible === false || !region.file) {
       return null;
@@ -500,6 +671,7 @@ export function PlayerApp() {
           <span>Schedule: {hasEmptyPlaylist ? `version ${schedule.version}` : "not cached"}</span>
           <span>Reload: every 30s</span>
         </footer>
+        {renderDebugOverlay()}
       </main>
     );
   }
@@ -559,6 +731,7 @@ export function PlayerApp() {
           <span>Type: {activeItem.type}</span>
           <span>Loaded: {lastLoadedAt ?? "unknown"}</span>
         </footer>
+        {renderDebugOverlay()}
       </main>
     );
   }
@@ -583,6 +756,7 @@ export function PlayerApp() {
         <span>Duration: {activeItem.duration}s</span>
         <span>Loaded: {lastLoadedAt ?? "unknown"}</span>
       </footer>
+      {renderDebugOverlay()}
     </main>
   );
 }
