@@ -6,6 +6,19 @@ const reloadIntervalMs = 30_000;
 const mediaProbeTimeoutMs = 2_500;
 const appliedScheduleSignatureKey = "narrowcasting:last-applied-schedule-signature";
 const scheduleReloadCountKey = "narrowcasting:schedule-reload-count";
+const playerIdKey = "narrowcasting:player-id";
+const screenIdKey = "narrowcasting:screen-id";
+const serverUrlKey = "narrowcasting:server-url";
+const playerVersion = "phase-1";
+
+interface RegistrationState {
+  playerId: string;
+  screenId: string | null;
+  serverUrl: string | null;
+  status: "approved" | "discovering" | "pending" | "offline" | "error";
+  message: string;
+  hostname: string;
+}
 
 interface ScheduleDebugInfo {
   enabled: boolean;
@@ -222,6 +235,120 @@ function writeScheduleReloadCount(count: number) {
     window.sessionStorage.setItem(scheduleReloadCountKey, String(count));
   } catch {
     // Session storage can be unavailable in hardened browser profiles.
+  }
+}
+
+function readLocalStorage(key: string) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeLocalStorage(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Local storage may be unavailable in hardened browser profiles.
+  }
+}
+
+function getOrCreatePlayerId() {
+  const existingPlayerId = readLocalStorage(playerIdKey);
+
+  if (existingPlayerId) {
+    return existingPlayerId;
+  }
+
+  const playerId =
+    typeof window.crypto?.randomUUID === "function"
+      ? window.crypto.randomUUID()
+      : `player-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  writeLocalStorage(playerIdKey, playerId);
+  return playerId;
+}
+
+function normalizeServerUrl(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const url = new URL(value);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 1200) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+async function probeServerUrl(serverUrl: string | null) {
+  const normalizedUrl = normalizeServerUrl(serverUrl);
+
+  if (!normalizedUrl) {
+    return null;
+  }
+
+  try {
+    const response = await fetchWithTimeout(`${normalizedUrl}/api/status`, {}, 1200);
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const body = await response.json();
+
+    if (body?.application === "Narrowcasting Server") {
+      return normalizedUrl;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+async function discoverServerUrl(knownUrl: string | null) {
+  const knownServerUrl = await probeServerUrl(knownUrl);
+
+  if (knownServerUrl) {
+    return knownServerUrl;
+  }
+
+  const mdnsServerUrl = await probeServerUrl("http://narrowcasting.local:3000");
+
+  if (mdnsServerUrl) {
+    return mdnsServerUrl;
+  }
+
+  try {
+    const discoveryUrl = knownUrl
+      ? `/api/discovery?known=${encodeURIComponent(knownUrl)}`
+      : "/api/discovery";
+    const response = await fetchWithTimeout(discoveryUrl, {}, 10_000);
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const body = await response.json();
+    return normalizeServerUrl(body?.serverUrl ?? null);
+  } catch {
+    return null;
   }
 }
 
@@ -566,6 +693,18 @@ export function PlayerApp() {
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
   const [viewportSize, setViewportSize] = useState(getViewportSize);
   const [clockNow, setClockNow] = useState(() => new Date());
+  const [registration, setRegistration] = useState<RegistrationState>(() => {
+    const screenId = readLocalStorage(screenIdKey);
+
+    return {
+      playerId: getOrCreatePlayerId(),
+      screenId,
+      serverUrl: readLocalStorage(serverUrlKey),
+      status: screenId ? "approved" : "discovering",
+      message: screenId ? "Screen already registered." : "Discovering server...",
+      hostname: window.location.hostname || "unknown"
+    };
+  });
   const [debugInfo, setDebugInfo] = useState<ScheduleDebugInfo>(() => ({
     enabled: isDebugEnabled(),
     lastPollAt: null,
@@ -604,6 +743,111 @@ export function PlayerApp() {
       return nextCycleId;
     });
   }, []);
+
+  useEffect(() => {
+    if (registration.screenId) {
+      return;
+    }
+
+    let cancelled = false;
+    let registerTimer: number | null = null;
+
+    async function registerOnce() {
+      const serverUrl = await discoverServerUrl(readLocalStorage(serverUrlKey));
+
+      if (cancelled) {
+        return;
+      }
+
+      if (!serverUrl) {
+        setRegistration((state) => ({
+          ...state,
+          serverUrl: null,
+          status: "offline",
+          message: "No Narrowcasting server found on this network."
+        }));
+        return;
+      }
+
+      writeLocalStorage(serverUrlKey, serverUrl);
+      setRegistration((state) => ({
+        ...state,
+        serverUrl,
+        status: "discovering",
+        message: "Server found. Registering player..."
+      }));
+
+      try {
+        const response = await fetchWithTimeout(
+          `${serverUrl}/api/screens/register`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              playerId: registration.playerId,
+              hostname: window.location.hostname || "unknown",
+              userAgent: window.navigator.userAgent,
+              resolution: `${window.screen.width}x${window.screen.height}`,
+              orientation: window.innerWidth >= window.innerHeight ? "landscape" : "portrait",
+              version: playerVersion
+            })
+          },
+          2500
+        );
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const body = await response.json();
+
+        if (cancelled) {
+          return;
+        }
+
+        if (body?.status === "approved" && typeof body.screenId === "string") {
+          writeLocalStorage(screenIdKey, body.screenId);
+          setRegistration((state) => ({
+            ...state,
+            screenId: body.screenId,
+            serverUrl,
+            status: "approved",
+            message: "Screen approved. Starting playback."
+          }));
+          return;
+        }
+
+        setRegistration((state) => ({
+          ...state,
+          serverUrl,
+          status: "pending",
+          message: "Waiting for approval..."
+        }));
+      } catch (error) {
+        setRegistration((state) => ({
+          ...state,
+          serverUrl,
+          status: "error",
+          message: error instanceof Error ? `Registration failed: ${error.message}` : "Registration failed."
+        }));
+      }
+    }
+
+    void registerOnce();
+    registerTimer = window.setInterval(() => {
+      void registerOnce();
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+
+      if (registerTimer !== null) {
+        window.clearInterval(registerTimer);
+      }
+    };
+  }, [registration.playerId, registration.screenId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1244,6 +1488,33 @@ export function PlayerApp() {
       });
     };
   }, [activeItem, advanceToNextItem, emitPlaybackDebug, playbackSessionKey, schedule]);
+
+  const waitingForRegistration =
+    registration.status === "pending" ||
+    ((registration.status === "discovering" || registration.status === "error") && registration.serverUrl !== null);
+
+  if (waitingForRegistration) {
+    return (
+      <main className="player-shell registration-shell">
+        <section className="playback-surface registration-surface" aria-label="Player registration">
+          <p className="status-label">Waiting for registration</p>
+          <h1>Waiting for registration</h1>
+          <div className="registration-details">
+            <span>Player ID</span>
+            <strong>{registration.playerId}</strong>
+            <span>Hostname</span>
+            <strong>{registration.hostname}</strong>
+            <span>Connection status</span>
+            <strong>{registration.status}</strong>
+            <span>Server found</span>
+            <strong>{registration.serverUrl ?? "not yet"}</strong>
+            <span>Approval</span>
+            <strong>{registration.message}</strong>
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   if (!activeItem) {
     const hasEmptyPlaylist = schedule !== null && schedule.items.length === 0;

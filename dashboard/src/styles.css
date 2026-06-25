@@ -629,6 +629,89 @@ button:disabled {
   width: auto;
 }
 
+.screen-registry-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 14px;
+}
+
+.screen-card-list {
+  display: grid;
+  gap: 10px;
+}
+
+.screen-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #d9dfd4;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.screen-card-header {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.screen-card-header div {
+  display: grid;
+  gap: 2px;
+}
+
+.screen-card-header span,
+.screen-meta dt {
+  color: #647064;
+  font-size: 12px;
+}
+
+.screen-online,
+.screen-offline {
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-weight: 700;
+}
+
+.screen-online {
+  color: #0e5f33;
+  background: #dff5e8;
+}
+
+.screen-offline {
+  color: #7b362b;
+  background: #f8e4de;
+}
+
+.screen-card label {
+  display: grid;
+  gap: 4px;
+  color: #647064;
+  font-size: 12px;
+}
+
+.screen-card input {
+  border: 1px solid #b9c8bd;
+  border-radius: 6px;
+  padding: 8px;
+  color: #17201a;
+  font: inherit;
+}
+
+.screen-meta {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 5px 10px;
+  margin: 0;
+}
+
+.screen-meta dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .theme-form-grid,
 .theme-region-grid {
   display: grid;

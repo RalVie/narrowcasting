@@ -1,4 +1,6 @@
-import { readdir, readFile, stat } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { hostname } from "node:os";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { listMedia } from "../media/mediaStore.js";
 import { readPlaylist } from "../playlist/playlistStore.js";
@@ -17,6 +19,27 @@ export interface AgentStatus {
 
 const playerMediaDir = resolve(process.cwd(), "..", "player", "public", "media");
 const agentStatusPath = resolve(process.cwd(), "data", "agent-status.json");
+const instanceIdPath = resolve(process.cwd(), "data", "instance-id.json");
+const applicationName = "Narrowcasting Server";
+const applicationVersion = "phase-1";
+
+async function readInstanceId() {
+  try {
+    const content = await readFile(instanceIdPath, "utf8");
+    const value = JSON.parse(content) as { instanceId?: unknown };
+
+    if (typeof value.instanceId === "string" && value.instanceId.trim()) {
+      return value.instanceId;
+    }
+  } catch {
+    // Create a stable server instance id below.
+  }
+
+  const instanceId = randomUUID();
+  await mkdir(resolve(process.cwd(), "data"), { recursive: true });
+  await writeFile(instanceIdPath, `${JSON.stringify({ instanceId }, null, 2)}\n`, "utf8");
+  return instanceId;
+}
 
 export async function listPlayerCachedMedia(): Promise<CachedMediaFile[]> {
   try {
@@ -72,6 +95,10 @@ export async function getSystemStatus() {
   ]);
 
   return {
+    application: applicationName,
+    version: applicationVersion,
+    instanceId: await readInstanceId(),
+    hostname: hostname(),
     server: "online",
     scheduleVersion: schedule.version,
     playlistVersion: playlist?.version ?? null,

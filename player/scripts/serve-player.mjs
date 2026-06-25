@@ -1,6 +1,7 @@
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { createServer } from "node:http";
+import { networkInterfaces } from "node:os";
 import { extname, join, relative, resolve } from "node:path";
 
 const host = process.env.PLAYER_HOST ?? "0.0.0.0";
@@ -8,6 +9,9 @@ const port = Number(process.env.PLAYER_PORT ?? 4174);
 const appRoot = resolve(process.cwd());
 const distRoot = resolve(appRoot, "dist");
 const publicRoot = resolve(appRoot, "public");
+const discoveryHostname = process.env.DISCOVERY_HOSTNAME ?? "http://narrowcasting.local:3000";
+const discoveryTimeoutMs = Number(process.env.DISCOVERY_TIMEOUT_MS ?? 220);
+const discoveryConcurrency = Number(process.env.DISCOVERY_CONCURRENCY ?? 25);
 
 const contentTypes = new Map([
   [".css", "text/css; charset=utf-8"],
@@ -83,12 +87,157 @@ function getCacheHeaders(cleanPath) {
   };
 }
 
+function sendJson(response, statusCode, body) {
+  const content = JSON.stringify(body);
+  response.writeHead(statusCode, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Content-Length": Buffer.byteLength(content),
+    "Cache-Control": "no-store"
+  });
+  response.end(content);
+}
+
+function normalizeServerUrl(value) {
+  if (!value || typeof value !== "string") {
+    return null;
+  }
+
+  try {
+    const url = new URL(value);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return null;
+  }
+}
+
+async function probeServer(serverUrl) {
+  const normalizedUrl = normalizeServerUrl(serverUrl);
+
+  if (!normalizedUrl) {
+    return null;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), discoveryTimeoutMs);
+
+  try {
+    const response = await fetch(`${normalizedUrl}/api/status`, {
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const body = await response.json();
+
+    if (body?.application === "Narrowcasting Server" && typeof body.instanceId === "string") {
+      return {
+        serverUrl: normalizedUrl,
+        status: body
+      };
+    }
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+
+  return null;
+}
+
+function getLocalSubnetPrefixes() {
+  const prefixes = new Set();
+
+  for (const addresses of Object.values(networkInterfaces())) {
+    for (const address of addresses ?? []) {
+      if (address.family !== "IPv4" || address.internal) {
+        continue;
+      }
+
+      const parts = address.address.split(".");
+
+      if (parts.length === 4) {
+        prefixes.add(`${parts[0]}.${parts[1]}.${parts[2]}`);
+      }
+    }
+  }
+
+  return [...prefixes];
+}
+
+async function scanSubnetForServer() {
+  const candidates = getLocalSubnetPrefixes().flatMap((prefix) =>
+    Array.from({ length: 254 }, (_, index) => `http://${prefix}.${index + 1}:3000`)
+  );
+  let cursor = 0;
+  let found = null;
+
+  async function worker() {
+    while (!found && cursor < candidates.length) {
+      const candidate = candidates[cursor];
+      cursor += 1;
+      const result = await probeServer(candidate);
+
+      if (result) {
+        found = {
+          ...result,
+          source: "subnet"
+        };
+        return;
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(discoveryConcurrency, candidates.length) }, () => worker())
+  );
+
+  return found;
+}
+
+async function discoverServer(knownUrl) {
+  const knownResult = await probeServer(knownUrl);
+
+  if (knownResult) {
+    return {
+      ...knownResult,
+      source: "known"
+    };
+  }
+
+  const mdnsResult = await probeServer(discoveryHostname);
+
+  if (mdnsResult) {
+    return {
+      ...mdnsResult,
+      source: "mdns"
+    };
+  }
+
+  return scanSubnetForServer();
+}
+
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
   const path = url.pathname;
 
   if (path === "/" || path === "/player" || path.startsWith("/player/")) {
     await sendFile(response, distRoot, "index.html");
+    return;
+  }
+
+  if (path === "/api/discovery") {
+    const result = await discoverServer(url.searchParams.get("known"));
+
+    if (result) {
+      sendJson(response, 200, result);
+      return;
+    }
+
+    sendJson(response, 404, {
+      error: "Narrowcasting server not found"
+    });
     return;
   }
 
