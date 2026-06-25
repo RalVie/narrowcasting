@@ -186,6 +186,9 @@ export function PlayerApp() {
         <img
           alt=""
           className="theme-static-image"
+          onError={(event) => {
+            event.currentTarget.style.display = "none";
+          }}
           src={`/media/${encodeURIComponent(region.file)}`}
           style={{
             objectFit: getObjectFit(region)
@@ -295,12 +298,12 @@ export function PlayerApp() {
             }}
           >
             {imageRegions.map((region) => renderStaticImageRegion(region, "theme-static-region"))}
-            {logoRegions.map((region) => renderStaticImageRegion(region, "theme-logo-region"))}
             {programRegion && programRegion.visible !== false ? (
               <div className="theme-program-region" style={getRegionFrameStyle(programRegion)}>
                 {renderActiveItem("themed-media")}
               </div>
             ) : null}
+            {logoRegions.map((region) => renderStaticImageRegion(region, "theme-logo-region"))}
             {textRegions.map((region) => renderTextRegion(region))}
           </div>
         </section>

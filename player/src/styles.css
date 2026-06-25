@@ -114,6 +114,7 @@ h1 {
   place-items: center;
   overflow: hidden;
   background: #000000;
+  z-index: 20;
 }
 
 .theme-static-region,
@@ -121,6 +122,10 @@ h1 {
 .theme-text-region {
   position: absolute;
   overflow: hidden;
+}
+
+.theme-static-region {
+  z-index: 10;
 }
 
 .theme-static-image {
@@ -132,11 +137,13 @@ h1 {
 .theme-logo-region {
   display: grid;
   place-items: center;
+  z-index: 30;
 }
 
 .theme-text-region {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+  z-index: 40;
 }
 
 .themed-media {

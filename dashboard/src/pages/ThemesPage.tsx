@@ -684,9 +684,7 @@ export function ThemesPage() {
     theme.regions[0] ??
     mainRegion;
   const programRegionCount = theme.regions.filter((region) => region.type === "program").length;
-  const selectedRegionMedia = mediaItems.find(
-    (item) => item.id === selectedRegion.mediaId || item.filename === selectedRegion.file
-  );
+  const selectedRegionMedia = getRegionMedia(selectedRegion);
   const selectedRegionNeedsImage = selectedRegion.type === "logo" || selectedRegion.type === "image";
   const selectedRegionMediaMissing = selectedRegionNeedsImage && Boolean(selectedRegion.file) && !selectedRegionMedia;
   const canvasStyle = {
@@ -712,6 +710,32 @@ export function ThemesPage() {
       backgroundColor: colors.background,
       opacity: region.visible === false ? 0.36 : region.opacity ?? 1
     };
+  }
+
+  function getRegionMedia(region: ThemeRegion) {
+    return mediaItems.find((item) => item.id === region.mediaId || item.filename === region.file);
+  }
+
+  function renderDesignerRegionPreview(region: ThemeRegion) {
+    if ((region.type !== "logo" && region.type !== "image") || !region.file) {
+      return null;
+    }
+
+    return (
+      <img
+        alt=""
+        className="theme-region-preview"
+        src={apiUrl(`/media/${encodeURIComponent(region.file)}`)}
+        style={{
+          objectFit:
+            region.objectFit === "stretch"
+              ? "fill"
+              : region.objectFit === "center"
+                ? "none"
+                : region.objectFit ?? "contain"
+        }}
+      />
+    );
   }
 
   return (
@@ -905,6 +929,7 @@ export function ThemesPage() {
                     style={getRegionStyle(region)}
                     tabIndex={0}
                   >
+                    {renderDesignerRegionPreview(region)}
                     <span className="theme-region-name">{region.name}</span>
                     {isSelected && isInteracting ? (
                       <span className="theme-region-label">
@@ -1011,6 +1036,13 @@ export function ThemesPage() {
                 <div className="theme-selected-media">
                   <span>Selected file</span>
                   <strong>{selectedRegion.file ?? selectedRegionMedia?.filename ?? "No image selected"}</strong>
+                  {selectedRegion.file ? (
+                    <img
+                      alt=""
+                      className="theme-selected-media-preview"
+                      src={apiUrl(`/media/${encodeURIComponent(selectedRegion.file)}`)}
+                    />
+                  ) : null}
                   <button
                     disabled={!selectedRegion.file && !selectedRegion.mediaId}
                     onClick={() => patchSelectedRegion({ mediaId: undefined, file: undefined })}
