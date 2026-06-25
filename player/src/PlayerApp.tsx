@@ -28,6 +28,15 @@ interface VideoDebugEvent {
   epoch: number;
   videoKey: string;
   src: string;
+  regionId: string;
+  activeVisible: boolean;
+  refReady: boolean;
+  renderedSrcAttribute: string | null;
+  currentSrc: string | null;
+  hasSourceChildren: boolean;
+  loadCalled: boolean;
+  playCalled: boolean;
+  playSkippedReason?: string;
   currentTime: number | null;
   paused: boolean | null;
   ended: boolean | null;
@@ -259,11 +268,13 @@ interface InstrumentedVideoProps {
   className: string;
   debugEnabled: boolean;
   item: Extract<ScheduleItem, { type: "video" }>;
+  activeVisible: boolean;
   onAdvance: (sessionKey: number) => void;
   onDebugEvent: (event: VideoDebugEvent) => void;
   onFailure: (sessionKey: number, message: string) => void;
   playbackEpoch: number;
   programCycleId: number;
+  regionId: string;
   sessionKey: number;
   src: string;
   videoKey: string;
@@ -274,11 +285,13 @@ function InstrumentedVideo({
   className,
   debugEnabled,
   item,
+  activeVisible,
   onAdvance,
   onDebugEvent,
   onFailure,
   playbackEpoch,
   programCycleId,
+  regionId,
   sessionKey,
   src,
   videoKey
@@ -286,7 +299,14 @@ function InstrumentedVideo({
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const emit = useCallback(
-    (event: string, note?: string, video: HTMLVideoElement | null = videoRef.current) => {
+    (
+      event: string,
+      note?: string,
+      video: HTMLVideoElement | null = videoRef.current,
+      options: Partial<
+        Pick<VideoDebugEvent, "loadCalled" | "playCalled" | "playSkippedReason">
+      > = {}
+    ) => {
       const debugEvent: VideoDebugEvent = {
         time: new Date().toLocaleTimeString(),
         event,
@@ -297,6 +317,15 @@ function InstrumentedVideo({
         epoch: playbackEpoch,
         videoKey,
         src,
+        regionId,
+        activeVisible,
+        refReady: video !== null,
+        renderedSrcAttribute: video?.getAttribute("src") ?? null,
+        currentSrc: video?.currentSrc || null,
+        hasSourceChildren: video ? video.querySelectorAll("source").length > 0 : false,
+        loadCalled: options.loadCalled ?? false,
+        playCalled: options.playCalled ?? false,
+        playSkippedReason: options.playSkippedReason,
         ...getVideoElementState(video),
         note
       };
@@ -309,11 +338,13 @@ function InstrumentedVideo({
     },
     [
       activeIndex,
+      activeVisible,
       debugEnabled,
       item.id,
       onDebugEvent,
       playbackEpoch,
       programCycleId,
+      regionId,
       sessionKey,
       src,
       videoKey
@@ -321,12 +352,65 @@ function InstrumentedVideo({
   );
 
   useEffect(() => {
-    emit("mount");
+    emit("mount", "component mounted; no explicit load/play in mount path", videoRef.current, {
+      playSkippedReason: "waiting for canplay handler"
+    });
+
+    emit("init effect start", "checking rendered DOM video element", videoRef.current, {
+      playSkippedReason: "diagnostic snapshot before browser media events"
+    });
+
+    if (!videoRef.current) {
+      emit("init early return", "video ref is null after mount", null, {
+        playSkippedReason: "video ref missing"
+      });
+
+      return () => {
+        emit("unmount", "cleanup after null-ref init path", videoRef.current);
+      };
+    }
+
+    emit("init dom snapshot", "direct src attribute is used; no <source> children", videoRef.current, {
+      playSkippedReason: "waiting for canplay handler"
+    });
+
+    if (!activeVisible) {
+      emit("init early return", "video is not active/visible", videoRef.current, {
+        playSkippedReason: "video not active/visible"
+      });
+
+      return () => {
+        emit("unmount", "cleanup after inactive/hidden init path", videoRef.current);
+      };
+    }
+
+    emit("load skipped", "diagnostic-only patch: relying on native src/preload/autoplay path", videoRef.current, {
+      loadCalled: false,
+      playSkippedReason: "not forcing load() in diagnostic patch"
+    });
+    emit("play skipped", "play() is currently called only from onCanPlay", videoRef.current, {
+      playCalled: false,
+      playSkippedReason: "waiting for canplay handler"
+    });
+
+    const snapshotTimer = window.setTimeout(() => {
+      emit("post-mount 250ms snapshot", "checking whether browser began media initialization", videoRef.current, {
+        playSkippedReason: "waiting for canplay handler"
+      });
+    }, 250);
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      emit("post-mount animation frame", "checking DOM state after paint", videoRef.current, {
+        playSkippedReason: "waiting for canplay handler"
+      });
+    });
 
     return () => {
-      emit("unmount");
+      window.clearTimeout(snapshotTimer);
+      window.cancelAnimationFrame(animationFrame);
+      emit("unmount", "component cleanup", videoRef.current);
     };
-  }, [emit]);
+  }, [activeVisible, emit]);
 
   return (
     <video
@@ -335,17 +419,24 @@ function InstrumentedVideo({
       key={videoKey}
       muted
       onCanPlay={(event) => {
-        emit("canplay", "play() called", event.currentTarget);
+        emit("canplay", "play() called from canplay handler", event.currentTarget, {
+          playCalled: true
+        });
         void event.currentTarget
           .play()
           .then(() => {
-            emit("play resolved", undefined, event.currentTarget);
+            emit("play resolved", undefined, event.currentTarget, {
+              playCalled: true
+            });
           })
           .catch((error: unknown) => {
             emit(
               "play rejected",
               error instanceof Error ? error.message : String(error),
-              event.currentTarget
+              event.currentTarget,
+              {
+                playCalled: true
+              }
             );
             onAdvance(sessionKey);
           });
@@ -646,7 +737,7 @@ export function PlayerApp() {
     [advanceToNextItem, schedule]
   );
 
-  function renderActiveItem(className: string) {
+  function renderActiveItem(className: string, regionId = "standalone", activeVisible = true) {
     if (!activeItem) {
       return null;
     }
@@ -691,6 +782,7 @@ export function PlayerApp() {
         <>
           <InstrumentedVideo
             activeIndex={activeIndex}
+            activeVisible={activeVisible}
             className={className}
             debugEnabled={debugInfo.enabled}
             item={activeItem}
@@ -712,6 +804,7 @@ export function PlayerApp() {
             }}
             playbackEpoch={playbackEpoch}
             programCycleId={programCycleId}
+            regionId={regionId}
             sessionKey={sessionKey}
             src={src}
             videoKey={videoKey}
@@ -750,7 +843,10 @@ export function PlayerApp() {
                 {event.readyState ?? "-"} n:{event.networkState ?? "-"} p:
                 {event.paused === null ? "-" : event.paused ? "yes" : "no"} end:
                 {event.ended === null ? "-" : event.ended ? "yes" : "no"} t:
-                {event.currentTime ?? "-"} {event.note ? `(${event.note})` : ""}
+                {event.currentTime ?? "-"} ref:{event.refReady ? "yes" : "no"} src:
+                {event.renderedSrcAttribute ?? "-"} play:{event.playCalled ? "yes" : "no"} load:
+                {event.loadCalled ? "yes" : "no"} skip:{event.playSkippedReason ?? "-"}{" "}
+                {event.note ? `(${event.note})` : ""}
               </span>
             ))}
           </div>
@@ -919,7 +1015,7 @@ export function PlayerApp() {
                 key={`program-region-${playbackSessionKey}`}
                 style={getRegionFrameStyle(programRegion)}
               >
-                {renderActiveItem("themed-media")}
+                {renderActiveItem("themed-media", programRegion.id, true)}
               </div>
             ) : null}
             {logoRegions.map((region) => renderStaticImageRegion(region, "theme-logo-region"))}
