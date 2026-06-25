@@ -26,7 +26,13 @@ export interface SchedulerCandidate {
     assignmentSource: Assignment["source"];
     assignment: Assignment;
     matchedGroupName?: string;
+    scheduleStatus: "active" | "inactive";
+    scheduleReason: string;
   };
+}
+
+export interface RejectedSchedulerCandidate extends SchedulerCandidate {
+  rejectedReason: string;
 }
 
 export interface ScreenContext {
@@ -38,6 +44,7 @@ export interface ScreenContext {
 export interface SchedulerResolution {
   screenContext: ScreenContext;
   candidates: SchedulerCandidate[];
+  rejectedCandidates: RejectedSchedulerCandidate[];
   winningCandidate: SchedulerCandidate | null;
   reason: string;
   resolvedProgram: Program | null;
@@ -49,6 +56,7 @@ export interface SchedulerResolutionResult extends SchedulerResolution {
 
 function assignmentToCandidate(
   assignment: Assignment,
+  scheduleEvaluation: ScheduleEvaluation,
   matchedGroup?: ScreenGroup
 ): SchedulerCandidate {
   const targetType = assignment.targetType === "SCREEN" ? "screen" : "group";
@@ -65,9 +73,107 @@ function assignmentToCandidate(
       assignmentId: assignment.id,
       assignmentSource: assignment.source,
       assignment,
-      matchedGroupName: matchedGroup?.name
+      matchedGroupName: matchedGroup?.name,
+      scheduleStatus: scheduleEvaluation.active ? "active" : "inactive",
+      scheduleReason: scheduleEvaluation.reason
     }
   };
+}
+
+interface ScheduleEvaluation {
+  active: boolean;
+  reason: string;
+}
+
+function parseMinutes(value: string) {
+  const [hours, minutes] = value.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+function parseScheduleDateBoundary(value: string, boundary: "start" | "end") {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split("-").map(Number);
+    const date = new Date(year, month - 1, day);
+
+    if (boundary === "end") {
+      date.setHours(23, 59, 59, 999);
+    }
+
+    return date.getTime();
+  }
+
+  return Date.parse(value);
+}
+
+function evaluateDailyTimeWindow(now: Date, startTime?: string, endTime?: string): ScheduleEvaluation {
+  if (!startTime && !endTime) {
+    return { active: true, reason: "Active" };
+  }
+
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const startMinutes = startTime ? parseMinutes(startTime) : null;
+  const endMinutes = endTime ? parseMinutes(endTime) : null;
+
+  if (startMinutes !== null && endMinutes !== null) {
+    const active =
+      startMinutes <= endMinutes
+        ? currentMinutes >= startMinutes && currentMinutes < endMinutes
+        : currentMinutes >= startMinutes || currentMinutes < endMinutes;
+
+    return active
+      ? { active: true, reason: "Active" }
+      : { active: false, reason: "Outside daily time" };
+  }
+
+  if (startMinutes !== null && currentMinutes < startMinutes) {
+    return { active: false, reason: "Outside daily time" };
+  }
+
+  if (endMinutes !== null && currentMinutes >= endMinutes) {
+    return { active: false, reason: "Outside daily time" };
+  }
+
+  return { active: true, reason: "Active" };
+}
+
+function evaluateAssignmentSchedule(assignment: Assignment, now = new Date()): ScheduleEvaluation {
+  if (!assignment.enabled) {
+    return { active: false, reason: "Disabled" };
+  }
+
+  if (!assignment.schedule) {
+    return { active: true, reason: "Active" };
+  }
+
+  if (!assignment.schedule.enabled) {
+    return { active: false, reason: "Disabled" };
+  }
+
+  if (assignment.schedule.startDate) {
+    const startTime = parseScheduleDateBoundary(assignment.schedule.startDate, "start");
+
+    if (Number.isFinite(startTime) && now.getTime() < startTime) {
+      return { active: false, reason: "Outside date range" };
+    }
+  }
+
+  if (assignment.schedule.endDate) {
+    const endTime = parseScheduleDateBoundary(assignment.schedule.endDate, "end");
+
+    if (Number.isFinite(endTime) && now.getTime() > endTime) {
+      return { active: false, reason: "Outside date range" };
+    }
+  }
+
+  if (
+    assignment.schedule.daysOfWeek &&
+    assignment.schedule.daysOfWeek.length > 0 &&
+    !assignment.schedule.daysOfWeek.includes(now.getDay())
+  ) {
+    return { active: false, reason: "Wrong weekday" };
+  }
+
+  return evaluateDailyTimeWindow(now, assignment.schedule.startTime, assignment.schedule.endTime);
 }
 
 function chooseWinningCandidate(candidates: SchedulerCandidate[]) {
@@ -105,7 +211,7 @@ async function loadResolution(screenId: string): Promise<SchedulerResolution> {
   ]);
   const matchingGroups = groups.filter((group) => group.screenIds.includes(screenId));
   const matchingGroupById = new Map(matchingGroups.map((group) => [group.groupId, group]));
-  const candidates = assignments
+  const candidateEvaluations = assignments
     .filter((assignment) => {
       if (assignment.targetType === "SCREEN") {
         return assignment.targetId === screenId;
@@ -113,7 +219,22 @@ async function loadResolution(screenId: string): Promise<SchedulerResolution> {
 
       return matchingGroupById.has(assignment.targetId);
     })
-    .map((assignment) => assignmentToCandidate(assignment, matchingGroupById.get(assignment.targetId)))
+    .map((assignment) => {
+      const scheduleEvaluation = evaluateAssignmentSchedule(assignment);
+      const candidate = assignmentToCandidate(
+        assignment,
+        scheduleEvaluation,
+        matchingGroupById.get(assignment.targetId)
+      );
+
+      return {
+        candidate,
+        scheduleEvaluation
+      };
+    });
+  const candidates = candidateEvaluations
+    .filter((item) => item.scheduleEvaluation.active)
+    .map((item) => item.candidate)
     .map((candidate, index) => ({ candidate, index }))
     .sort((left, right) => {
       if (right.candidate.priority !== left.candidate.priority) {
@@ -123,6 +244,12 @@ async function loadResolution(screenId: string): Promise<SchedulerResolution> {
       return left.index - right.index;
     })
     .map((item) => item.candidate);
+  const rejectedCandidates = candidateEvaluations
+    .filter((item) => !item.scheduleEvaluation.active)
+    .map((item) => ({
+      ...item.candidate,
+      rejectedReason: item.scheduleEvaluation.reason
+    }));
   const winner = chooseWinningCandidate(candidates);
 
   return {
@@ -132,6 +259,7 @@ async function loadResolution(screenId: string): Promise<SchedulerResolution> {
       groups: matchingGroups
     },
     candidates,
+    rejectedCandidates,
     winningCandidate: winner.candidate,
     reason: winner.reason,
     resolvedProgram: winner.candidate
@@ -213,6 +341,7 @@ export async function explainSchedulerResolution(screenId: string) {
   return {
     screenContext: resolution.screenContext,
     candidates: resolution.candidates,
+    rejectedCandidates: resolution.rejectedCandidates,
     winningCandidate: resolution.winningCandidate,
     reason: resolution.reason,
     resolvedProgram: resolution.resolvedProgram,

@@ -18,7 +18,13 @@ export interface SchedulerCandidate {
     assignmentSource?: Assignment["source"];
     assignment?: Assignment;
     matchedGroupName?: string;
+    scheduleStatus?: "active" | "inactive";
+    scheduleReason?: string;
   };
+}
+
+export interface RejectedSchedulerCandidate extends SchedulerCandidate {
+  rejectedReason: string;
 }
 
 export interface SchedulerResolvedScheduleSummary {
@@ -37,6 +43,7 @@ export interface SchedulerDiagnosticsResult {
     groups: ScreenGroup[];
   };
   candidates: SchedulerCandidate[];
+  rejectedCandidates?: RejectedSchedulerCandidate[];
   winningCandidate: SchedulerCandidate | null;
   reason: string;
   resolvedProgram: Program | null;

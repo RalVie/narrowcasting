@@ -8,6 +8,15 @@ import { listScreens } from "../screens/screenStore.js";
 export type AssignmentTargetType = "SCREEN" | "SCREEN_GROUP";
 export type AssignmentSource = "manual" | "campaign";
 
+export interface AssignmentSchedule {
+  enabled: boolean;
+  startDate?: string;
+  endDate?: string;
+  daysOfWeek?: number[];
+  startTime?: string;
+  endTime?: string;
+}
+
 export interface Assignment {
   id: string;
   targetType: AssignmentTargetType;
@@ -15,6 +24,7 @@ export interface Assignment {
   programId: string;
   enabled: boolean;
   source: AssignmentSource;
+  schedule?: AssignmentSchedule;
   createdAt: string;
   updatedAt: string;
 }
@@ -31,6 +41,47 @@ function normalizeTargetType(value: unknown): AssignmentTargetType | null {
 
 function normalizeSource(value: unknown): AssignmentSource {
   return value === "campaign" ? "campaign" : "manual";
+}
+
+function normalizeSchedule(value: unknown): AssignmentSchedule | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const candidate = value as Partial<AssignmentSchedule>;
+  const datePattern = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d{3})?)?(?:Z|[+-]\d{2}:\d{2})?)?$/;
+  const timePattern = /^\d{2}:\d{2}$/;
+  const schedule: AssignmentSchedule = {
+    enabled: candidate.enabled !== false
+  };
+
+  if (typeof candidate.startDate === "string" && datePattern.test(candidate.startDate)) {
+    schedule.startDate = candidate.startDate;
+  }
+
+  if (typeof candidate.endDate === "string" && datePattern.test(candidate.endDate)) {
+    schedule.endDate = candidate.endDate;
+  }
+
+  if (Array.isArray(candidate.daysOfWeek)) {
+    schedule.daysOfWeek = Array.from(
+      new Set(
+        candidate.daysOfWeek.filter(
+          (day): day is number => Number.isInteger(day) && day >= 0 && day <= 6
+        )
+      )
+    );
+  }
+
+  if (typeof candidate.startTime === "string" && timePattern.test(candidate.startTime)) {
+    schedule.startTime = candidate.startTime;
+  }
+
+  if (typeof candidate.endTime === "string" && timePattern.test(candidate.endTime)) {
+    schedule.endTime = candidate.endTime;
+  }
+
+  return schedule;
 }
 
 function normalizeAssignment(value: unknown): Assignment | null {
@@ -59,6 +110,7 @@ function normalizeAssignment(value: unknown): Assignment | null {
     programId: candidate.programId,
     enabled: candidate.enabled !== false,
     source: normalizeSource(candidate.source),
+    schedule: normalizeSchedule(candidate.schedule),
     createdAt: sanitizeText(candidate.createdAt, now),
     updatedAt: sanitizeText(candidate.updatedAt, candidate.createdAt ?? now)
   };
@@ -101,6 +153,7 @@ async function migrateLegacyScreenAssignments(): Promise<Assignment[]> {
       programId: screen.assignedProgramId as string,
       enabled: true,
       source: "manual" as const,
+      schedule: undefined,
       createdAt: screen.lastAssignment ?? now,
       updatedAt: screen.lastAssignment ?? now
     }));
@@ -174,7 +227,8 @@ function readAssignmentInput(input: unknown) {
     targetId,
     programId,
     enabled: body.enabled !== false,
-    source: normalizeSource(body.source)
+    source: normalizeSource(body.source),
+    schedule: normalizeSchedule(body.schedule)
   };
 }
 
@@ -198,6 +252,7 @@ export async function createAssignment(input: unknown): Promise<Assignment> {
     programId: next.programId,
     enabled: next.enabled,
     source: next.source,
+    schedule: next.schedule,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now
   };
@@ -223,6 +278,7 @@ export async function updateAssignment(id: string, input: unknown): Promise<Assi
   const targetId = sanitizeText(body.targetId, existing.targetId);
   const programId = sanitizeText(body.programId, existing.programId);
   const enabled = typeof body.enabled === "boolean" ? body.enabled : existing.enabled;
+  const schedule = "schedule" in body ? normalizeSchedule(body.schedule) : existing.schedule;
 
   await Promise.all([
     validateAssignmentTarget(targetType, targetId),
@@ -247,6 +303,7 @@ export async function updateAssignment(id: string, input: unknown): Promise<Assi
     programId,
     enabled,
     source: existing.source,
+    schedule,
     updatedAt: new Date().toISOString()
   };
 
@@ -302,6 +359,7 @@ export async function syncCampaignAssignments(input: {
           programId: input.programId,
           enabled: true,
           source: "campaign" as const,
+          schedule: undefined,
           createdAt: existing?.createdAt ?? input.createdAt,
           updatedAt: input.updatedAt
         };

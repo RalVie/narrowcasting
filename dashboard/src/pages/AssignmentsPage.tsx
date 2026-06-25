@@ -1,10 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiUrl } from "../api/apiBase";
-import type { Assignment, AssignmentTargetType } from "../assignmentTypes";
+import type { Assignment, AssignmentSchedule, AssignmentTargetType } from "../assignmentTypes";
 import type { Program } from "../programTypes";
 import type { ScreenGroup, ScreenRecord } from "../screenTypes";
 
 const refreshIntervalMs = 10_000;
+const daysOfWeek = [
+  { value: 0, label: "Sun" },
+  { value: 1, label: "Mon" },
+  { value: 2, label: "Tue" },
+  { value: 3, label: "Wed" },
+  { value: 4, label: "Thu" },
+  { value: 5, label: "Fri" },
+  { value: 6, label: "Sat" }
+];
+
+type AssignmentDraft = Pick<Assignment, "targetType" | "targetId" | "programId" | "enabled"> & {
+  schedule?: AssignmentSchedule;
+};
 
 function formatTargetType(value: AssignmentTargetType) {
   return value === "SCREEN" ? "Screen" : "Screen Group";
@@ -25,7 +38,7 @@ export function AssignmentsPage() {
   const [targetType, setTargetType] = useState<AssignmentTargetType>("SCREEN");
   const [targetId, setTargetId] = useState("");
   const [programId, setProgramId] = useState("");
-  const [drafts, setDrafts] = useState<Record<string, Pick<Assignment, "targetType" | "targetId" | "programId" | "enabled">>>({});
+  const [drafts, setDrafts] = useState<Record<string, AssignmentDraft>>({});
 
   const approvedScreens = useMemo(
     () => screens.filter((screen) => screen.status === "approved"),
@@ -88,7 +101,8 @@ export function AssignmentsPage() {
               targetType: assignment.targetType,
               targetId: assignment.targetId,
               programId: assignment.programId,
-              enabled: assignment.enabled
+              enabled: assignment.enabled,
+              schedule: assignment.schedule
             }
           ])
         ),
@@ -243,6 +257,162 @@ export function AssignmentsPage() {
         {group.name}
       </option>
     ));
+  }
+
+  function updateSchedule(draft: AssignmentDraft, nextSchedule: AssignmentSchedule | undefined): AssignmentDraft {
+    return {
+      ...draft,
+      schedule: nextSchedule
+    };
+  }
+
+  function renderScheduleEditor(assignment: Assignment, draft: AssignmentDraft) {
+    const schedule = draft.schedule;
+
+    return (
+      <details className="assignment-schedule-panel">
+        <summary>Schedule</summary>
+        <div className="assignment-schedule-grid">
+          <label className="assignment-toggle">
+            Use time window
+            <input
+              checked={Boolean(schedule)}
+              onChange={(event) =>
+                setDrafts((currentDrafts) => ({
+                  ...currentDrafts,
+                  [assignment.id]: updateSchedule(
+                    draft,
+                    event.target.checked
+                      ? {
+                          enabled: true
+                        }
+                      : undefined
+                  )
+                }))
+              }
+              type="checkbox"
+            />
+          </label>
+          {schedule ? (
+            <>
+              <label className="assignment-toggle">
+                Schedule enabled
+                <input
+                  checked={schedule.enabled}
+                  onChange={(event) =>
+                    setDrafts((currentDrafts) => ({
+                      ...currentDrafts,
+                      [assignment.id]: updateSchedule(draft, {
+                        ...schedule,
+                        enabled: event.target.checked
+                      })
+                    }))
+                  }
+                  type="checkbox"
+                />
+              </label>
+              <label>
+                Start date
+                <input
+                  onChange={(event) =>
+                    setDrafts((currentDrafts) => ({
+                      ...currentDrafts,
+                      [assignment.id]: updateSchedule(draft, {
+                        ...schedule,
+                        startDate: event.target.value || undefined
+                      })
+                    }))
+                  }
+                  placeholder="2026-12-01"
+                  type="date"
+                  value={schedule.startDate?.slice(0, 10) ?? ""}
+                />
+              </label>
+              <label>
+                End date
+                <input
+                  onChange={(event) =>
+                    setDrafts((currentDrafts) => ({
+                      ...currentDrafts,
+                      [assignment.id]: updateSchedule(draft, {
+                        ...schedule,
+                        endDate: event.target.value || undefined
+                      })
+                    }))
+                  }
+                  placeholder="2026-12-31"
+                  type="date"
+                  value={schedule.endDate?.slice(0, 10) ?? ""}
+                />
+              </label>
+              <label>
+                Start time
+                <input
+                  onChange={(event) =>
+                    setDrafts((currentDrafts) => ({
+                      ...currentDrafts,
+                      [assignment.id]: updateSchedule(draft, {
+                        ...schedule,
+                        startTime: event.target.value || undefined
+                      })
+                    }))
+                  }
+                  type="time"
+                  value={schedule.startTime ?? ""}
+                />
+              </label>
+              <label>
+                End time
+                <input
+                  onChange={(event) =>
+                    setDrafts((currentDrafts) => ({
+                      ...currentDrafts,
+                      [assignment.id]: updateSchedule(draft, {
+                        ...schedule,
+                        endTime: event.target.value || undefined
+                      })
+                    }))
+                  }
+                  type="time"
+                  value={schedule.endTime ?? ""}
+                />
+              </label>
+              <div className="assignment-days-field">
+                <span>Days of week</span>
+                <div className="assignment-days-row">
+                  {daysOfWeek.map((day) => (
+                    <label key={day.value}>
+                      <input
+                        checked={schedule.daysOfWeek?.includes(day.value) ?? false}
+                        onChange={(event) => {
+                          const selectedDays = new Set(schedule.daysOfWeek ?? []);
+
+                          if (event.target.checked) {
+                            selectedDays.add(day.value);
+                          } else {
+                            selectedDays.delete(day.value);
+                          }
+
+                          setDrafts((currentDrafts) => ({
+                            ...currentDrafts,
+                            [assignment.id]: updateSchedule(draft, {
+                              ...schedule,
+                              daysOfWeek: Array.from(selectedDays).sort()
+                            })
+                          }));
+                        }}
+                        type="checkbox"
+                      />
+                      {day.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </>
+          ) : null}
+        </div>
+      </details>
+    );
   }
 
   return (
@@ -409,6 +579,7 @@ export function AssignmentsPage() {
                       </button>
                     </div>
                   </div>
+                  {renderScheduleEditor(assignment, draft)}
                 </article>
               );
             })}

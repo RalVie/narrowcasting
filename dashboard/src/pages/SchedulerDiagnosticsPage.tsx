@@ -3,6 +3,7 @@ import { apiUrl } from "../api/apiBase";
 import type { Campaign } from "../campaignTypes";
 import type { Program } from "../programTypes";
 import type {
+  RejectedSchedulerCandidate,
   SchedulerCandidate,
   SchedulerDiagnosticsResult
 } from "../schedulerDiagnosticsTypes";
@@ -63,6 +64,25 @@ function describeCandidateDecision(candidate: SchedulerCandidate, winner: Schedu
   return "Rejected";
 }
 
+function formatAssignmentSchedule(candidate: SchedulerCandidate) {
+  const schedule = candidate.metadata.assignment?.schedule;
+
+  if (!schedule) {
+    return "Always active";
+  }
+
+  return [
+    `enabled=${schedule.enabled}`,
+    schedule.startDate ? `from ${schedule.startDate}` : null,
+    schedule.endDate ? `until ${schedule.endDate}` : null,
+    schedule.daysOfWeek && schedule.daysOfWeek.length > 0 ? `days ${schedule.daysOfWeek.join(",")}` : null,
+    schedule.startTime ? `start ${schedule.startTime}` : null,
+    schedule.endTime ? `end ${schedule.endTime}` : null
+  ]
+    .filter((part): part is string => part !== null)
+    .join(" / ");
+}
+
 export function SchedulerDiagnosticsPage() {
   const [screens, setScreens] = useState<ScreenRecord[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
@@ -92,6 +112,9 @@ export function SchedulerDiagnosticsPage() {
     result && !result.winningCandidate ? "No candidate matched this screen." : null,
     result?.winningCandidate && !result.resolvedProgram ? "Winning candidate references a missing program." : null,
     result?.winningCandidate ? `Winner selected at priority ${result.winningCandidate.priority}.` : null,
+    result?.rejectedCandidates && result.rejectedCandidates.length > 0
+      ? `${result.rejectedCandidates.length} assignment candidates are inactive.`
+      : null,
     result?.resolvedSchedule.assignmentStatus === "unassigned" ? "Resolved schedule is unassigned." : null
   ].filter((message): message is string => message !== null);
 
@@ -187,6 +210,47 @@ export function SchedulerDiagnosticsPage() {
           </dd>
           <dt>Enabled</dt>
           <dd>{candidate.enabled ? "Yes" : "No"}</dd>
+          <dt>Schedule Status</dt>
+          <dd>{candidate.metadata.scheduleStatus ?? "active"}</dd>
+          <dt>Schedule Reason</dt>
+          <dd>{candidate.metadata.scheduleReason ?? "Active"}</dd>
+          <dt>Assignment Schedule</dt>
+          <dd>{formatAssignmentSchedule(candidate)}</dd>
+          <dt>Program</dt>
+          <dd>{program?.name ?? candidate.programId}</dd>
+          <dt>Assignment</dt>
+          <dd>{candidate.metadata.assignmentId ?? "-"}</dd>
+          <dt>Campaign</dt>
+          <dd>{campaign?.name ?? campaignId ?? "-"}</dd>
+        </dl>
+      </article>
+    );
+  }
+
+  function renderRejectedCandidate(candidate: RejectedSchedulerCandidate) {
+    const program = programMap.get(candidate.programId);
+    const campaignId = getCampaignId(candidate);
+    const campaign = campaignId ? campaignMap.get(campaignId) : null;
+
+    return (
+      <article className="diagnostics-candidate-card rejected" key={candidate.id}>
+        <strong>{candidate.id}</strong>
+        <span className="diagnostics-rejected-mark">Rejected: {candidate.rejectedReason}</span>
+        <dl className="diagnostics-meta">
+          <dt>Priority</dt>
+          <dd>{candidate.priority}</dd>
+          <dt>Source</dt>
+          <dd>{candidate.sourceType}</dd>
+          <dt>Target</dt>
+          <dd>
+            {candidate.targetType} / {candidate.targetId}
+          </dd>
+          <dt>Schedule Status</dt>
+          <dd>{candidate.metadata.scheduleStatus ?? "inactive"}</dd>
+          <dt>Schedule Reason</dt>
+          <dd>{candidate.metadata.scheduleReason ?? candidate.rejectedReason}</dd>
+          <dt>Assignment Schedule</dt>
+          <dd>{formatAssignmentSchedule(candidate)}</dd>
           <dt>Program</dt>
           <dd>{program?.name ?? candidate.programId}</dd>
           <dt>Assignment</dt>
@@ -334,6 +398,21 @@ export function SchedulerDiagnosticsPage() {
             {result.candidates.length === 0 ? <p className="operator-empty">No candidates matched this screen.</p> : null}
             {result.candidates.length > 0 ? (
               <div className="diagnostics-candidate-grid">{result.candidates.map(renderCandidate)}</div>
+            ) : null}
+          </section>
+
+          <section className="operator-panel diagnostics-wide-panel">
+            <div className="operator-panel-header">
+              <h3>Rejected / Inactive Assignments</h3>
+              <span>{result.rejectedCandidates?.length ?? 0}</span>
+            </div>
+            {!result.rejectedCandidates || result.rejectedCandidates.length === 0 ? (
+              <p className="operator-empty">No inactive assignment candidates.</p>
+            ) : null}
+            {result.rejectedCandidates && result.rejectedCandidates.length > 0 ? (
+              <div className="diagnostics-candidate-grid">
+                {result.rejectedCandidates.map(renderRejectedCandidate)}
+              </div>
             ) : null}
           </section>
 

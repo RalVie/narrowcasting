@@ -970,6 +970,69 @@ button:disabled {
   gap: 8px;
 }
 
+.assignment-schedule-panel {
+  border: 1px solid #d9dfd4;
+  border-radius: 8px;
+  padding: 10px;
+  background: #f8faf6;
+}
+
+.assignment-schedule-panel summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.assignment-schedule-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.assignment-schedule-grid label,
+.assignment-days-field {
+  display: grid;
+  gap: 4px;
+  color: #647064;
+  font-size: 12px;
+}
+
+.assignment-schedule-grid input {
+  min-width: 0;
+  border: 1px solid #b9c8bd;
+  border-radius: 6px;
+  padding: 8px;
+  color: #17201a;
+  background: #ffffff;
+  font: inherit;
+}
+
+.assignment-days-field {
+  grid-column: 1 / -1;
+}
+
+.assignment-days-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.assignment-days-row label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #d9dfd4;
+  border-radius: 999px;
+  padding: 6px 8px;
+  color: #17201a;
+  background: #ffffff;
+}
+
+.assignment-schedule-grid input[type="checkbox"],
+.assignment-days-row input {
+  width: auto;
+}
+
 .campaign-create-panel,
 .campaign-list-panel {
   margin-top: 14px;
@@ -1156,6 +1219,11 @@ button:disabled {
 .diagnostics-candidate-card.selected {
   border-color: #4777d9;
   background: #f3f7ff;
+}
+
+.diagnostics-candidate-card.rejected {
+  border-color: #e8b8ae;
+  background: #fff8f6;
 }
 
 .diagnostics-candidate-card strong {
