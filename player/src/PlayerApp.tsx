@@ -316,6 +316,14 @@ function InstrumentedVideo({
   videoKey
 }: InstrumentedVideoProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const watchdogTimerRef = useRef<number | null>(null);
+
+  function clearVideoWatchdog() {
+    if (watchdogTimerRef.current !== null) {
+      window.clearTimeout(watchdogTimerRef.current);
+      watchdogTimerRef.current = null;
+    }
+  }
 
   const emit = useCallback(
     (
@@ -448,6 +456,7 @@ function InstrumentedVideo({
     });
 
     return () => {
+      clearVideoWatchdog();
       window.clearTimeout(snapshotTimer);
       window.cancelAnimationFrame(animationFrame);
       emit("unmount", "component cleanup", videoRef.current);
@@ -484,16 +493,28 @@ function InstrumentedVideo({
           });
       }}
       onEnded={(event) => {
+        clearVideoWatchdog();
         emit("ended", undefined, event.currentTarget);
         onAdvance(sessionKey, "video ended");
       }}
       onError={(event) => {
+        clearVideoWatchdog();
         event.currentTarget.dataset.missing = "true";
         emit("error", "media element error", event.currentTarget);
         onFailure(sessionKey, `Media unavailable: ${item.file}`);
       }}
       onLoadedMetadata={(event) => {
         emit("loadedmetadata", undefined, event.currentTarget);
+
+        if (Number.isFinite(event.currentTarget.duration) && event.currentTarget.duration > 0) {
+          clearVideoWatchdog();
+          const watchdogMs = Math.ceil(event.currentTarget.duration * 1000) + 3000;
+          emit("video watchdog scheduled", `duration ${event.currentTarget.duration}s + safety margin`, event.currentTarget);
+          watchdogTimerRef.current = window.setTimeout(() => {
+            emit("video watchdog fired", undefined, event.currentTarget);
+            onAdvance(sessionKey, "video watchdog fired");
+          }, watchdogMs);
+        }
       }}
       onPause={(event) => {
         emit("pause", undefined, event.currentTarget);
@@ -1147,6 +1168,14 @@ export function PlayerApp() {
   }
 
   useEffect(() => {
+    if (activeItem?.type === "video") {
+      emitPlaybackDebug("advance timer skipped", {
+        reason: "duration timer",
+        note: "video items advance on ended/watchdog, not generic duration"
+      });
+      return;
+    }
+
     if (!activeItem || !schedule || typeof activeItem.duration !== "number") {
       emitPlaybackDebug("advance timer skipped", {
         reason: "duration timer",
@@ -1159,7 +1188,7 @@ export function PlayerApp() {
       return;
     }
 
-    if (schedule.items.length <= 1 && activeItem.type !== "video") {
+    if (schedule.items.length <= 1) {
       emitPlaybackDebug("advance timer skipped", {
         reason: "duration timer",
         note: "single non-video item"
