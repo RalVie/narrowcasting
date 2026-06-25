@@ -62,7 +62,7 @@ function toPlaylistId(value: string) {
   return normalized || `playlist-${Date.now()}`;
 }
 
-function normalizePlaylistItems(items: unknown): PlaylistItem[] {
+function normalizePlaylistItems(items: unknown, existingItems: PlaylistItem[] = []): PlaylistItem[] {
   if (!Array.isArray(items)) {
     return [];
   }
@@ -79,14 +79,25 @@ function normalizePlaylistItems(items: unknown): PlaylistItem[] {
         return null;
       }
 
+      const existingItem = existingItems.find(
+        (item) =>
+          item.id === candidate.id &&
+          item.mediaId === candidate.mediaId &&
+          item.type === candidate.type &&
+          item.file === candidate.file
+      );
       const playlistItem: PlaylistItem = {
         id: typeof candidate.id === "string" ? candidate.id : `item-${index + 1}`,
         mediaId: candidate.mediaId,
         type: candidate.type,
         file: candidate.file,
-        duration: Math.max(Number(candidate.duration ?? 10), 1),
+        duration: Math.max(Number(candidate.duration ?? existingItem?.duration ?? 10), 1),
         durationMode:
-          candidate.type === "video" && candidate.durationMode === "clip" ? "clip" : undefined
+          candidate.type === "video" &&
+          (candidate.durationMode === "clip" ||
+            (candidate.durationMode === undefined && existingItem?.durationMode === "clip"))
+            ? "clip"
+            : undefined
       };
 
       if (typeof candidate.startDate === "string" && datePattern.test(candidate.startDate)) {
@@ -277,7 +288,7 @@ export async function savePlaylist(value: unknown): Promise<Playlist> {
         : existingPlaylist?.name ?? "Default Playlist",
     version: (existingPlaylist?.version ?? 0) + 1,
     updatedAt: new Date().toISOString(),
-    items: normalizePlaylistItems(incoming.items)
+    items: normalizePlaylistItems(incoming.items, existingPlaylist?.items)
   };
 
   const otherPlaylists = playlists.filter((item) => item.id !== defaultPlaylistId);
@@ -358,7 +369,7 @@ export async function savePlaylistRecord(id: string, value: unknown): Promise<Pl
         : existingPlaylist.name,
     version: existingPlaylist.version + 1,
     updatedAt: new Date().toISOString(),
-    items: normalizePlaylistItems(incoming.items)
+    items: normalizePlaylistItems(incoming.items, existingPlaylist.items)
   };
 
   await writePlaylists(playlists.map((item) => (item.id === id ? playlist : item)));
