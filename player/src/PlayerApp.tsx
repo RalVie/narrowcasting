@@ -45,6 +45,25 @@ interface VideoDebugEvent {
   note?: string;
 }
 
+interface PlaybackDebugEvent {
+  time: string;
+  event: string;
+  reason?: string;
+  itemId: string | null;
+  itemType: string | null;
+  itemIndex: number;
+  itemCount: number;
+  duration: number | null;
+  computedDurationMs?: number | null;
+  cycleId: number;
+  epoch: number;
+  playbackSessionKey: number;
+  playbackSessionKeyRef: number;
+  scheduledSessionKey?: number;
+  nextIndex?: number;
+  note?: string;
+}
+
 function getViewportSize() {
   return {
     width: window.innerWidth,
@@ -269,7 +288,7 @@ interface InstrumentedVideoProps {
   debugEnabled: boolean;
   item: Extract<ScheduleItem, { type: "video" }>;
   activeVisible: boolean;
-  onAdvance: (sessionKey: number) => void;
+  onAdvance: (sessionKey: number, reason: string) => void;
   onDebugEvent: (event: VideoDebugEvent) => void;
   onFailure: (sessionKey: number, message: string) => void;
   playbackEpoch: number;
@@ -461,12 +480,12 @@ function InstrumentedVideo({
                 playCalled: true
               }
             );
-            onAdvance(sessionKey);
+            onAdvance(sessionKey, "video play rejected");
           });
       }}
       onEnded={(event) => {
         emit("ended", undefined, event.currentTarget);
-        onAdvance(sessionKey);
+        onAdvance(sessionKey, "video ended");
       }}
       onError={(event) => {
         event.currentTarget.dataset.missing = "true";
@@ -514,6 +533,7 @@ export function PlayerApp() {
     status: "waiting"
   }));
   const [videoDebugEvents, setVideoDebugEvents] = useState<VideoDebugEvent[]>([]);
+  const [playbackDebugEvents, setPlaybackDebugEvents] = useState<PlaybackDebugEvent[]>([]);
   const playbackSessionKeyRef = useRef(0);
   const programCycleIdRef = useRef(0);
   const failureTimerRef = useRef<number | null>(null);
@@ -527,6 +547,10 @@ export function PlayerApp() {
 
   const appendVideoDebugEvent = useCallback((event: VideoDebugEvent) => {
     setVideoDebugEvents((events) => [...events, event].slice(-8));
+  }, []);
+
+  const appendPlaybackDebugEvent = useCallback((event: PlaybackDebugEvent) => {
+    setPlaybackDebugEvents((events) => [...events, event].slice(-10));
   }, []);
 
   const bumpProgramCycle = useCallback(() => {
@@ -636,6 +660,7 @@ export function PlayerApp() {
             setProgramCycleId(0);
             programCycleIdRef.current = 0;
             setVideoDebugEvents([]);
+            setPlaybackDebugEvents([]);
             setPlaybackEpoch((epoch) => epoch + 1);
             setPlaybackSessionKey((key) => {
               const nextKey = key + 1;
@@ -705,16 +730,91 @@ export function PlayerApp() {
     return schedule.items[activeIndex % schedule.items.length];
   }, [activeIndex, schedule]);
 
-  const advanceToNextItem = useCallback((sessionKey = playbackSessionKeyRef.current) => {
+  const emitPlaybackDebug = useCallback(
+    (
+      event: string,
+      options: Partial<
+        Pick<
+          PlaybackDebugEvent,
+          "reason" | "computedDurationMs" | "scheduledSessionKey" | "nextIndex" | "note"
+        >
+      > = {}
+    ) => {
+      const debugEvent: PlaybackDebugEvent = {
+        time: new Date().toLocaleTimeString(),
+        event,
+        reason: options.reason,
+        itemId: activeItem?.id ?? null,
+        itemType: activeItem?.type ?? null,
+        itemIndex: activeIndex,
+        itemCount: schedule?.items.length ?? 0,
+        duration: typeof activeItem?.duration === "number" ? activeItem.duration : null,
+        computedDurationMs: options.computedDurationMs,
+        cycleId: programCycleId,
+        epoch: playbackEpoch,
+        playbackSessionKey,
+        playbackSessionKeyRef: playbackSessionKeyRef.current,
+        scheduledSessionKey: options.scheduledSessionKey,
+        nextIndex: options.nextIndex,
+        note: options.note
+      };
+
+      if (debugInfo.enabled) {
+        console.info("playback lifecycle", debugEvent);
+      }
+
+      appendPlaybackDebugEvent(debugEvent);
+    },
+    [
+      activeIndex,
+      activeItem,
+      appendPlaybackDebugEvent,
+      debugInfo.enabled,
+      playbackEpoch,
+      playbackSessionKey,
+      programCycleId,
+      schedule
+    ]
+  );
+
+  useEffect(() => {
+    emitPlaybackDebug("active item changed", {
+      note: activeItem
+        ? `active ${activeItem.type} ${activeItem.id}`
+        : "no active item"
+    });
+  }, [activeItem, emitPlaybackDebug]);
+
+  const advanceToNextItem = useCallback((sessionKey = playbackSessionKeyRef.current, reason = "unknown") => {
+    emitPlaybackDebug("advance called", {
+      reason,
+      scheduledSessionKey: sessionKey
+    });
+
     if (sessionKey !== playbackSessionKeyRef.current) {
+      emitPlaybackDebug("advance ignored", {
+        reason,
+        scheduledSessionKey: sessionKey,
+        note: "stale playback session key"
+      });
       return;
     }
 
     if (!schedule || schedule.items.length === 0) {
+      emitPlaybackDebug("advance ignored", {
+        reason,
+        scheduledSessionKey: sessionKey,
+        note: "no schedule items"
+      });
       return;
     }
 
     if (schedule.items.length === 1) {
+      emitPlaybackDebug("advance single-item loop", {
+        reason,
+        scheduledSessionKey: sessionKey,
+        nextIndex: 0
+      });
       bumpProgramCycle();
       setPlaybackEpoch((epoch) => epoch + 1);
       return;
@@ -723,41 +823,107 @@ export function PlayerApp() {
     setActiveIndex((index) => {
       const nextIndex = (index + 1) % schedule.items.length;
 
+      appendPlaybackDebugEvent({
+        time: new Date().toLocaleTimeString(),
+        event: "advance apply index",
+        reason,
+        itemId: activeItem?.id ?? null,
+        itemType: activeItem?.type ?? null,
+        itemIndex: index,
+        itemCount: schedule.items.length,
+        duration: typeof activeItem?.duration === "number" ? activeItem.duration : null,
+        cycleId: programCycleIdRef.current,
+        epoch: playbackEpoch,
+        playbackSessionKey,
+        playbackSessionKeyRef: playbackSessionKeyRef.current,
+        scheduledSessionKey: sessionKey,
+        nextIndex
+      });
+
       if (nextIndex === 0) {
         bumpProgramCycle();
       }
 
       return nextIndex;
     });
-  }, [bumpProgramCycle, schedule]);
+  }, [
+    activeItem,
+    appendPlaybackDebugEvent,
+    bumpProgramCycle,
+    emitPlaybackDebug,
+    playbackEpoch,
+    playbackSessionKey,
+    schedule
+  ]);
 
   const handleActiveItemFailure = useCallback(
     (sessionKey: number, message: string) => {
+      emitPlaybackDebug("failure handler called", {
+        reason: "media failure",
+        scheduledSessionKey: sessionKey,
+        note: message
+      });
+
       if (sessionKey !== playbackSessionKeyRef.current) {
+        emitPlaybackDebug("failure handler ignored", {
+          reason: "media failure",
+          scheduledSessionKey: sessionKey,
+          note: "stale playback session key"
+        });
         return;
       }
 
       clearFailureTimer();
+      emitPlaybackDebug("failure timer cleared", {
+        reason: "media failure",
+        scheduledSessionKey: sessionKey,
+        note: "cleared before scheduling/handling failure"
+      });
       setMissingItemMessage(message);
 
       if (!schedule || schedule.items.length === 0) {
+        emitPlaybackDebug("failure handler stopped", {
+          reason: "media failure",
+          scheduledSessionKey: sessionKey,
+          note: "no schedule items"
+        });
         return;
       }
 
       if (schedule.items.length === 1) {
+        emitPlaybackDebug("failure handler stopped", {
+          reason: "media failure",
+          scheduledSessionKey: sessionKey,
+          note: "single item; showing media unavailable"
+        });
         return;
       }
 
+      emitPlaybackDebug("failure timer scheduled", {
+        reason: "media failure",
+        scheduledSessionKey: sessionKey,
+        computedDurationMs: 300
+      });
       failureTimerRef.current = window.setTimeout(() => {
+        emitPlaybackDebug("failure timer fired", {
+          reason: "media failure",
+          scheduledSessionKey: sessionKey
+        });
+
         if (sessionKey !== playbackSessionKeyRef.current) {
+          emitPlaybackDebug("failure timer ignored", {
+            reason: "media failure",
+            scheduledSessionKey: sessionKey,
+            note: "stale playback session key"
+          });
           return;
         }
 
         setMissingItemMessage(null);
-        advanceToNextItem(sessionKey);
+        advanceToNextItem(sessionKey, "failure timer fired");
       }, 300);
     },
-    [advanceToNextItem, schedule]
+    [advanceToNextItem, emitPlaybackDebug, schedule]
   );
 
   function renderActiveItem(className: string, regionId = "standalone", activeVisible = true) {
@@ -810,12 +976,17 @@ export function PlayerApp() {
             debugEnabled={debugInfo.enabled}
             item={activeItem}
             key={videoKey}
-            onAdvance={(incomingSessionKey) => {
+            onAdvance={(incomingSessionKey, reason) => {
               if (incomingSessionKey !== playbackSessionKeyRef.current) {
+                emitPlaybackDebug("video advance ignored", {
+                  reason,
+                  scheduledSessionKey: incomingSessionKey,
+                  note: "stale playback session key before advance"
+                });
                 return;
               }
 
-              advanceToNextItem(incomingSessionKey);
+              advanceToNextItem(incomingSessionKey, reason);
             }}
             onDebugEvent={appendVideoDebugEvent}
             onFailure={(incomingSessionKey, message) => {
@@ -857,6 +1028,21 @@ export function PlayerApp() {
         <span>Status: {debugInfo.status}</span>
         <span>Cycle: {programCycleId}</span>
         <span>Media: {activeItem?.id ?? "none"}</span>
+        {playbackDebugEvents.length > 0 ? (
+          <div className="playback-debug-events">
+            <strong>Playback</strong>
+            {playbackDebugEvents.map((event, index) => (
+              <span key={`${event.time}-${event.event}-${index}`}>
+                {event.time} {event.event} reason:{event.reason ?? "-"} item:{event.itemType ?? "-"}:
+                {event.itemId ?? "-"} idx:{event.itemIndex}/{event.itemCount} dur:
+                {event.duration ?? "-"} ms:{event.computedDurationMs ?? "-"} c:{event.cycleId} e:
+                {event.epoch} sess:{event.playbackSessionKey}/{event.playbackSessionKeyRef} scheduled:
+                {event.scheduledSessionKey ?? "-"} next:{event.nextIndex ?? "-"}{" "}
+                {event.note ? `(${event.note})` : ""}
+              </span>
+            ))}
+          </div>
+        ) : null}
         {videoDebugEvents.length > 0 ? (
           <div className="video-debug-events">
             <strong>Video</strong>
@@ -962,22 +1148,50 @@ export function PlayerApp() {
 
   useEffect(() => {
     if (!activeItem || !schedule || typeof activeItem.duration !== "number") {
+      emitPlaybackDebug("advance timer skipped", {
+        reason: "duration timer",
+        note: !activeItem
+          ? "no active item"
+          : !schedule
+            ? "no schedule"
+            : "active item has no numeric duration"
+      });
       return;
     }
 
     if (schedule.items.length <= 1 && activeItem.type !== "video") {
+      emitPlaybackDebug("advance timer skipped", {
+        reason: "duration timer",
+        note: "single non-video item"
+      });
       return;
     }
 
     const durationMs = Math.max(activeItem.duration, 1) * 1000;
+    const scheduledSessionKey = playbackSessionKey;
+    emitPlaybackDebug("advance timer scheduled", {
+      reason: "duration timer",
+      computedDurationMs: durationMs,
+      scheduledSessionKey
+    });
     const rotationTimer = window.setTimeout(() => {
-      advanceToNextItem(playbackSessionKey);
+      emitPlaybackDebug("advance timer fired", {
+        reason: "duration timer",
+        computedDurationMs: durationMs,
+        scheduledSessionKey
+      });
+      advanceToNextItem(scheduledSessionKey, "duration timer fired");
     }, durationMs);
 
     return () => {
       window.clearTimeout(rotationTimer);
+      emitPlaybackDebug("advance timer cleared", {
+        reason: "duration timer",
+        computedDurationMs: durationMs,
+        scheduledSessionKey
+      });
     };
-  }, [activeItem, advanceToNextItem, playbackSessionKey, schedule]);
+  }, [activeItem, advanceToNextItem, emitPlaybackDebug, playbackSessionKey, schedule]);
 
   if (!activeItem) {
     const hasEmptyPlaylist = schedule !== null && schedule.items.length === 0;

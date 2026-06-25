@@ -208,6 +208,7 @@ h1 {
   color: #7ef7a0;
 }
 
+.playback-debug-events,
 .video-debug-events {
   display: grid;
   gap: 3px;
