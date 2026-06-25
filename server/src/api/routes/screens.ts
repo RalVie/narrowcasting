@@ -3,7 +3,8 @@ import {
   approveScreen,
   listScreens,
   registerScreen,
-  renameScreen
+  renameScreen,
+  updateScreenHeartbeat
 } from "../../screens/screenStore.js";
 
 export const screensRoutes: FastifyPluginAsync = async (app) => {
@@ -36,6 +37,16 @@ export const screensRoutes: FastifyPluginAsync = async (app) => {
 
     if (!screen) {
       return reply.code(404).send({ error: "screen not found" });
+    }
+
+    return reply.send(screen);
+  });
+
+  app.post<{ Params: { id: string } }>("/screens/:id/heartbeat", async (request, reply) => {
+    const screen = await updateScreenHeartbeat(request.params.id, request.body ?? {});
+
+    if (!screen) {
+      return reply.code(404).send({ error: "screen not found or heartbeat rejected" });
     }
 
     return reply.send(screen);

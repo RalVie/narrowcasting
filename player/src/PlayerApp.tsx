@@ -10,6 +10,7 @@ const playerIdKey = "narrowcasting:player-id";
 const screenIdKey = "narrowcasting:screen-id";
 const serverUrlKey = "narrowcasting:server-url";
 const playerVersion = "phase-1";
+const heartbeatIntervalMs = 10_000;
 
 interface RegistrationState {
   playerId: string;
@@ -720,6 +721,11 @@ export function PlayerApp() {
   const playbackSessionKeyRef = useRef(0);
   const programCycleIdRef = useRef(0);
   const failureTimerRef = useRef<number | null>(null);
+  const activeItemRef = useRef<ScheduleItem | null>(null);
+  const scheduleRef = useRef<Schedule | null>(null);
+  const scheduleSignatureRef = useRef<string | null>(null);
+  const lastScheduleSyncRef = useRef<string | null>(null);
+  const missingItemMessageRef = useRef<string | null>(null);
 
   function clearFailureTimer() {
     if (failureTimerRef.current !== null) {
@@ -850,6 +856,88 @@ export function PlayerApp() {
   }, [registration.playerId, registration.screenId]);
 
   useEffect(() => {
+    if (!registration.screenId || !registration.serverUrl) {
+      return;
+    }
+
+    let cancelled = false;
+    const screenId = registration.screenId;
+    const serverUrl = registration.serverUrl;
+
+    async function sendHeartbeat() {
+      const active = activeItemRef.current;
+      const currentSchedule = scheduleRef.current;
+      const now = new Date().toISOString();
+      const currentMedia =
+        active?.type === "image" || active?.type === "video" ? active.file : active?.title ?? null;
+      const payload = {
+        screenId,
+        playerId: registration.playerId,
+        hostname: window.location.hostname || null,
+        softwareVersion: playerVersion,
+        uptime: Math.round(window.performance.now() / 1000),
+        currentTime: now,
+        lastSeen: now,
+        currentProgram: null,
+        currentPlaylist: null,
+        currentMedia,
+        currentMediaType: active?.type ?? null,
+        playState: missingItemMessageRef.current
+          ? "error"
+          : active
+            ? "playing"
+            : currentSchedule && currentSchedule.items.length === 0
+              ? "empty"
+              : "waiting",
+        cpuUsage: null,
+        memoryUsage:
+          "memory" in window.performance
+            ? Math.round(
+                ((window.performance as Performance & { memory?: { usedJSHeapSize?: number } }).memory
+                  ?.usedJSHeapSize ?? 0) / 1024 / 1024
+              )
+            : null,
+        diskFree: null,
+        networkIp: null,
+        resolution: `${window.screen.width}x${window.screen.height}`,
+        orientation: window.innerWidth >= window.innerHeight ? "landscape" : "portrait",
+        syncStatus: currentSchedule ? "ok" : "waiting",
+        lastScheduleSync: lastScheduleSyncRef.current,
+        lastScheduleSignature: scheduleSignatureRef.current ? getShortSignature(scheduleSignatureRef.current) : null,
+        playbackError: missingItemMessageRef.current
+      };
+
+      try {
+        await fetchWithTimeout(
+          `${serverUrl}/api/screens/${encodeURIComponent(screenId)}/heartbeat`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+          },
+          2500
+        );
+      } catch {
+        if (!cancelled) {
+          // Playback remains local; heartbeat failures are visible on the dashboard by age.
+        }
+      }
+    }
+
+    void sendHeartbeat();
+    const heartbeatTimer = window.setInterval(() => {
+      void sendHeartbeat();
+    }, heartbeatIntervalMs);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(heartbeatTimer);
+    };
+  }, [registration.playerId, registration.screenId, registration.serverUrl]);
+
+  useEffect(() => {
     let cancelled = false;
     let currentSignature: string | null = null;
 
@@ -932,6 +1020,8 @@ export function PlayerApp() {
               itemCount: body.items.length
             });
             currentSignature = nextSignature;
+            scheduleSignatureRef.current = nextSignature;
+            lastScheduleSyncRef.current = new Date().toISOString();
             writeStoredScheduleSignature(nextSignature);
             setDebugInfo((info) => ({
               ...info,
@@ -1017,6 +1107,18 @@ export function PlayerApp() {
 
     return schedule.items[activeIndex % schedule.items.length];
   }, [activeIndex, schedule]);
+
+  useEffect(() => {
+    activeItemRef.current = activeItem;
+  }, [activeItem]);
+
+  useEffect(() => {
+    scheduleRef.current = schedule;
+  }, [schedule]);
+
+  useEffect(() => {
+    missingItemMessageRef.current = missingItemMessage;
+  }, [missingItemMessage]);
 
   const emitPlaybackDebug = useCallback(
     (
