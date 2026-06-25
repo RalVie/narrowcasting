@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { getProgramsOrDefault, type Program } from "../program/programStore.js";
+import { getProgramsOrDefault } from "../program/programStore.js";
 import { listScreenGroups } from "../screens/screenGroupStore.js";
 import { listScreens } from "../screens/screenStore.js";
 
@@ -17,11 +17,6 @@ export interface Assignment {
   source: AssignmentSource;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface ResolvedAssignment {
-  assignment: Assignment;
-  program: Program | null;
 }
 
 const assignmentsPath = resolve(process.cwd(), "data", "assignments.json");
@@ -324,32 +319,4 @@ export async function deleteCampaignAssignments(campaignId: string): Promise<voi
   const nextAssignments = assignments.filter((assignment) => !assignment.id.startsWith(campaignPrefix));
 
   await writeAssignments(nextAssignments);
-}
-
-export async function resolveAssignmentForScreen(screenId: string): Promise<ResolvedAssignment | null> {
-  const [assignments, groups, programs] = await Promise.all([
-    listAssignments(),
-    listScreenGroups(),
-    getProgramsOrDefault()
-  ]);
-  const enabledAssignments = assignments.filter((assignment) => assignment.enabled);
-  const screenAssignment = enabledAssignments.find(
-    (assignment) => assignment.targetType === "SCREEN" && assignment.targetId === screenId
-  );
-  const groupIds = groups
-    .filter((group) => group.screenIds.includes(screenId))
-    .map((group) => group.groupId);
-  const groupAssignment = enabledAssignments.find(
-    (assignment) => assignment.targetType === "SCREEN_GROUP" && groupIds.includes(assignment.targetId)
-  );
-  const assignment = screenAssignment ?? groupAssignment;
-
-  if (!assignment) {
-    return null;
-  }
-
-  return {
-    assignment,
-    program: programs.find((program) => program.id === assignment.programId) ?? null
-  };
 }
