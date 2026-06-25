@@ -26,7 +26,7 @@ export type ScheduleItem = TextScheduleItem | ImageScheduleItem | VideoScheduleI
 export interface ThemeRegion {
   id: string;
   name: string;
-  type: "program" | "logo" | "image" | "text";
+  type: "program" | "logo" | "image" | "text" | "clock";
   x: number;
   y: number;
   width: number;

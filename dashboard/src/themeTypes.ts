@@ -1,7 +1,8 @@
 export type ThemeOrientation = "landscape" | "portrait";
-export type ThemeRegionType = "program" | "logo" | "image" | "text";
+export type ThemeRegionType = "program" | "logo" | "image" | "text" | "clock";
 export type ThemeObjectFit = "contain" | "cover" | "stretch" | "center";
 export type ThemeTextAlign = "left" | "center" | "right";
+export type ThemeClockFormat = "HH:mm" | "HH:mm:ss" | "dd-MM-yyyy HH:mm";
 
 export interface ThemeRegion {
   id: string;
@@ -27,6 +28,7 @@ export interface ThemeRegion {
   backgroundColor?: string;
   padding?: number;
   cornerRadius?: number;
+  clockFormat?: ThemeClockFormat;
 }
 
 export interface Theme {

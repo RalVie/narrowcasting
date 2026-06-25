@@ -2,9 +2,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 export type ThemeOrientation = "landscape" | "portrait";
-export type ThemeRegionType = "program" | "logo" | "image" | "text";
+export type ThemeRegionType = "program" | "logo" | "image" | "text" | "clock";
 export type ThemeObjectFit = "contain" | "cover" | "stretch" | "center";
 export type ThemeTextAlign = "left" | "center" | "right";
+export type ThemeClockFormat = "HH:mm" | "HH:mm:ss" | "dd-MM-yyyy HH:mm";
 
 export interface ThemeRegion {
   id: string;
@@ -30,6 +31,7 @@ export interface ThemeRegion {
   backgroundColor?: string;
   padding?: number;
   cornerRadius?: number;
+  clockFormat?: ThemeClockFormat;
 }
 
 export interface Theme {
@@ -47,9 +49,10 @@ export interface Theme {
 const themesPath = resolve(process.cwd(), "data", "themes.json");
 const defaultThemeId = "default-fullscreen";
 const colorPattern = /^#[0-9a-fA-F]{6}$/;
-const allowedRegionTypes = new Set<ThemeRegionType>(["program", "logo", "image", "text"]);
+const allowedRegionTypes = new Set<ThemeRegionType>(["program", "logo", "image", "text", "clock"]);
 const allowedObjectFits = new Set<ThemeObjectFit>(["contain", "cover", "stretch", "center"]);
 const allowedTextAlignments = new Set<ThemeTextAlign>(["left", "center", "right"]);
+const allowedClockFormats = new Set<ThemeClockFormat>(["HH:mm", "HH:mm:ss", "dd-MM-yyyy HH:mm"]);
 
 export const defaultTheme: Theme = {
   id: defaultThemeId,
@@ -117,6 +120,9 @@ function normalizeRegion(value: unknown, index: number): ThemeRegion | null {
   const align = allowedTextAlignments.has(candidate.align as ThemeTextAlign)
     ? (candidate.align as ThemeTextAlign)
     : undefined;
+  const clockFormat = allowedClockFormats.has(candidate.clockFormat as ThemeClockFormat)
+    ? (candidate.clockFormat as ThemeClockFormat)
+    : undefined;
 
   return {
     id: typeof candidate.id === "string" && candidate.id.trim() ? candidate.id.trim() : `region-${index + 1}`,
@@ -147,7 +153,8 @@ function normalizeRegion(value: unknown, index: number): ThemeRegion | null {
         ? candidate.backgroundColor
         : undefined,
     padding: Math.max(toNumber(candidate.padding, 0), 0),
-    cornerRadius: Math.max(toNumber(candidate.cornerRadius, 0), 0)
+    cornerRadius: Math.max(toNumber(candidate.cornerRadius, 0), 0),
+    clockFormat
   };
 }
 

@@ -45,18 +45,20 @@ Supported region types:
 - Logo: renders a static image, including PNG transparency.
 - Image: renders a static image.
 - Text: renders static text.
+- Clock: renders local player time and updates live without server access.
 
-Future region types such as clock, ticker, weather, RSS, QR code, video regions, and emergency overlays remain extension points.
+Future region types such as ticker, weather, RSS, QR code, video regions, and emergency overlays remain extension points.
 
 Player rendering order is:
 
 1. Theme background
 2. Image regions
-3. Logo regions
-4. First Program Region
+3. First Program Region
+4. Logo regions
 5. Text regions
+6. Clock regions
 
-The player remains intentionally simple. It consumes the saved theme JSON and renders static regions from local cached media. Program playback remains the same as before.
+The player remains intentionally simple. It consumes the saved theme JSON, renders static regions from local cached media, and renders Clock regions from local player time. Program playback remains the same as before.
 
 ## Synchronization
 

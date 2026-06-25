@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { PointerEvent } from "react";
 import { apiUrl } from "../api/apiBase";
 import type { MediaItem } from "../mediaTypes";
-import type { Theme, ThemeObjectFit, ThemeRegion, ThemeRegionType, ThemeTextAlign } from "../themeTypes";
+import type { Theme, ThemeClockFormat, ThemeObjectFit, ThemeRegion, ThemeRegionType, ThemeTextAlign } from "../themeTypes";
 
 const refreshIntervalMs = 10_000;
 const defaultThemeId = "default-fullscreen";
@@ -13,9 +13,10 @@ const addableRegionTypes: Array<{ label: string; type: ThemeRegionType }> = [
   { label: "Program", type: "program" },
   { label: "Logo", type: "logo" },
   { label: "Image", type: "image" },
-  { label: "Text", type: "text" }
+  { label: "Text", type: "text" },
+  { label: "Clock", type: "clock" }
 ];
-const futureRegionTypes = ["Clock", "Ticker", "Weather", "RSS", "QR Code", "Video"];
+const futureRegionTypes = ["Ticker", "Weather", "RSS", "QR Code", "Video"];
 const regionColors: Record<string, { color: string; background: string }> = {
   program: { color: "#30b56a", background: "rgb(48 181 106 / 28%)" },
   logo: { color: "#4777d9", background: "rgb(71 119 217 / 26%)" },
@@ -27,6 +28,7 @@ const regionColors: Record<string, { color: string; background: string }> = {
 };
 const objectFitOptions: ThemeObjectFit[] = ["contain", "cover", "stretch", "center"];
 const textAlignOptions: ThemeTextAlign[] = ["left", "center", "right"];
+const clockFormatOptions: ThemeClockFormat[] = ["HH:mm", "HH:mm:ss", "dd-MM-yyyy HH:mm"];
 const supportedThemeImageExtensions = new Set(["jpg", "jpeg", "png", "webp"]);
 
 type ResizeHandle = (typeof resizeHandles)[number];
@@ -63,14 +65,23 @@ function defaultRegion(theme: Theme): ThemeRegion {
 }
 
 function getDefaultRegionName(type: ThemeRegionType, count: number) {
-  const label = type === "program" ? "Program Region" : type === "logo" ? "Logo" : type === "image" ? "Image" : "Text";
+  const label =
+    type === "program"
+      ? "Program Region"
+      : type === "logo"
+        ? "Logo"
+        : type === "image"
+          ? "Image"
+          : type === "clock"
+            ? "Clock"
+            : "Text";
   return count === 0 ? label : `${label} ${count + 1}`;
 }
 
 function createRegion(type: ThemeRegionType, theme: Theme, gridSize: number, snapToGrid: boolean): ThemeRegion {
   const count = theme.regions.filter((region) => region.type === type).length;
-  const baseSize = type === "logo" ? 240 : type === "text" ? 520 : 960;
-  const baseHeight = type === "logo" ? 160 : type === "text" ? 180 : 540;
+  const baseSize = type === "logo" ? 240 : type === "text" || type === "clock" ? 520 : 960;
+  const baseHeight = type === "logo" ? 160 : type === "text" || type === "clock" ? 180 : 540;
 
   return {
     id: `${type}-region-${Date.now()}`,
@@ -85,14 +96,35 @@ function createRegion(type: ThemeRegionType, theme: Theme, gridSize: number, sna
     visible: true,
     locked: false,
     text: type === "text" ? "Static text" : undefined,
-    font: type === "text" ? "Inter" : undefined,
-    fontSize: type === "text" ? 64 : undefined,
-    align: type === "text" ? "center" : undefined,
-    textColor: type === "text" ? "#ffffff" : undefined,
-    backgroundColor: type === "text" ? "#000000" : undefined,
-    padding: type === "text" ? 24 : undefined,
-    cornerRadius: type === "text" ? 8 : 0
+    font: type === "text" || type === "clock" ? "Inter" : undefined,
+    fontSize: type === "text" || type === "clock" ? 64 : undefined,
+    align: type === "text" || type === "clock" ? "center" : undefined,
+    textColor: type === "text" || type === "clock" ? "#ffffff" : undefined,
+    backgroundColor: type === "text" || type === "clock" ? "#000000" : undefined,
+    padding: type === "text" || type === "clock" ? 24 : undefined,
+    cornerRadius: type === "text" || type === "clock" ? 8 : 0,
+    clockFormat: type === "clock" ? "HH:mm" : undefined
   };
+}
+
+function formatClock(date: Date, format: ThemeClockFormat = "HH:mm") {
+  const twoDigit = (value: number) => String(value).padStart(2, "0");
+  const hours = twoDigit(date.getHours());
+  const minutes = twoDigit(date.getMinutes());
+  const seconds = twoDigit(date.getSeconds());
+  const day = twoDigit(date.getDate());
+  const month = twoDigit(date.getMonth() + 1);
+  const year = date.getFullYear();
+
+  if (format === "HH:mm:ss") {
+    return `${hours}:${minutes}:${seconds}`;
+  }
+
+  if (format === "dd-MM-yyyy HH:mm") {
+    return `${day}-${month}-${year} ${hours}:${minutes}`;
+  }
+
+  return `${hours}:${minutes}`;
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -153,6 +185,7 @@ export function ThemesPage() {
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [selectedRegionId, setSelectedRegionId] = useState("main-program");
   const [isInteracting, setIsInteracting] = useState(false);
+  const [clockNow, setClockNow] = useState(() => new Date());
   const selectedThemeIdRef = useRef(defaultThemeId);
   const selectedRegionIdRef = useRef("main-program");
   const isDirtyRef = useRef(false);
@@ -678,6 +711,11 @@ export function ThemesPage() {
     return () => window.clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockNow(new Date()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const mainRegion = defaultRegion(theme);
   const selectedRegion =
     theme.regions.find((region) => region.id === selectedRegionId) ??
@@ -717,6 +755,28 @@ export function ThemesPage() {
   }
 
   function renderDesignerRegionPreview(region: ThemeRegion) {
+    if (region.type === "clock") {
+      return (
+        <span
+          className="theme-region-clock-preview"
+          style={{
+            backgroundColor: region.backgroundColor ?? "transparent",
+            color: region.textColor ?? "#ffffff",
+            fontFamily: region.font ?? "Inter, ui-sans-serif, system-ui, sans-serif",
+            fontSize: `${Math.max((region.fontSize ?? 64) * 0.18, 12)}px`,
+            fontStyle: region.italic ? "italic" : "normal",
+            fontWeight: region.bold ? 700 : 400,
+            justifyContent:
+              region.align === "right" ? "flex-end" : region.align === "left" ? "flex-start" : "center",
+            padding: `${Math.max((region.padding ?? 0) * 0.12, 4)}px`,
+            textAlign: region.align ?? "center"
+          }}
+        >
+          {formatClock(clockNow, region.clockFormat)}
+        </span>
+      );
+    }
+
     if ((region.type !== "logo" && region.type !== "image") || !region.file) {
       return null;
     }
@@ -1095,6 +1155,109 @@ export function ThemesPage() {
                     rows={4}
                     value={selectedRegion.text ?? ""}
                   />
+                </label>
+                <label>
+                  Font
+                  <input
+                    onChange={(event) => patchSelectedRegion({ font: event.target.value })}
+                    type="text"
+                    value={selectedRegion.font ?? "Inter"}
+                  />
+                </label>
+                <label>
+                  Font Size
+                  <input
+                    min="1"
+                    onChange={(event) => patchSelectedRegion({ fontSize: Number(event.target.value) })}
+                    type="number"
+                    value={selectedRegion.fontSize ?? 64}
+                  />
+                </label>
+                <div className="theme-property-toggles">
+                  <label>
+                    Bold
+                    <input
+                      checked={selectedRegion.bold === true}
+                      onChange={(event) => patchSelectedRegion({ bold: event.target.checked })}
+                      type="checkbox"
+                    />
+                  </label>
+                  <label>
+                    Italic
+                    <input
+                      checked={selectedRegion.italic === true}
+                      onChange={(event) => patchSelectedRegion({ italic: event.target.checked })}
+                      type="checkbox"
+                    />
+                  </label>
+                </div>
+                <label>
+                  Alignment
+                  <select
+                    onChange={(event) => patchSelectedRegion({ align: event.target.value as ThemeTextAlign })}
+                    value={selectedRegion.align ?? "center"}
+                  >
+                    {textAlignOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Text Color
+                  <input
+                    onChange={(event) => patchSelectedRegion({ textColor: event.target.value })}
+                    type="color"
+                    value={selectedRegion.textColor ?? "#ffffff"}
+                  />
+                </label>
+                <label>
+                  Background Color
+                  <input
+                    onChange={(event) => patchSelectedRegion({ backgroundColor: event.target.value })}
+                    type="color"
+                    value={selectedRegion.backgroundColor ?? "#000000"}
+                  />
+                </label>
+                <label>
+                  Padding
+                  <input
+                    min="0"
+                    onChange={(event) => patchSelectedRegion({ padding: Number(event.target.value) })}
+                    type="number"
+                    value={selectedRegion.padding ?? 0}
+                  />
+                </label>
+                <label>
+                  Corner Radius
+                  <input
+                    min="0"
+                    onChange={(event) => patchSelectedRegion({ cornerRadius: Number(event.target.value) })}
+                    type="number"
+                    value={selectedRegion.cornerRadius ?? 0}
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            {selectedRegion.type === "clock" ? (
+              <div className="theme-dynamic-properties">
+                <label>
+                  Format
+                  <select
+                    onChange={(event) => patchSelectedRegion({ clockFormat: event.target.value as ThemeClockFormat })}
+                    value={selectedRegion.clockFormat ?? "HH:mm"}
+                  >
+                    {clockFormatOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                    <option disabled value="custom">
+                      Custom text - Coming later
+                    </option>
+                  </select>
                 </label>
                 <label>
                   Font

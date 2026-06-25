@@ -621,6 +621,18 @@ button:disabled {
   pointer-events: none;
 }
 
+.theme-region-clock-preview {
+  position: absolute;
+  inset: 8px;
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
 .theme-region-label {
   position: absolute;
   top: calc(100% + 8px);

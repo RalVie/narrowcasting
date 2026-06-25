@@ -109,3 +109,11 @@ Logo and Image regions select image media from the Media Library.
 Text regions render static styled text.
 Player renders theme background, image regions, logo regions, the first Program Region, then text regions.
 Agent caches image files referenced by static theme regions through the existing media sync path.
+
+PHASE 8E.4
+
+Clock region.
+Clock is the first dynamic non-media region type.
+Dashboard previews Clock regions with browser local time.
+Player renders Clock regions with local player time and updates them live offline.
+Rendering order is background, image regions, program region, logo regions, text regions, then clock regions.

@@ -119,7 +119,8 @@ h1 {
 
 .theme-static-region,
 .theme-logo-region,
-.theme-text-region {
+.theme-text-region,
+.theme-clock-region {
   position: absolute;
   overflow: hidden;
 }
@@ -144,6 +145,12 @@ h1 {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   z-index: 40;
+}
+
+.theme-clock-region {
+  overflow-wrap: anywhere;
+  white-space: nowrap;
+  z-index: 50;
 }
 
 .themed-media {

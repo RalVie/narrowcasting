@@ -47,12 +47,33 @@ function getObjectFit(region: ThemeRegion): CSSProperties["objectFit"] {
   return region.objectFit ?? "contain";
 }
 
+function formatClock(date: Date, format: ThemeRegion["clockFormat"] = "HH:mm") {
+  const twoDigit = (value: number) => String(value).padStart(2, "0");
+  const hours = twoDigit(date.getHours());
+  const minutes = twoDigit(date.getMinutes());
+  const seconds = twoDigit(date.getSeconds());
+  const day = twoDigit(date.getDate());
+  const month = twoDigit(date.getMonth() + 1);
+  const year = date.getFullYear();
+
+  if (format === "HH:mm:ss") {
+    return `${hours}:${minutes}:${seconds}`;
+  }
+
+  if (format === "dd-MM-yyyy HH:mm") {
+    return `${day}-${month}-${year} ${hours}:${minutes}`;
+  }
+
+  return `${hours}:${minutes}`;
+}
+
 export function PlayerApp() {
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [playbackEpoch, setPlaybackEpoch] = useState(0);
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
   const [viewportSize, setViewportSize] = useState(getViewportSize);
+  const [clockNow, setClockNow] = useState(() => new Date());
 
   useEffect(() => {
     let cancelled = false;
@@ -104,6 +125,11 @@ export function PlayerApp() {
     return () => {
       window.removeEventListener("resize", handleResize);
     };
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockNow(new Date()), 1000);
+    return () => window.clearInterval(timer);
   }, []);
 
   const activeItem = useMemo(() => {
@@ -228,6 +254,36 @@ export function PlayerApp() {
     );
   }
 
+  function renderClockRegion(region: ThemeRegion) {
+    if (region.visible === false) {
+      return null;
+    }
+
+    return (
+      <div
+        className="theme-clock-region"
+        key={region.id}
+        style={{
+          ...getRegionFrameStyle(region),
+          alignItems: "center",
+          backgroundColor: region.backgroundColor ?? "transparent",
+          color: region.textColor ?? "#ffffff",
+          display: "flex",
+          fontFamily: region.font ?? "Inter, ui-sans-serif, system-ui, sans-serif",
+          fontSize: `${region.fontSize ?? 64}px`,
+          fontStyle: region.italic ? "italic" : "normal",
+          fontWeight: region.bold ? 700 : 400,
+          justifyContent:
+            region.align === "right" ? "flex-end" : region.align === "left" ? "flex-start" : "center",
+          padding: `${region.padding ?? 0}px`,
+          textAlign: region.align ?? "center"
+        }}
+      >
+        {formatClock(clockNow, region.clockFormat)}
+      </div>
+    );
+  }
+
   useEffect(() => {
     if (!activeItem || !schedule || typeof activeItem.duration !== "number") {
       return;
@@ -278,6 +334,7 @@ export function PlayerApp() {
     const imageRegions = theme.regions.filter((region) => region.type === "image");
     const logoRegions = theme.regions.filter((region) => region.type === "logo");
     const textRegions = theme.regions.filter((region) => region.type === "text");
+    const clockRegions = theme.regions.filter((region) => region.type === "clock");
 
     return (
       <main className="player-shell themed-player-shell">
@@ -305,6 +362,7 @@ export function PlayerApp() {
             ) : null}
             {logoRegions.map((region) => renderStaticImageRegion(region, "theme-logo-region"))}
             {textRegions.map((region) => renderTextRegion(region))}
+            {clockRegions.map((region) => renderClockRegion(region))}
           </div>
         </section>
         <footer className="status-bar">
