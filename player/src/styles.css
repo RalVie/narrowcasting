@@ -73,7 +73,8 @@ h1 {
   object-fit: contain;
 }
 
-.media-image[data-missing="true"] {
+.media-image[data-missing="true"],
+.media-video[data-missing="true"] {
   display: none;
 }
 
@@ -86,7 +87,8 @@ h1 {
   line-height: 1.15;
 }
 
-.media-image[data-missing="true"] + .missing-media-message {
+.media-image[data-missing="true"] + .missing-media-message,
+.media-video[data-missing="true"] + .missing-media-message {
   display: block;
 }
 

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
-import type { Schedule, ThemeRegion } from "./schedule/types";
+import type { Schedule, ScheduleItem, ThemeRegion } from "./schedule/types";
 
 const reloadIntervalMs = 30_000;
+const mediaProbeTimeoutMs = 2_500;
 
 function getViewportSize() {
   return {
@@ -22,6 +23,78 @@ function isSchedule(value: unknown): value is Schedule {
     typeof schedule.updatedAt === "string" &&
     Array.isArray(schedule.items)
   );
+}
+
+function getScheduleSignature(schedule: Schedule) {
+  return JSON.stringify({
+    version: schedule.version,
+    updatedAt: schedule.updatedAt,
+    items: schedule.items,
+    theme: schedule.theme
+  });
+}
+
+function getItemKey(item: ScheduleItem | null, schedule: Schedule | null, activeIndex: number, playbackEpoch: number) {
+  if (!item || !schedule) {
+    return "no-item";
+  }
+
+  return `${schedule.version}-${schedule.updatedAt}-${activeIndex}-${playbackEpoch}-${item.id}`;
+}
+
+function getMediaUrl(file: string) {
+  return `/media/${encodeURIComponent(file)}`;
+}
+
+function probeImage(file: string) {
+  return new Promise<boolean>((resolve) => {
+    const image = new Image();
+    const timer = window.setTimeout(() => resolve(false), mediaProbeTimeoutMs);
+
+    image.onload = () => {
+      window.clearTimeout(timer);
+      resolve(true);
+    };
+    image.onerror = () => {
+      window.clearTimeout(timer);
+      resolve(false);
+    };
+    image.src = `${getMediaUrl(file)}?probe=${Date.now()}`;
+  });
+}
+
+function probeVideo(file: string) {
+  return new Promise<boolean>((resolve) => {
+    const video = document.createElement("video");
+    const timer = window.setTimeout(() => resolve(false), mediaProbeTimeoutMs);
+
+    video.onloadedmetadata = () => {
+      window.clearTimeout(timer);
+      resolve(true);
+    };
+    video.onerror = () => {
+      window.clearTimeout(timer);
+      resolve(false);
+    };
+    video.preload = "metadata";
+    video.muted = true;
+    video.src = `${getMediaUrl(file)}?probe=${Date.now()}`;
+    video.load();
+  });
+}
+
+async function probeFirstMediaItem(schedule: Schedule) {
+  const firstMediaItem = schedule.items.find((item) => item.type === "image" || item.type === "video");
+
+  if (!firstMediaItem) {
+    return true;
+  }
+
+  if (firstMediaItem.type === "image") {
+    return probeImage(firstMediaItem.file);
+  }
+
+  return probeVideo(firstMediaItem.file);
 }
 
 function getRegionFrameStyle(region: ThemeRegion): CSSProperties {
@@ -71,12 +144,14 @@ export function PlayerApp() {
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [playbackEpoch, setPlaybackEpoch] = useState(0);
+  const [missingItemMessage, setMissingItemMessage] = useState<string | null>(null);
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
   const [viewportSize, setViewportSize] = useState(getViewportSize);
   const [clockNow, setClockNow] = useState(() => new Date());
 
   useEffect(() => {
     let cancelled = false;
+    let currentSignature: string | null = null;
 
     async function loadSchedule() {
       try {
@@ -94,8 +169,22 @@ export function PlayerApp() {
         const body: unknown = await response.json();
 
         if (isSchedule(body) && !cancelled) {
-          setSchedule(body);
-          setActiveIndex((index) => (body.items.length > 0 ? index % body.items.length : 0));
+          const nextSignature = getScheduleSignature(body);
+
+          if (nextSignature !== currentSignature) {
+            await probeFirstMediaItem(body);
+
+            if (cancelled) {
+              return;
+            }
+
+            currentSignature = nextSignature;
+            setSchedule(body);
+            setActiveIndex(0);
+            setPlaybackEpoch((epoch) => epoch + 1);
+            setMissingItemMessage(null);
+          }
+
           setLastLoadedAt(new Date().toLocaleTimeString());
         }
       } catch {
@@ -153,6 +242,22 @@ export function PlayerApp() {
     setActiveIndex((index) => (index + 1) % schedule.items.length);
   }, [schedule]);
 
+  const handleActiveItemFailure = useCallback(
+    (message: string) => {
+      setMissingItemMessage(message);
+
+      if (!schedule || schedule.items.length <= 1) {
+        return;
+      }
+
+      window.setTimeout(() => {
+        setMissingItemMessage(null);
+        advanceToNextItem();
+      }, 300);
+    },
+    [advanceToNextItem, schedule]
+  );
+
   function renderActiveItem(className: string) {
     if (!activeItem) {
       return null;
@@ -164,38 +269,48 @@ export function PlayerApp() {
           <img
             alt=""
             className={className}
+            key={getItemKey(activeItem, schedule, activeIndex, playbackEpoch)}
+            onLoad={() => {
+              setMissingItemMessage(null);
+            }}
             onError={(event) => {
               event.currentTarget.dataset.missing = "true";
+              handleActiveItemFailure(`Missing local image: ${activeItem.file}`);
             }}
-            src={`/media/${encodeURIComponent(activeItem.file)}`}
+            src={getMediaUrl(activeItem.file)}
           />
-          <p className="missing-media-message">Missing local image: {activeItem.file}</p>
+          <p className="missing-media-message">{missingItemMessage ?? `Missing local image: ${activeItem.file}`}</p>
         </>
       );
     }
 
     if (activeItem.type === "video") {
       return (
-        <video
-          autoPlay
-          className={className}
-          key={`${activeItem.id}-${schedule?.version}-${activeIndex}-${playbackEpoch}`}
-          muted
-          onCanPlay={(event) => {
-            void event.currentTarget.play().catch(() => {
+        <>
+          <video
+            autoPlay
+            className={className}
+            key={getItemKey(activeItem, schedule, activeIndex, playbackEpoch)}
+            muted
+            onCanPlay={(event) => {
+              setMissingItemMessage(null);
+              void event.currentTarget.play().catch(() => {
+                advanceToNextItem();
+              });
+            }}
+            onEnded={() => {
               advanceToNextItem();
-            });
-          }}
-          onEnded={() => {
-            advanceToNextItem();
-          }}
-          onError={() => {
-            advanceToNextItem();
-          }}
-          playsInline
-          preload="auto"
-          src={`/media/${encodeURIComponent(activeItem.file)}`}
-        />
+            }}
+            onError={(event) => {
+              event.currentTarget.dataset.missing = "true";
+              handleActiveItemFailure(`Missing local video: ${activeItem.file}`);
+            }}
+            playsInline
+            preload="auto"
+            src={getMediaUrl(activeItem.file)}
+          />
+          <p className="missing-media-message">{missingItemMessage ?? `Missing local video: ${activeItem.file}`}</p>
+        </>
       );
     }
 
@@ -215,7 +330,7 @@ export function PlayerApp() {
           onError={(event) => {
             event.currentTarget.style.display = "none";
           }}
-          src={`/media/${encodeURIComponent(region.file)}`}
+          src={getMediaUrl(region.file)}
           style={{
             objectFit: getObjectFit(region)
           }}
