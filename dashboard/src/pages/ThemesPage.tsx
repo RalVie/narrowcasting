@@ -8,6 +8,16 @@ const defaultThemeId = "default-fullscreen";
 const minimumRegionSize = 40;
 const defaultSafeArea = 80;
 const resizeHandles = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
+const futureRegionTypes = ["Logo", "Clock", "Ticker", "Weather", "RSS", "QR Code", "Image", "Video", "Text"];
+const regionColors: Record<string, { color: string; background: string }> = {
+  program: { color: "#30b56a", background: "rgb(48 181 106 / 28%)" },
+  logo: { color: "#4777d9", background: "rgb(71 119 217 / 26%)" },
+  clock: { color: "#8a5cf6", background: "rgb(138 92 246 / 26%)" },
+  ticker: { color: "#d6b21f", background: "rgb(214 178 31 / 28%)" },
+  weather: { color: "#19aebd", background: "rgb(25 174 189 / 26%)" },
+  rss: { color: "#ef8a24", background: "rgb(239 138 36 / 26%)" },
+  emergency: { color: "#d94343", background: "rgb(217 67 67 / 28%)" }
+};
 
 type ResizeHandle = (typeof resizeHandles)[number];
 type Interaction =
@@ -86,9 +96,10 @@ export function ThemesPage() {
   const [gridSize, setGridSize] = useState(20);
   const [showSafeArea, setShowSafeArea] = useState(true);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
-  const [isRegionSelected, setIsRegionSelected] = useState(true);
+  const [selectedRegionId, setSelectedRegionId] = useState("main-program");
   const [isInteracting, setIsInteracting] = useState(false);
   const selectedThemeIdRef = useRef(defaultThemeId);
+  const selectedRegionIdRef = useRef("main-program");
   const isDirtyRef = useRef(false);
   const interactionRef = useRef<Interaction | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -102,6 +113,9 @@ export function ThemesPage() {
     selectedThemeIdRef.current = themeRecord.id;
     setSelectedThemeId(themeRecord.id);
     setTheme(themeRecord);
+    const nextRegionId = themeRecord.regions[0]?.id ?? "main-program";
+    selectedRegionIdRef.current = nextRegionId;
+    setSelectedRegionId(nextRegionId);
   }
 
   async function loadThemes(options: { force?: boolean } = {}) {
@@ -145,28 +159,33 @@ export function ThemesPage() {
     markDirty();
   }
 
-  function updateMainRegionGeometry(region: ThemeRegion) {
+  function updateRegionGeometry(region: ThemeRegion) {
     updateTheme((currentTheme) => {
-      const otherRegions = currentTheme.regions.filter((item) => item.id !== region.id);
+      const hasRegion = currentTheme.regions.some((item) => item.id === region.id);
 
       return {
         ...currentTheme,
-        regions: [region, ...otherRegions]
+        regions: hasRegion
+          ? currentTheme.regions.map((item) => (item.id === region.id ? region : item))
+          : [...currentTheme.regions, region]
       };
     });
   }
 
-  function updateMainRegion(field: "x" | "y" | "width" | "height", value: number) {
+  function updateSelectedRegion(field: "name" | "x" | "y" | "width" | "height", value: string | number) {
     updateTheme((currentTheme) => {
+      const selectedRegion = currentTheme.regions.find((region) => region.id === selectedRegionIdRef.current) ??
+        defaultRegion(currentTheme);
       const region = {
-        ...defaultRegion(currentTheme),
+        ...selectedRegion,
         [field]: value
       };
-      const otherRegions = currentTheme.regions.filter((item) => item.id !== region.id);
 
       return {
         ...currentTheme,
-        regions: [region, ...otherRegions]
+        regions: currentTheme.regions.some((item) => item.id === region.id)
+          ? currentTheme.regions.map((item) => (item.id === region.id ? region : item))
+          : [...currentTheme.regions, region]
       };
     });
   }
@@ -208,7 +227,7 @@ export function ThemesPage() {
     };
   }
 
-  function beginMove(event: PointerEvent<HTMLDivElement>) {
+  function beginMove(event: PointerEvent<HTMLDivElement>, region: ThemeRegion) {
     if (!canvasRef.current) {
       return;
     }
@@ -219,13 +238,14 @@ export function ThemesPage() {
       mode: "move",
       pointerX: pointer.x,
       pointerY: pointer.y,
-      region: mainRegion
+      region
     };
-    setIsRegionSelected(true);
+    selectedRegionIdRef.current = region.id;
+    setSelectedRegionId(region.id);
     setIsInteracting(true);
   }
 
-  function beginResize(event: PointerEvent<HTMLButtonElement>, handle: ResizeHandle) {
+  function beginResize(event: PointerEvent<HTMLButtonElement>, handle: ResizeHandle, region: ThemeRegion) {
     if (!canvasRef.current) {
       return;
     }
@@ -238,9 +258,10 @@ export function ThemesPage() {
       handle,
       pointerX: pointer.x,
       pointerY: pointer.y,
-      region: mainRegion
+      region
     };
-    setIsRegionSelected(true);
+    selectedRegionIdRef.current = region.id;
+    setSelectedRegionId(region.id);
     setIsInteracting(true);
   }
 
@@ -309,12 +330,112 @@ export function ThemesPage() {
       };
     }
 
-    updateMainRegionGeometry(constrainRegion(nextRegion));
+    updateRegionGeometry(constrainRegion(nextRegion));
   }
 
   function endInteraction() {
     interactionRef.current = null;
     setIsInteracting(false);
+  }
+
+  function addProgramRegion() {
+    const programCount = theme.regions.filter((region) => region.type === "program").length;
+    const region: ThemeRegion = {
+      id: `program-region-${Date.now()}`,
+      name: programCount === 0 ? "Program Region" : `Program Region ${programCount + 1}`,
+      type: "program",
+      x: snapValue(80 + programCount * 40, snapToGrid, gridSize),
+      y: snapValue(80 + programCount * 40, snapToGrid, gridSize),
+      width: Math.min(960, theme.canvasWidth),
+      height: Math.min(540, theme.canvasHeight)
+    };
+
+    updateRegionGeometry(constrainRegion(region));
+    selectedRegionIdRef.current = region.id;
+    setSelectedRegionId(region.id);
+  }
+
+  function duplicateSelectedRegion() {
+    const selectedRegion = theme.regions.find((region) => region.id === selectedRegionIdRef.current);
+
+    if (!selectedRegion || selectedRegion.type !== "program") {
+      return;
+    }
+
+    const region: ThemeRegion = constrainRegion({
+      ...selectedRegion,
+      id: `${selectedRegion.id}-${Date.now()}`,
+      name: `${selectedRegion.name} Copy`,
+      x: selectedRegion.x + gridSize,
+      y: selectedRegion.y + gridSize
+    });
+
+    updateRegionGeometry(region);
+    selectedRegionIdRef.current = region.id;
+    setSelectedRegionId(region.id);
+  }
+
+  function deleteSelectedRegion() {
+    const selectedRegion = theme.regions.find((region) => region.id === selectedRegionIdRef.current);
+
+    if (!selectedRegion) {
+      return;
+    }
+
+    if (selectedRegion.type === "program" && theme.regions.filter((region) => region.type === "program").length <= 1) {
+      setStatus("At least one Program Region is required.");
+      return;
+    }
+
+    const nextRegions = theme.regions.filter((region) => region.id !== selectedRegion.id);
+    const nextSelectedRegion = nextRegions[0];
+    selectedRegionIdRef.current = nextSelectedRegion?.id ?? "main-program";
+    setSelectedRegionId(selectedRegionIdRef.current);
+    updateTheme((currentTheme) => ({
+      ...currentTheme,
+      regions: nextRegions
+    }));
+  }
+
+  function alignSelectedRegion(action: "left" | "right" | "top" | "bottom" | "center-x" | "center-y" | "match") {
+    const selectedRegion = theme.regions.find((region) => region.id === selectedRegionIdRef.current);
+
+    if (!selectedRegion) {
+      return;
+    }
+
+    const nextRegion = { ...selectedRegion };
+
+    if (action === "left" || action === "match") {
+      nextRegion.x = 0;
+    }
+
+    if (action === "right") {
+      nextRegion.x = theme.canvasWidth - nextRegion.width;
+    }
+
+    if (action === "top" || action === "match") {
+      nextRegion.y = 0;
+    }
+
+    if (action === "bottom") {
+      nextRegion.y = theme.canvasHeight - nextRegion.height;
+    }
+
+    if (action === "center-x") {
+      nextRegion.x = (theme.canvasWidth - nextRegion.width) / 2;
+    }
+
+    if (action === "center-y") {
+      nextRegion.y = (theme.canvasHeight - nextRegion.height) / 2;
+    }
+
+    if (action === "match") {
+      nextRegion.width = theme.canvasWidth;
+      nextRegion.height = theme.canvasHeight;
+    }
+
+    updateRegionGeometry(constrainRegion(nextRegion));
   }
 
   async function createTheme() {
@@ -411,6 +532,11 @@ export function ThemesPage() {
   }, []);
 
   const mainRegion = defaultRegion(theme);
+  const selectedRegion =
+    theme.regions.find((region) => region.id === selectedRegionId) ??
+    theme.regions[0] ??
+    mainRegion;
+  const programRegionCount = theme.regions.filter((region) => region.type === "program").length;
   const canvasStyle = {
     aspectRatio: `${theme.canvasWidth} / ${theme.canvasHeight}`,
     backgroundColor: theme.backgroundColor,
@@ -422,12 +548,18 @@ export function ThemesPage() {
       ? `${(gridSize / theme.canvasWidth) * 100}% ${(gridSize / theme.canvasHeight) * 100}%`
       : undefined
   };
-  const regionStyle = {
-    left: `${(mainRegion.x / theme.canvasWidth) * 100}%`,
-    top: `${(mainRegion.y / theme.canvasHeight) * 100}%`,
-    width: `${(mainRegion.width / theme.canvasWidth) * 100}%`,
-    height: `${(mainRegion.height / theme.canvasHeight) * 100}%`
-  };
+  function getRegionStyle(region: ThemeRegion) {
+    const colors = regionColors[region.type] ?? regionColors.program;
+
+    return {
+      left: `${(region.x / theme.canvasWidth) * 100}%`,
+      top: `${(region.y / theme.canvasHeight) * 100}%`,
+      width: `${(region.width / theme.canvasWidth) * 100}%`,
+      height: `${(region.height / theme.canvasHeight) * 100}%`,
+      borderColor: colors.color,
+      backgroundColor: colors.background
+    };
+  }
 
   return (
     <section className="page-section" id="themes">
@@ -471,6 +603,55 @@ export function ThemesPage() {
               </button>
             ))}
           </div>
+
+          <div className="theme-layers-panel">
+            <h3>Layers</h3>
+            <button className="theme-layer-item static" disabled type="button">
+              Theme
+            </button>
+            <button className="theme-layer-item static" disabled type="button">
+              Background
+            </button>
+            {theme.regions.map((region) => (
+              <button
+                className={region.id === selectedRegion.id ? "theme-layer-item selected" : "theme-layer-item"}
+                key={region.id}
+                onClick={() => {
+                  selectedRegionIdRef.current = region.id;
+                  setSelectedRegionId(region.id);
+                }}
+                type="button"
+              >
+                <span
+                  className="theme-layer-color"
+                  style={{ backgroundColor: regionColors[region.type]?.color ?? regionColors.program.color }}
+                />
+                {region.name}
+              </button>
+            ))}
+          </div>
+
+          <label className="add-region-control">
+            + Add Region
+            <select
+              onChange={(event) => {
+                if (event.target.value === "program") {
+                  addProgramRegion();
+                }
+
+                event.target.value = "";
+              }}
+              value=""
+            >
+              <option value="">Choose type</option>
+              <option value="program">Program</option>
+              {futureRegionTypes.map((type) => (
+                <option disabled key={type} value={type.toLowerCase()}>
+                  {type} - Coming in future version
+                </option>
+              ))}
+            </select>
+          </label>
         </aside>
 
         <article className="theme-designer-panel">
@@ -538,37 +719,110 @@ export function ThemesPage() {
               ) : null}
               <div className="theme-center-guide vertical" />
               <div className="theme-center-guide horizontal" />
-              <div
-                className={isRegionSelected ? "theme-region selected" : "theme-region"}
-                onPointerDown={beginMove}
-                role="button"
-                style={regionStyle}
-                tabIndex={0}
-              >
-                <span className="theme-region-name">Program Region</span>
-                {isInteracting ? (
-                  <span className="theme-region-label">
-                    x {mainRegion.x} y {mainRegion.y} | {mainRegion.width} x {mainRegion.height}
-                  </span>
-                ) : null}
-                {isRegionSelected
-                  ? resizeHandles.map((handle) => (
-                      <button
-                        aria-label={`Resize ${handle}`}
-                        className={`theme-resize-handle ${handle}`}
-                        key={handle}
-                        onPointerDown={(event) => beginResize(event, handle)}
-                        type="button"
-                      />
-                    ))
-                  : null}
-              </div>
+              {theme.regions.map((region) => {
+                const isSelected = region.id === selectedRegion.id;
+
+                return (
+                  <div
+                    className={isSelected ? "theme-region selected" : "theme-region"}
+                    key={region.id}
+                    onPointerDown={(event) => beginMove(event, region)}
+                    role="button"
+                    style={getRegionStyle(region)}
+                    tabIndex={0}
+                  >
+                    <span className="theme-region-name">{region.name}</span>
+                    {isSelected && isInteracting ? (
+                      <span className="theme-region-label">
+                        x {region.x} y {region.y} | {region.width} x {region.height}
+                      </span>
+                    ) : null}
+                    {isSelected
+                      ? resizeHandles.map((handle) => (
+                          <button
+                            aria-label={`Resize ${handle}`}
+                            className={`theme-resize-handle ${handle}`}
+                            key={handle}
+                            onPointerDown={(event) => beginResize(event, handle, region)}
+                            type="button"
+                          />
+                        ))
+                      : null}
+                  </div>
+                );
+              })}
             </div>
           </div>
 
-          <details className="theme-advanced-panel" open={isAdvancedOpen} onToggle={(event) => setIsAdvancedOpen(event.currentTarget.open)}>
-            <summary>Advanced</summary>
-            <div className="theme-form-grid">
+          <aside className="theme-property-panel" aria-label="Region properties">
+            <h3>Properties</h3>
+            <label>
+              Region Name
+              <input
+                onChange={(event) => updateSelectedRegion("name", event.target.value)}
+                type="text"
+                value={selectedRegion.name}
+              />
+            </label>
+            <label>
+              Region Type
+              <input readOnly type="text" value={selectedRegion.type} />
+            </label>
+
+            <div className="theme-property-actions">
+              <button disabled={selectedRegion.type !== "program"} onClick={duplicateSelectedRegion} type="button">
+                Duplicate
+              </button>
+              <button
+                disabled={selectedRegion.type === "program" && programRegionCount <= 1}
+                onClick={deleteSelectedRegion}
+                type="button"
+              >
+                Delete
+              </button>
+            </div>
+
+            <div className="theme-align-tools">
+              <button disabled={selectedRegion.type !== "program"} onClick={() => alignSelectedRegion("left")} type="button">Align Left</button>
+              <button disabled={selectedRegion.type !== "program"} onClick={() => alignSelectedRegion("right")} type="button">Align Right</button>
+              <button disabled={selectedRegion.type !== "program"} onClick={() => alignSelectedRegion("top")} type="button">Align Top</button>
+              <button disabled={selectedRegion.type !== "program"} onClick={() => alignSelectedRegion("bottom")} type="button">Align Bottom</button>
+              <button disabled={selectedRegion.type !== "program"} onClick={() => alignSelectedRegion("center-x")} type="button">Center H</button>
+              <button disabled={selectedRegion.type !== "program"} onClick={() => alignSelectedRegion("center-y")} type="button">Center V</button>
+              <button disabled={selectedRegion.type !== "program"} onClick={() => alignSelectedRegion("match")} type="button">Match Canvas</button>
+              <button disabled type="button">Distribute - Coming later</button>
+            </div>
+
+            <div className="theme-disabled-properties">
+              <label>
+                Opacity
+                <input disabled value="Coming later" readOnly />
+              </label>
+              <label>
+                Corner Radius
+                <input disabled value="Coming later" readOnly />
+              </label>
+              <label>
+                Padding
+                <input disabled value="Coming later" readOnly />
+              </label>
+              <label>
+                Object Fit
+                <input disabled value="Coming later" readOnly />
+              </label>
+              <label>
+                Locked
+                <input disabled readOnly type="checkbox" />
+              </label>
+              <label>
+                Visible
+                <input checked disabled readOnly type="checkbox" />
+              </label>
+            </div>
+
+            <details className="theme-advanced-panel" open={isAdvancedOpen} onToggle={(event) => setIsAdvancedOpen(event.currentTarget.open)}>
+              <summary>Advanced</summary>
+              <div className="theme-form-grid">
               <label>
                 Orientation
                 <select
@@ -608,16 +862,16 @@ export function ThemesPage() {
                 X
                 <input
                   type="number"
-                  value={mainRegion.x}
-                  onChange={(event) => updateMainRegion("x", Number(event.target.value))}
+                  value={selectedRegion.x}
+                  onChange={(event) => updateSelectedRegion("x", Number(event.target.value))}
                 />
               </label>
               <label>
                 Y
                 <input
                   type="number"
-                  value={mainRegion.y}
-                  onChange={(event) => updateMainRegion("y", Number(event.target.value))}
+                  value={selectedRegion.y}
+                  onChange={(event) => updateSelectedRegion("y", Number(event.target.value))}
                 />
               </label>
               <label>
@@ -625,8 +879,8 @@ export function ThemesPage() {
                 <input
                   min="1"
                   type="number"
-                  value={mainRegion.width}
-                  onChange={(event) => updateMainRegion("width", Number(event.target.value))}
+                  value={selectedRegion.width}
+                  onChange={(event) => updateSelectedRegion("width", Number(event.target.value))}
                 />
               </label>
               <label>
@@ -634,13 +888,14 @@ export function ThemesPage() {
                 <input
                   min="1"
                   type="number"
-                  value={mainRegion.height}
-                  onChange={(event) => updateMainRegion("height", Number(event.target.value))}
+                  value={selectedRegion.height}
+                  onChange={(event) => updateSelectedRegion("height", Number(event.target.value))}
                 />
               </label>
-            </div>
-            <pre className="theme-json-preview">{JSON.stringify(theme, null, 2)}</pre>
-          </details>
+              </div>
+              <pre className="theme-json-preview">{JSON.stringify(theme, null, 2)}</pre>
+            </details>
+          </aside>
 
           <div className="playlist-actions">
             <button disabled={isBusy} onClick={() => void saveTheme()} type="button">

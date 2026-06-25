@@ -37,6 +37,10 @@ The player scales the virtual canvas to the real display. Physical display resol
 
 `Default Fullscreen` is the safe fallback theme. It uses a 1920 x 1080 landscape canvas with one full-canvas program region, preserving existing fullscreen playback.
 
+Themes store layout as a generic `regions[]` collection. The dashboard Theme Designer edits those regions through a reusable visual framework with a Layers panel, canvas selection, and a Properties panel. In the current phase only Program Regions are enabled. Additional region types such as logo, clock, ticker, weather, RSS, QR code, image, video, text, and emergency overlays are future extension points.
+
+The player remains intentionally simple. It consumes the saved theme JSON and renders the first Program Region only. Extra Program Regions can be prepared in the editor, but they are ignored by playback until a later rendering phase defines multi-region behavior.
+
 ## Synchronization
 
 Normal updates use pull-sync.

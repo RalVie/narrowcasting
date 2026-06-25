@@ -109,6 +109,8 @@ Default theme fallback:
 
 The player scales the virtual canvas to the actual screen. Physical display resolution is not hard-coded.
 
+Theme layouts are stored as a generic `regions[]` collection. The dashboard editor is prepared for future region types, but only Program Regions are enabled in the current phase. The player renders the first Program Region and ignores additional regions until a later playback phase defines multi-region rendering.
+
 ```bash
 cd server
 npm run dev
@@ -165,7 +167,7 @@ The dashboard includes:
 - A Media Library page for image/video upload, thumbnail preview, refresh, and delete.
 - A Playlists page for adding media, removing items, setting duration, reordering with up/down buttons, and saving the default playlist.
 - A Programs page for creating programs and ordering playlists inside each program.
-- A Themes page for editing virtual canvas size, orientation, background color, and the main program region.
+- A Themes page with a visual region designer, Layers panel, canvas controls, region properties, and Program Region editing.
 - A Scheduler page for assigning programs and themes to date, day, and time blocks.
 
 Media upload limits:
@@ -260,13 +262,18 @@ Themes are virtual canvas layout frames. Coordinates are stored in virtual canva
 
 1. Start the server.
 2. Open Themes and confirm `Default Fullscreen` exists.
-3. Create a theme with a 1920 x 1080 canvas and a smaller main program region.
-4. Open Scheduler and assign the custom theme to an active program block.
-5. Confirm `GET http://localhost:3000/api/schedule` includes `theme` metadata and the existing `items` array.
-6. Start the agent and confirm it writes the enhanced `schedule.json` unchanged.
-7. Start the player and confirm media renders inside the program region.
-8. Stop the server.
-9. Confirm cached playback continues from the local enhanced schedule.
+3. Select the Program Region in the Layers panel.
+4. Move and resize the region on the canvas.
+5. Rename the region in Properties and confirm the Layers panel updates.
+6. Use alignment controls such as Center H, Center V, and Match Canvas.
+7. Duplicate the Program Region and confirm the last Program Region cannot be deleted.
+8. Save the theme, refresh, and confirm the layout is restored from JSON.
+9. Open Scheduler and assign the custom theme to an active program block.
+10. Confirm `GET http://localhost:3000/api/schedule` includes `theme` metadata and the existing `items` array.
+11. Start the agent and confirm it writes the enhanced `schedule.json` unchanged.
+12. Start the player and confirm media renders inside the first Program Region.
+13. Stop the server.
+14. Confirm cached playback continues from the local enhanced schedule.
 
 ## Remote Dashboard Test Procedure
 

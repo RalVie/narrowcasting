@@ -412,17 +412,66 @@ button:disabled {
   gap: 8px;
 }
 
-.theme-list-item {
+.theme-layers-panel {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid #d9dfd4;
+  padding-top: 12px;
+}
+
+.theme-layers-panel h3 {
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
+.theme-list-item,
+.theme-layer-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
   text-align: left;
 }
 
-.theme-list-item.selected {
+.theme-list-item.selected,
+.theme-layer-item.selected {
   border-color: #4777d9;
   color: #0f2f72;
   background: #eaf1ff;
 }
 
+.theme-layer-item.static {
+  opacity: 0.72;
+}
+
+.theme-layer-color {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.add-region-control {
+  display: grid;
+  gap: 4px;
+  color: #647064;
+  font-size: 13px;
+}
+
+.add-region-control select {
+  border: 1px solid #b9c8bd;
+  border-radius: 6px;
+  padding: 8px;
+  color: #17201a;
+  font: inherit;
+}
+
+.theme-designer-panel {
+  grid-template-columns: minmax(0, 1fr) 300px;
+}
+
 .theme-toolbar {
+  grid-column: 1 / -1;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 10px;
@@ -620,6 +669,49 @@ button:disabled {
   font-size: 12px;
 }
 
+.theme-property-panel {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  border: 1px solid #d9dfd4;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.theme-property-panel h3 {
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
+.theme-property-panel label,
+.theme-disabled-properties label {
+  display: grid;
+  gap: 4px;
+  color: #647064;
+  font-size: 13px;
+}
+
+.theme-property-panel input {
+  border: 1px solid #b9c8bd;
+  border-radius: 6px;
+  padding: 8px;
+  color: #17201a;
+  font: inherit;
+}
+
+.theme-property-actions,
+.theme-align-tools,
+.theme-disabled-properties {
+  display: grid;
+  gap: 8px;
+}
+
+.theme-align-tools {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .playlist-schedule-fields {
   display: grid;
   grid-template-columns: repeat(4, minmax(120px, 1fr));
@@ -776,5 +868,10 @@ button:disabled {
   .program-playlist-row {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .theme-designer-layout,
+  .theme-designer-panel {
+    grid-template-columns: 1fr;
   }
 }

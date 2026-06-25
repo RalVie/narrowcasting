@@ -83,3 +83,20 @@ Theme layout frame foundation.
 Default Fullscreen virtual canvas.
 Scheduler blocks can select themes.
 Player scales themed program region locally.
+
+PHASE 8E.1
+
+Visual theme designer foundation.
+Canvas-first editing for the Program Region.
+Grid, snap, safe area, center guides, resize handles, and advanced JSON preview.
+Player, scheduler, agent, and API remain unchanged.
+
+PHASE 8E.2
+
+Visual region framework.
+Themes use a reusable generic `regions[]` editor.
+Layers panel selects one region at a time.
+Properties panel supports Program Region rename, position, and size.
+Program Region duplicate, guarded delete, and alignment tools are available.
+Future region types are visible as disabled extension points.
+Player still renders only the first Program Region.
