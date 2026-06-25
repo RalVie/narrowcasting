@@ -602,6 +602,33 @@ button:disabled {
   font: inherit;
 }
 
+.operator-duration-options {
+  display: grid;
+  gap: 6px;
+  min-width: 230px;
+  margin: 0;
+  border: 1px solid #d9dfd4;
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.operator-duration-options legend {
+  padding: 0 4px;
+  color: #647064;
+  font-size: 12px;
+}
+
+.operator-duration-options label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.operator-duration-options input[type="radio"] {
+  width: auto;
+}
+
 .theme-form-grid,
 .theme-region-grid {
   display: grid;

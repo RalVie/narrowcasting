@@ -199,6 +199,16 @@ export function PlaylistsPage() {
     markDirty();
   }
 
+  function updateVideoDurationMode(id: string, durationMode: "auto" | "clip") {
+    setPlaylist((currentPlaylist) => ({
+      ...currentPlaylist,
+      items: currentPlaylist.items.map((item) =>
+        item.id === id && item.type === "video" ? { ...item, durationMode } : item
+      )
+    }));
+    markDirty();
+  }
+
   async function savePlaylist() {
     setIsBusy(true);
     setStatus("Saving playlist...");
@@ -560,15 +570,47 @@ export function PlaylistsPage() {
                   <strong>{item.file}</strong>
                   <span>{item.type}{item.type === "video" ? " · video duration from file" : ""}</span>
                 </div>
-                <label>
-                  Duration
-                  <input
-                    min="1"
-                    onChange={(event) => updateDuration(item.id, Number(event.target.value))}
-                    type="number"
-                    value={item.duration}
-                  />
-                </label>
+                {item.type === "video" ? (
+                  <fieldset className="operator-duration-options">
+                    <legend>Afspeelduur</legend>
+                    <label>
+                      <input
+                        checked={item.durationMode !== "clip"}
+                        name={`duration-mode-${item.id}`}
+                        onChange={() => updateVideoDurationMode(item.id, "auto")}
+                        type="radio"
+                      />
+                      Volledige video
+                    </label>
+                    <label>
+                      <input
+                        checked={item.durationMode === "clip"}
+                        name={`duration-mode-${item.id}`}
+                        onChange={() => updateVideoDurationMode(item.id, "clip")}
+                        type="radio"
+                      />
+                      Aangepaste duur:
+                      <input
+                        disabled={item.durationMode !== "clip"}
+                        min="1"
+                        onChange={(event) => updateDuration(item.id, Number(event.target.value))}
+                        type="number"
+                        value={item.duration}
+                      />
+                      seconden
+                    </label>
+                  </fieldset>
+                ) : (
+                  <label>
+                    Duration
+                    <input
+                      min="1"
+                      onChange={(event) => updateDuration(item.id, Number(event.target.value))}
+                      type="number"
+                      value={item.duration}
+                    />
+                  </label>
+                )}
                 <button disabled={isBusy} onClick={() => removeItem(item.id)} type="button">
                   Remove
                 </button>
