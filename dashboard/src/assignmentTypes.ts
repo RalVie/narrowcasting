@@ -6,6 +6,7 @@ export interface Assignment {
   targetId: string;
   programId: string;
   enabled: boolean;
+  source: "manual" | "campaign";
   createdAt: string;
   updatedAt: string;
 }

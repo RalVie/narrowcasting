@@ -45,7 +45,20 @@ a {
 
 .sidebar nav {
   display: grid;
+  gap: 18px;
+}
+
+.sidebar-nav-group {
+  display: grid;
   gap: 8px;
+}
+
+.sidebar-nav-group h2 {
+  margin: 0 0 2px;
+  color: #b8d8c5;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .sidebar a {
@@ -952,6 +965,116 @@ button:disabled {
 }
 
 .assignment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.campaign-create-panel,
+.campaign-list-panel {
+  margin-top: 14px;
+}
+
+.campaign-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.campaign-form-grid label,
+.campaign-targets-field {
+  display: grid;
+  gap: 4px;
+  color: #647064;
+  font-size: 12px;
+}
+
+.campaign-form-grid input,
+.campaign-form-grid select {
+  min-width: 0;
+  border: 1px solid #b9c8bd;
+  border-radius: 6px;
+  padding: 8px;
+  color: #17201a;
+  background: #ffffff;
+  font: inherit;
+}
+
+.campaign-enabled-toggle {
+  align-content: center;
+}
+
+.campaign-enabled-toggle input {
+  width: auto;
+}
+
+.campaign-targets-field {
+  grid-column: 1 / -1;
+}
+
+.campaign-target-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.campaign-target-picker label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #d9dfd4;
+  border-radius: 999px;
+  padding: 7px 9px;
+  color: #17201a;
+  background: #ffffff;
+}
+
+.campaign-target-picker input {
+  width: auto;
+}
+
+.campaign-list {
+  display: grid;
+  gap: 10px;
+}
+
+.campaign-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid #d9dfd4;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.campaign-summary {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(220px, 1.4fr) minmax(180px, auto);
+  gap: 10px;
+  align-items: start;
+}
+
+.campaign-summary div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.campaign-summary strong,
+.campaign-summary span,
+.campaign-summary small {
+  overflow-wrap: anywhere;
+}
+
+.campaign-summary span,
+.campaign-summary small {
+  color: #647064;
+  font-size: 12px;
+}
+
+.campaign-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;

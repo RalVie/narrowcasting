@@ -384,8 +384,8 @@ export function ScreensPage() {
     }
 
     return (
-      <a className="screen-assignment-link" href="#assignments">
-        Manage in Assignments
+      <a className="screen-assignment-link" href="#campaigns">
+        Publish Campaign
       </a>
     );
   }
@@ -439,7 +439,7 @@ export function ScreensPage() {
             <dt>Registration Date</dt>
             <dd>{formatDateTime(screen.registeredAt)}</dd>
             <dt>Assigned Program</dt>
-            <dd>Managed in Assignments</dd>
+            <dd>Managed by Campaigns</dd>
             <dt>Last Assignment</dt>
             <dd>{formatDateTime(screen.lastAssignment)}</dd>
           </dl>

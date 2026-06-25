@@ -6,6 +6,7 @@ import { listScreenGroups } from "../screens/screenGroupStore.js";
 import { listScreens } from "../screens/screenStore.js";
 
 export type AssignmentTargetType = "SCREEN" | "SCREEN_GROUP";
+export type AssignmentSource = "manual" | "campaign";
 
 export interface Assignment {
   id: string;
@@ -13,6 +14,7 @@ export interface Assignment {
   targetId: string;
   programId: string;
   enabled: boolean;
+  source: AssignmentSource;
   createdAt: string;
   updatedAt: string;
 }
@@ -30,6 +32,10 @@ function sanitizeText(value: unknown, fallback = "") {
 
 function normalizeTargetType(value: unknown): AssignmentTargetType | null {
   return value === "SCREEN" || value === "SCREEN_GROUP" ? value : null;
+}
+
+function normalizeSource(value: unknown): AssignmentSource {
+  return value === "campaign" ? "campaign" : "manual";
 }
 
 function normalizeAssignment(value: unknown): Assignment | null {
@@ -57,6 +63,7 @@ function normalizeAssignment(value: unknown): Assignment | null {
     targetId: candidate.targetId,
     programId: candidate.programId,
     enabled: candidate.enabled !== false,
+    source: normalizeSource(candidate.source),
     createdAt: sanitizeText(candidate.createdAt, now),
     updatedAt: sanitizeText(candidate.updatedAt, candidate.createdAt ?? now)
   };
@@ -98,6 +105,7 @@ async function migrateLegacyScreenAssignments(): Promise<Assignment[]> {
       targetId: screen.screenId,
       programId: screen.assignedProgramId as string,
       enabled: true,
+      source: "manual" as const,
       createdAt: screen.lastAssignment ?? now,
       updatedAt: screen.lastAssignment ?? now
     }));
@@ -170,7 +178,8 @@ function readAssignmentInput(input: unknown) {
     targetType,
     targetId,
     programId,
-    enabled: body.enabled !== false
+    enabled: body.enabled !== false,
+    source: normalizeSource(body.source)
   };
 }
 
@@ -193,6 +202,7 @@ export async function createAssignment(input: unknown): Promise<Assignment> {
     targetId: next.targetId,
     programId: next.programId,
     enabled: next.enabled,
+    source: next.source,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now
   };
@@ -241,6 +251,7 @@ export async function updateAssignment(id: string, input: unknown): Promise<Assi
     targetId,
     programId,
     enabled,
+    source: existing.source,
     updatedAt: new Date().toISOString()
   };
 
@@ -258,6 +269,61 @@ export async function deleteAssignment(id: string): Promise<boolean> {
 
   await writeAssignments(nextAssignments);
   return true;
+}
+
+export async function syncCampaignAssignments(input: {
+  campaignId: string;
+  enabled: boolean;
+  targetType: AssignmentTargetType;
+  targetIds: string[];
+  programId: string;
+  createdAt: string;
+  updatedAt: string;
+}): Promise<Assignment[]> {
+  await Promise.all([
+    validateProgram(input.programId),
+    ...input.targetIds.map((targetId) => validateAssignmentTarget(input.targetType, targetId))
+  ]);
+
+  const assignments = await listAssignments();
+  const campaignPrefix = `campaign:${input.campaignId}:`;
+  const targetKeys = new Set(input.targetIds.map((targetId) => `${input.targetType}:${targetId}`));
+  const retainedAssignments = assignments.filter((assignment) => {
+    if (assignment.id.startsWith(campaignPrefix)) {
+      return false;
+    }
+
+    return !input.enabled || !targetKeys.has(`${assignment.targetType}:${assignment.targetId}`);
+  });
+  const nextCampaignAssignments = input.enabled
+    ? input.targetIds.map((targetId) => {
+        const id = `${campaignPrefix}${input.targetType}:${targetId}`;
+        const existing = assignments.find((assignment) => assignment.id === id);
+
+        return {
+          id,
+          targetType: input.targetType,
+          targetId,
+          programId: input.programId,
+          enabled: true,
+          source: "campaign" as const,
+          createdAt: existing?.createdAt ?? input.createdAt,
+          updatedAt: input.updatedAt
+        };
+      })
+    : [];
+  const nextAssignments = [...retainedAssignments, ...nextCampaignAssignments];
+
+  await writeAssignments(nextAssignments);
+  return nextCampaignAssignments;
+}
+
+export async function deleteCampaignAssignments(campaignId: string): Promise<void> {
+  const assignments = await listAssignments();
+  const campaignPrefix = `campaign:${campaignId}:`;
+  const nextAssignments = assignments.filter((assignment) => !assignment.id.startsWith(campaignPrefix));
+
+  await writeAssignments(nextAssignments);
 }
 
 export async function resolveAssignmentForScreen(screenId: string): Promise<ResolvedAssignment | null> {
