@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import { apiUrl } from "../api/apiBase";
+import { readApiError } from "../api/readApiError";
 import type { MediaItem } from "../mediaTypes";
 import type { PlaylistItem, PlaylistRecord } from "../playlistTypes";
 
@@ -307,7 +308,7 @@ export function PlaylistsPage() {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        throw new Error(await readApiError(response));
       }
 
       const nextPlaylists = playlists.filter((item) => item.id !== playlist.id);

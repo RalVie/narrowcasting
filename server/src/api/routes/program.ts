@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { createProgram, deleteProgram, getProgramsOrDefault, saveProgram } from "../../program/programStore.js";
+import { validateProgramDelete } from "../../validation/referenceIntegrity.js";
 
 export const programRoutes: FastifyPluginAsync = async (app) => {
   app.get("/programs", async () => getProgramsOrDefault());
@@ -20,6 +21,12 @@ export const programRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.delete<{ Params: { id: string } }>("/programs/:id", async (request, reply) => {
+    const validation = await validateProgramDelete(request.params.id);
+
+    if (!validation.ok) {
+      return reply.code(409).send(validation.error);
+    }
+
     const deleted = await deleteProgram(request.params.id);
 
     if (!deleted) {

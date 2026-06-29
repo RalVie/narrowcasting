@@ -5,6 +5,7 @@ import {
   listAssignments,
   updateAssignment
 } from "../../assignments/assignmentStore.js";
+import { validateAssignmentDelete } from "../../validation/referenceIntegrity.js";
 
 export const assignmentRoutes: FastifyPluginAsync = async (app) => {
   app.get("/assignments", async () => listAssignments());
@@ -37,6 +38,12 @@ export const assignmentRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post<{ Params: { id: string } }>("/assignments/:id/delete", async (request, reply) => {
+    const validation = await validateAssignmentDelete(request.params.id);
+
+    if (!validation.ok) {
+      return reply.code(409).send(validation.error);
+    }
+
     const deleted = await deleteAssignment(request.params.id);
 
     if (!deleted) {

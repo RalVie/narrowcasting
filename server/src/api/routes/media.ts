@@ -9,6 +9,7 @@ import {
   getMediaPath,
   listMedia
 } from "../../media/mediaStore.js";
+import { validateMediaDelete } from "../../validation/referenceIntegrity.js";
 
 const imageUploadLimitBytes = 20 * 1024 * 1024;
 const videoUploadLimitBytes = 500 * 1024 * 1024;
@@ -70,6 +71,12 @@ export const mediaRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.delete<{ Params: { id: string } }>("/api/media/:id", async (request, reply) => {
+    const validation = await validateMediaDelete(request.params.id);
+
+    if (!validation.ok) {
+      return reply.code(409).send(validation.error);
+    }
+
     const deleted = await deleteMedia(request.params.id);
 
     if (!deleted) {

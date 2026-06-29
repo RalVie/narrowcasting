@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiUrl } from "../api/apiBase";
+import { readApiError } from "../api/readApiError";
 import type { AssignmentTargetType } from "../assignmentTypes";
 import type { Campaign } from "../campaignTypes";
 import type { Program } from "../programTypes";
@@ -213,7 +214,7 @@ export function CampaignsPage() {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        throw new Error(await readApiError(response));
       }
 
       setStatus("Campaign deleted.");

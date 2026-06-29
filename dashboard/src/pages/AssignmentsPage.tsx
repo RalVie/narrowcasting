@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiUrl } from "../api/apiBase";
+import { readApiError } from "../api/readApiError";
 import type { Assignment, AssignmentSchedule, AssignmentTargetType } from "../assignmentTypes";
 import type { Program } from "../programTypes";
 import type { ScreenGroup, ScreenRecord } from "../screenTypes";
@@ -200,7 +201,7 @@ export function AssignmentsPage() {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        throw new Error(await readApiError(response));
       }
 
       setStatus("Assignment deleted.");

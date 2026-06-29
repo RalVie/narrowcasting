@@ -5,6 +5,7 @@ import {
   listCampaigns,
   updateCampaign
 } from "../../campaigns/campaignStore.js";
+import { validateCampaignDelete } from "../../validation/referenceIntegrity.js";
 
 export const campaignRoutes: FastifyPluginAsync = async (app) => {
   app.get("/campaigns", async () => listCampaigns());
@@ -37,6 +38,12 @@ export const campaignRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post<{ Params: { id: string } }>("/campaigns/:id/delete", async (request, reply) => {
+    const validation = await validateCampaignDelete(request.params.id);
+
+    if (!validation.ok) {
+      return reply.code(409).send(validation.error);
+    }
+
     const deleted = await deleteCampaign(request.params.id);
 
     if (!deleted) {

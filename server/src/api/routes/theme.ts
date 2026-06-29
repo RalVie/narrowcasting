@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { createTheme, deleteTheme, listThemes, saveTheme } from "../../theme/themeStore.js";
+import { validateThemeDelete } from "../../validation/referenceIntegrity.js";
 
 export const themeRoutes: FastifyPluginAsync = async (app) => {
   app.get("/themes", async () => listThemes());
@@ -20,6 +21,12 @@ export const themeRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.delete<{ Params: { id: string } }>("/themes/:id", async (request, reply) => {
+    const validation = await validateThemeDelete(request.params.id);
+
+    if (!validation.ok) {
+      return reply.code(409).send(validation.error);
+    }
+
     const deleted = await deleteTheme(request.params.id);
 
     if (!deleted) {

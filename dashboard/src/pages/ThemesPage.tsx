@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { PointerEvent } from "react";
 import { apiUrl } from "../api/apiBase";
+import { readApiError } from "../api/readApiError";
 import type { MediaItem } from "../mediaTypes";
 import type { Theme, ThemeClockFormat, ThemeObjectFit, ThemeRegion, ThemeRegionType, ThemeTextAlign } from "../themeTypes";
 
@@ -733,7 +734,7 @@ export function ThemesPage() {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        throw new Error(await readApiError(response));
       }
 
       selectedThemeIdRef.current = defaultThemeId;

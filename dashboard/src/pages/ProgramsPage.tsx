@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import { apiUrl } from "../api/apiBase";
+import { readApiError } from "../api/readApiError";
 import type { PlaylistRecord } from "../playlistTypes";
 import type { Program } from "../programTypes";
 
@@ -93,7 +94,7 @@ export function ProgramsPage() {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        throw new Error(await readApiError(response));
       }
 
       const body = (await response.json()) as Program;
@@ -156,7 +157,7 @@ export function ProgramsPage() {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        throw new Error(await readApiError(response));
       }
 
       const nextPrograms = programs.filter((item) => item.id !== program.id);

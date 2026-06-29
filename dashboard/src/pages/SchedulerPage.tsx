@@ -22,6 +22,7 @@ const dayLabels: Record<DayOfWeek, string> = {
   Saturday: "Sat",
   Sunday: "Sun"
 };
+const legacyReadOnly = true;
 
 function createBlock(programId: string): SchedulerBlock {
   return {
@@ -104,6 +105,11 @@ export function SchedulerPage() {
   }
 
   async function saveScheduler() {
+    if (legacyReadOnly) {
+      setStatus("Legacy scheduler blocks are read-only and no longer affect production playback.");
+      return;
+    }
+
     setIsBusy(true);
     setStatus("Saving scheduler...");
 
@@ -133,6 +139,11 @@ export function SchedulerPage() {
   }
 
   function addBlock() {
+    if (legacyReadOnly) {
+      setStatus("Legacy scheduler blocks are read-only. Use Assignments and Scheduler Diagnostics for production scheduling.");
+      return;
+    }
+
     const programId = programs[0]?.id;
 
     if (!programId) {
@@ -150,6 +161,10 @@ export function SchedulerPage() {
   }
 
   function updateBlock(blockId: string, updater: (block: SchedulerBlock) => SchedulerBlock) {
+    if (legacyReadOnly) {
+      return;
+    }
+
     setScheduler((currentScheduler) => ({
       ...currentScheduler,
       blocks: currentScheduler.blocks.map((block) => (block.id === blockId ? updater(block) : block))
@@ -199,6 +214,11 @@ export function SchedulerPage() {
   }
 
   function removeBlock(blockId: string) {
+    if (legacyReadOnly) {
+      setStatus("Legacy scheduler blocks are read-only and no longer affect production playback.");
+      return;
+    }
+
     setScheduler((currentScheduler) => ({
       ...currentScheduler,
       blocks: currentScheduler.blocks.filter((block) => block.id !== blockId)
@@ -209,6 +229,11 @@ export function SchedulerPage() {
   }
 
   function moveBlock(index: number, direction: -1 | 1) {
+    if (legacyReadOnly) {
+      setStatus("Legacy scheduler blocks are read-only and no longer affect production playback.");
+      return;
+    }
+
     setScheduler((currentScheduler) => {
       const nextIndex = index + direction;
 
@@ -236,10 +261,10 @@ export function SchedulerPage() {
       <div className="section-header">
         <div>
           <h2>Scheduler</h2>
-          <p>Time blocks choose which program becomes the generated player schedule.</p>
+          <p>Legacy scheduler blocks are retained for inspection only. Production playback is resolved by Assignments and the Scheduler Resolver.</p>
         </div>
         <div className="button-row">
-          <button disabled={isBusy} onClick={addBlock} type="button">
+          <button disabled={isBusy || legacyReadOnly} onClick={addBlock} type="button">
             Add Block
           </button>
           <button disabled={isBusy} onClick={() => void loadData({ force: true })} type="button">
@@ -251,10 +276,11 @@ export function SchedulerPage() {
       <p className="status-text">
         {status}
         {isDirty ? " Unsaved changes." : ""}
+        {legacyReadOnly ? " Legacy blocks do not affect production playback." : ""}
       </p>
 
       <div className="program-list">
-        {scheduler.blocks.length === 0 ? <p>No scheduler blocks. The default playlist remains active.</p> : null}
+        {scheduler.blocks.length === 0 ? <p>No legacy scheduler blocks are stored.</p> : null}
         {scheduler.blocks.map((block, index) => (
           <article className="program-card" key={block.id}>
             <div className="program-card-header">
@@ -269,6 +295,7 @@ export function SchedulerPage() {
               <label>
                 Program
                 <select
+                  disabled={legacyReadOnly}
                   onChange={(event) => updateBlockField(block.id, "programId", event.target.value)}
                   value={block.programId}
                 >
@@ -282,6 +309,7 @@ export function SchedulerPage() {
               <label>
                 Theme
                 <select
+                  disabled={legacyReadOnly}
                   onChange={(event) => updateBlockField(block.id, "themeId", event.target.value)}
                   value={block.themeId ?? "default-fullscreen"}
                 >
@@ -293,21 +321,21 @@ export function SchedulerPage() {
                 </select>
               </label>
               <div className="playlist-actions">
-                <button disabled={isBusy || index === 0} onClick={() => moveBlock(index, -1)} type="button">
+                <button disabled={isBusy || legacyReadOnly || index === 0} onClick={() => moveBlock(index, -1)} type="button">
                   Up
                 </button>
                 <button
-                  disabled={isBusy || index === scheduler.blocks.length - 1}
+                  disabled={isBusy || legacyReadOnly || index === scheduler.blocks.length - 1}
                   onClick={() => moveBlock(index, 1)}
                   type="button"
                 >
                   Down
                 </button>
-                <button disabled={isBusy} onClick={() => removeBlock(block.id)} type="button">
+                <button disabled={isBusy || legacyReadOnly} onClick={() => removeBlock(block.id)} type="button">
                   Remove
                 </button>
                 {selectedBlockId === block.id ? (
-                  <button disabled={isBusy} onClick={() => void saveScheduler()} type="button">
+                  <button disabled={isBusy || legacyReadOnly} onClick={() => void saveScheduler()} type="button">
                     Save Scheduler
                   </button>
                 ) : null}
@@ -318,6 +346,7 @@ export function SchedulerPage() {
               <label>
                 Date From
                 <input
+                  disabled={legacyReadOnly}
                   onChange={(event) => updateBlockField(block.id, "startDate", event.target.value)}
                   type="date"
                   value={block.startDate ?? ""}
@@ -326,6 +355,7 @@ export function SchedulerPage() {
               <label>
                 Date Until
                 <input
+                  disabled={legacyReadOnly}
                   onChange={(event) => updateBlockField(block.id, "endDate", event.target.value)}
                   type="date"
                   value={block.endDate ?? ""}
@@ -334,6 +364,7 @@ export function SchedulerPage() {
               <label>
                 Time From
                 <input
+                  disabled={legacyReadOnly}
                   onChange={(event) => updateBlockField(block.id, "startTime", event.target.value)}
                   type="time"
                   value={block.startTime ?? ""}
@@ -342,6 +373,7 @@ export function SchedulerPage() {
               <label>
                 Time Until
                 <input
+                  disabled={legacyReadOnly}
                   onChange={(event) => updateBlockField(block.id, "endTime", event.target.value)}
                   type="time"
                   value={block.endTime ?? ""}
@@ -355,6 +387,7 @@ export function SchedulerPage() {
                 <label key={day}>
                   <input
                     checked={block.daysOfWeek?.includes(day) ?? false}
+                    disabled={legacyReadOnly}
                     onChange={(event) => toggleDay(block.id, day, event.target.checked)}
                     type="checkbox"
                   />

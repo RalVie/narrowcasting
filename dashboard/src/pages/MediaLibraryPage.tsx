@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { apiUrl } from "../api/apiBase";
+import { readApiError } from "../api/readApiError";
 import type { MediaItem } from "../mediaTypes";
 
 const refreshIntervalMs = 10_000;
@@ -15,21 +16,6 @@ function formatFileSize(size: number) {
   }
 
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-async function readApiError(response: Response) {
-  const body: unknown = await response.json().catch(() => null);
-
-  if (
-    body &&
-    typeof body === "object" &&
-    "error" in body &&
-    typeof (body as { error: unknown }).error === "string"
-  ) {
-    return (body as { error: string }).error;
-  }
-
-  return `HTTP ${response.status}`;
 }
 
 export function MediaLibraryPage() {
@@ -100,7 +86,7 @@ export function MediaLibraryPage() {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        throw new Error(await readApiError(response));
       }
 
       setStatus(`${item.filename} deleted.`);

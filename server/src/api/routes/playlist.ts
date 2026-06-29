@@ -7,6 +7,7 @@ import {
   savePlaylist,
   savePlaylistRecord
 } from "../../playlist/playlistStore.js";
+import { validatePlaylistDelete } from "../../validation/referenceIntegrity.js";
 
 export const playlistRoutes: FastifyPluginAsync = async (app) => {
   app.get("/playlist", async () => getPlaylistOrDefault());
@@ -34,6 +35,12 @@ export const playlistRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.delete<{ Params: { id: string } }>("/playlists/:id", async (request, reply) => {
+    const validation = await validatePlaylistDelete(request.params.id);
+
+    if (!validation.ok) {
+      return reply.code(409).send(validation.error);
+    }
+
     const deleted = await deletePlaylist(request.params.id);
 
     if (!deleted) {
