@@ -1,8 +1,14 @@
+import { randomUUID } from "node:crypto";
 import { access, mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, extname, resolve } from "node:path";
 
 export interface MediaItem {
+  /**
+   * Backward-compatible identifier retained for existing clients.
+   * New code should use mediaId.
+   */
   id: string;
+  mediaId: string;
   filename: string;
   type: "image" | "video";
   size: number;
@@ -46,7 +52,7 @@ export function getMediaContentType(filename: string) {
   }
 }
 
-function toMediaId(filename: string) {
+function toLegacyMediaId(filename: string) {
   const extension = extname(filename).toLowerCase().replace(".", "");
   const baseId = basename(filename, extname(filename))
     .toLowerCase()
@@ -57,6 +63,10 @@ function toMediaId(filename: string) {
   }
 
   return `${baseId}-${extension}`;
+}
+
+function createStableMediaId() {
+  return randomUUID();
 }
 
 function isImageFilename(filename: string) {
@@ -79,21 +89,44 @@ function getMediaType(filename: string): MediaItem["type"] | null {
   return null;
 }
 
+function normalizeMetadataItem(value: unknown): MediaItem | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<MediaItem>;
+
+  if (
+    typeof candidate.filename !== "string" ||
+    (candidate.type !== "image" && candidate.type !== "video")
+  ) {
+    return null;
+  }
+
+  return {
+    id:
+      typeof candidate.id === "string" && candidate.id.trim()
+        ? candidate.id
+        : toLegacyMediaId(candidate.filename),
+    mediaId:
+      typeof candidate.mediaId === "string" && candidate.mediaId.trim()
+        ? candidate.mediaId
+        : createStableMediaId(),
+    filename: candidate.filename,
+    type: candidate.type,
+    size: typeof candidate.size === "number" && Number.isFinite(candidate.size) ? candidate.size : 0
+  };
+}
+
 async function readMetadataFile(): Promise<MediaItem[]> {
   try {
     const content = await readFile(metadataPath, "utf8");
     const value: unknown = JSON.parse(content);
 
     if (Array.isArray(value)) {
-      return value.filter((item): item is MediaItem => {
-        const candidate = item as Partial<MediaItem>;
-        return (
-          typeof candidate.id === "string" &&
-          typeof candidate.filename === "string" &&
-          (candidate.type === "image" || candidate.type === "video") &&
-          typeof candidate.size === "number"
-        );
-      });
+      return value
+        .map((item) => normalizeMetadataItem(item))
+        .filter((item): item is MediaItem => item !== null);
     }
   } catch {
     return [];
@@ -107,7 +140,27 @@ async function writeMetadataFile(items: MediaItem[]) {
   await writeFile(metadataPath, `${JSON.stringify(items, null, 2)}\n`, "utf8");
 }
 
-async function itemFromFile(filename: string): Promise<MediaItem | null> {
+function getStableMediaId(existingItem: MediaItem | undefined, usedMediaIds: Set<string>) {
+  if (existingItem?.mediaId && !usedMediaIds.has(existingItem.mediaId)) {
+    usedMediaIds.add(existingItem.mediaId);
+    return existingItem.mediaId;
+  }
+
+  let mediaId = createStableMediaId();
+
+  while (usedMediaIds.has(mediaId)) {
+    mediaId = createStableMediaId();
+  }
+
+  usedMediaIds.add(mediaId);
+  return mediaId;
+}
+
+async function itemFromFile(
+  filename: string,
+  existingItem: MediaItem | undefined,
+  usedMediaIds: Set<string>
+): Promise<MediaItem | null> {
   const mediaType = getMediaType(filename);
 
   if (!mediaType) {
@@ -122,7 +175,8 @@ async function itemFromFile(filename: string): Promise<MediaItem | null> {
   }
 
   return {
-    id: toMediaId(filename),
+    id: existingItem?.id ?? toLegacyMediaId(filename),
+    mediaId: getStableMediaId(existingItem, usedMediaIds),
     filename,
     type: mediaType,
     size: fileStat.size
@@ -132,9 +186,16 @@ async function itemFromFile(filename: string): Promise<MediaItem | null> {
 export async function listMedia(): Promise<MediaItem[]> {
   await mkdir(mediaRoot, { recursive: true });
 
-  const filenames = await readdir(mediaRoot);
+  const [filenames, metadata] = await Promise.all([
+    readdir(mediaRoot),
+    readMetadataFile()
+  ]);
+  const metadataByFilename = new Map(metadata.map((item) => [item.filename, item]));
+  const usedMediaIds = new Set<string>();
   const items = (
-    await Promise.all(filenames.map((filename) => itemFromFile(filename)))
+    await Promise.all(
+      filenames.map((filename) => itemFromFile(filename, metadataByFilename.get(filename), usedMediaIds))
+    )
   )
     .filter((item): item is MediaItem => item !== null)
     .sort((first, second) => first.filename.localeCompare(second.filename));
@@ -156,26 +217,19 @@ export async function createMedia(filename: string, content: Buffer): Promise<Me
   const filePath = getMediaPath(safeFilename);
   await writeFile(filePath, content);
 
-  const fileStat = await stat(filePath);
-  const item: MediaItem = {
-    id: toMediaId(safeFilename),
-    filename: safeFilename,
-    type: mediaType,
-    size: fileStat.size
-  };
+  const items = await listMedia();
+  const item = items.find((mediaItem) => mediaItem.filename === safeFilename);
 
-  const items = (await listMedia()).filter((existingItem) => existingItem.id !== item.id);
-  items.push(item);
-  await writeMetadataFile(
-    items.sort((first, second) => first.filename.localeCompare(second.filename))
-  );
+  if (!item) {
+    throw new Error("media metadata could not be created");
+  }
 
   return item;
 }
 
 export async function deleteMedia(id: string): Promise<boolean> {
   const items = await listMedia();
-  const item = items.find((mediaItem) => mediaItem.id === id);
+  const item = items.find((mediaItem) => mediaItem.id === id || mediaItem.mediaId === id);
 
   if (!item) {
     return false;
@@ -189,6 +243,6 @@ export async function deleteMedia(id: string): Promise<boolean> {
     // Metadata is still removed even if the file is already gone.
   }
 
-  await writeMetadataFile(items.filter((mediaItem) => mediaItem.id !== id));
+  await writeMetadataFile(items.filter((mediaItem) => mediaItem.mediaId !== item.mediaId));
   return true;
 }
