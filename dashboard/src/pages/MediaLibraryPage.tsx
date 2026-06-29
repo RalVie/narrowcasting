@@ -95,7 +95,7 @@ export function MediaLibraryPage() {
     setStatus(`Deleting ${item.filename}...`);
 
     try {
-      const response = await fetch(apiUrl(`/api/media/${encodeURIComponent(item.id)}`), {
+      const response = await fetch(apiUrl(`/api/media/${encodeURIComponent(item.mediaId)}`), {
         method: "DELETE"
       });
 
@@ -152,7 +152,7 @@ export function MediaLibraryPage() {
 
       <div className="media-grid">
         {items.map((item) => (
-          <article className="media-card" key={item.id}>
+          <article className="media-card" key={item.mediaId}>
             {item.type === "image" ? (
               <img alt="" src={apiUrl(`/media/${encodeURIComponent(item.filename)}`)} />
             ) : (

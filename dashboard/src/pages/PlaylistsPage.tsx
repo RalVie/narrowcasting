@@ -9,8 +9,8 @@ type MediaFilter = "all" | "image" | "video" | "logo" | "background" | "recent" 
 
 function createPlaylistItem(media: MediaItem): PlaylistItem {
   return {
-    id: `item-${Date.now()}-${media.id}`,
-    mediaId: media.id,
+    id: `item-${Date.now()}-${media.mediaId}`,
+    mediaId: media.mediaId,
     type: media.type,
     file: media.filename,
     duration: 10,
@@ -330,12 +330,12 @@ export function PlaylistsPage() {
   }
 
   function getMediaById(mediaId: string) {
-    return mediaItems.find((media) => media.id === mediaId);
+    return mediaItems.find((media) => media.mediaId === mediaId || media.id === mediaId || media.filename === mediaId);
   }
 
   function handleMediaDragStart(event: DragEvent<HTMLElement>, media: MediaItem) {
     event.dataTransfer.effectAllowed = "copy";
-    event.dataTransfer.setData("application/x-media-id", media.id);
+    event.dataTransfer.setData("application/x-media-id", media.mediaId);
   }
 
   function handlePlaylistItemDragStart(event: DragEvent<HTMLElement>, index: number) {
@@ -465,15 +465,15 @@ export function PlaylistsPage() {
               <article
                 className="operator-media-card"
                 draggable
-                key={media.id}
+                key={media.mediaId}
                 onDragStart={(event) => handleMediaDragStart(event, media)}
-                onMouseEnter={() => media.type === "video" && startVideoPreview(media.id)}
+                onMouseEnter={() => media.type === "video" && startVideoPreview(media.mediaId)}
                 onMouseLeave={stopVideoPreview}
               >
                 <div className="operator-thumb">
                   {media.type === "image" ? (
                     <img alt="" src={apiUrl(`/media/${encodeURIComponent(media.filename)}`)} />
-                  ) : previewingVideoId === media.id ? (
+                  ) : previewingVideoId === media.mediaId ? (
                     <video autoPlay muted playsInline src={apiUrl(`/media/${encodeURIComponent(media.filename)}`)} />
                   ) : (
                     <div className="operator-video-mark">Play</div>

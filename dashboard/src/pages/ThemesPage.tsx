@@ -796,7 +796,9 @@ export function ThemesPage() {
   }
 
   function getRegionMedia(region: ThemeRegion) {
-    return mediaItems.find((item) => item.id === region.mediaId || item.filename === region.file);
+    return mediaItems.find(
+      (item) => item.mediaId === region.mediaId || item.id === region.mediaId || item.filename === region.file
+    );
   }
 
   function renderDesignerRegionPreview(region: ThemeRegion) {
@@ -1123,17 +1125,19 @@ export function ThemesPage() {
                   Image
                   <select
                     onChange={(event) => {
-                      const media = mediaItems.find((item) => item.id === event.target.value);
+                      const media = mediaItems.find(
+                        (item) => item.mediaId === event.target.value || item.id === event.target.value
+                      );
                       patchSelectedRegion({
-                        mediaId: media?.id,
+                        mediaId: media?.mediaId,
                         file: media?.filename
                       });
                     }}
-                    value={selectedRegionMedia?.id ?? ""}
+                    value={selectedRegionMedia?.mediaId ?? ""}
                   >
                     <option value="">Select image</option>
                     {mediaItems.map((item) => (
-                      <option key={item.id} value={item.id}>
+                      <option key={item.mediaId} value={item.mediaId}>
                         {item.filename}
                       </option>
                     ))}

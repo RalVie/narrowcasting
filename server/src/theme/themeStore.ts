@@ -1,5 +1,10 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import {
+  listMedia,
+  resolveMediaReferenceFromList,
+  type MediaItem
+} from "../media/mediaStore.js";
 
 export type ThemeOrientation = "landscape" | "portrait";
 export type ThemeRegionType = "program" | "logo" | "image" | "text" | "clock";
@@ -122,7 +127,7 @@ function normalizeColor(value: unknown, fallback?: string) {
   return fallback;
 }
 
-function normalizeRegion(value: unknown, index: number): ThemeRegion | null {
+function normalizeRegion(value: unknown, index: number, mediaItems: MediaItem[] = []): ThemeRegion | null {
   if (!value || typeof value !== "object") {
     return null;
   }
@@ -140,6 +145,11 @@ function normalizeRegion(value: unknown, index: number): ThemeRegion | null {
   const clockFormat = allowedClockFormats.has(candidate.clockFormat as ThemeClockFormat)
     ? (candidate.clockFormat as ThemeClockFormat)
     : undefined;
+  const referencedMedia =
+    type === "logo" || type === "image"
+      ? resolveMediaReferenceFromList(mediaItems, candidate.mediaId) ??
+        resolveMediaReferenceFromList(mediaItems, candidate.file)
+      : null;
 
   return {
     id: typeof candidate.id === "string" && candidate.id.trim() ? candidate.id.trim() : `region-${index + 1}`,
@@ -149,8 +159,8 @@ function normalizeRegion(value: unknown, index: number): ThemeRegion | null {
     y: toNumber(candidate.y, 0),
     width: toPositiveNumber(candidate.width, defaultTheme.canvasWidth),
     height: toPositiveNumber(candidate.height, defaultTheme.canvasHeight),
-    mediaId: toOptionalString(candidate.mediaId),
-    file: toOptionalString(candidate.file),
+    mediaId: referencedMedia?.mediaId ?? toOptionalString(candidate.mediaId),
+    file: referencedMedia?.filename ?? toOptionalString(candidate.file),
     objectFit,
     opacity: toOpacity(candidate.opacity),
     visible: toBoolean(candidate.visible, true),
@@ -169,7 +179,7 @@ function normalizeRegion(value: unknown, index: number): ThemeRegion | null {
   };
 }
 
-function normalizeTheme(value: unknown, fallbackIndex: number): Theme | null {
+function normalizeTheme(value: unknown, fallbackIndex: number, mediaItems: MediaItem[] = []): Theme | null {
   if (!value || typeof value !== "object") {
     return null;
   }
@@ -185,9 +195,10 @@ function normalizeTheme(value: unknown, fallbackIndex: number): Theme | null {
   const canvasHeight = toPositiveNumber(candidate.canvasHeight, defaultTheme.canvasHeight);
   const regions = Array.isArray(candidate.regions)
     ? candidate.regions
-        .map((region, index) => normalizeRegion(region, index))
+        .map((region, index) => normalizeRegion(region, index, mediaItems))
         .filter((region): region is ThemeRegion => region !== null)
     : [];
+  const backgroundMedia = resolveMediaReferenceFromList(mediaItems, candidate.backgroundMediaId);
 
   return {
     id:
@@ -202,9 +213,10 @@ function normalizeTheme(value: unknown, fallbackIndex: number): Theme | null {
     canvasHeight,
     backgroundColor: normalizeColor(candidate.backgroundColor, defaultTheme.backgroundColor) ?? defaultTheme.backgroundColor,
     backgroundMediaId:
-      typeof candidate.backgroundMediaId === "string" && candidate.backgroundMediaId.trim()
+      backgroundMedia?.mediaId ??
+      (typeof candidate.backgroundMediaId === "string" && candidate.backgroundMediaId.trim()
         ? candidate.backgroundMediaId.trim()
-        : undefined,
+        : undefined),
     regions:
       regions.length > 0
         ? regions
@@ -225,13 +237,15 @@ async function writeThemes(themes: Theme[]) {
 }
 
 export async function listThemes(): Promise<Theme[]> {
+  const mediaItems = await listMedia();
+
   try {
     const content = await readFile(themesPath, "utf8");
     const value: unknown = JSON.parse(content);
 
     if (Array.isArray(value)) {
       const themes = value
-        .map((theme, index) => normalizeTheme(theme, index))
+        .map((theme, index) => normalizeTheme(theme, index, mediaItems))
         .filter((theme): theme is Theme => theme !== null);
 
       if (themes.length > 0) {
@@ -252,6 +266,7 @@ export async function getThemeOrDefault(themeId?: string): Promise<Theme> {
 
 export async function createTheme(value: unknown): Promise<Theme> {
   const themes = await listThemes();
+  const mediaItems = await listMedia();
   const incoming = value as Partial<Theme>;
   const name = typeof incoming.name === "string" && incoming.name.trim() ? incoming.name.trim() : "New Theme";
   const baseId = toThemeId(typeof incoming.id === "string" ? incoming.id : name);
@@ -264,7 +279,7 @@ export async function createTheme(value: unknown): Promise<Theme> {
     suffix += 1;
   }
 
-  const theme = normalizeTheme({ ...defaultTheme, ...incoming, id, name }, themes.length) ?? {
+  const theme = normalizeTheme({ ...defaultTheme, ...incoming, id, name }, themes.length, mediaItems) ?? {
     ...defaultTheme,
     id,
     name
@@ -276,13 +291,14 @@ export async function createTheme(value: unknown): Promise<Theme> {
 
 export async function saveTheme(id: string, value: unknown): Promise<Theme | null> {
   const themes = await listThemes();
+  const mediaItems = await listMedia();
   const existingTheme = themes.find((theme) => theme.id === id);
 
   if (!existingTheme) {
     return null;
   }
 
-  const theme = normalizeTheme({ ...existingTheme, ...(value as Partial<Theme>), id: existingTheme.id }, 0);
+  const theme = normalizeTheme({ ...existingTheme, ...(value as Partial<Theme>), id: existingTheme.id }, 0, mediaItems);
 
   if (!theme) {
     return null;

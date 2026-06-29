@@ -1,5 +1,10 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import {
+  listMedia,
+  resolveMediaReferenceFromList,
+  type MediaItem
+} from "../media/mediaStore.js";
 import { staticSchedule, type Schedule } from "../schedule/staticSchedule.js";
 
 export interface PlaylistItem {
@@ -62,7 +67,11 @@ function toPlaylistId(value: string) {
   return normalized || `playlist-${Date.now()}`;
 }
 
-function normalizePlaylistItems(items: unknown, existingItems: PlaylistItem[] = []): PlaylistItem[] {
+function normalizePlaylistItems(
+  items: unknown,
+  existingItems: PlaylistItem[] = [],
+  mediaItems: MediaItem[] = []
+): PlaylistItem[] {
   if (!Array.isArray(items)) {
     return [];
   }
@@ -71,35 +80,44 @@ function normalizePlaylistItems(items: unknown, existingItems: PlaylistItem[] = 
     .map((item, index): PlaylistItem | null => {
       const candidate = item as Partial<PlaylistItem>;
 
-      if (
-        typeof candidate.mediaId !== "string" ||
-        (candidate.type !== "image" && candidate.type !== "video") ||
-        typeof candidate.file !== "string"
-      ) {
+      const referencedMedia =
+        resolveMediaReferenceFromList(mediaItems, candidate.mediaId) ??
+        resolveMediaReferenceFromList(mediaItems, candidate.file);
+      const mediaId =
+        referencedMedia?.mediaId ??
+        (typeof candidate.mediaId === "string" && candidate.mediaId.trim() ? candidate.mediaId.trim() : undefined);
+      const file =
+        referencedMedia?.filename ??
+        (typeof candidate.file === "string" && candidate.file.trim() ? candidate.file.trim() : undefined);
+      const type = referencedMedia?.type ?? candidate.type;
+
+      if (!mediaId || (type !== "image" && type !== "video") || !file) {
         return null;
       }
 
       const existingItem = existingItems.find(
         (item) =>
           item.id === candidate.id &&
-          item.mediaId === candidate.mediaId &&
-          item.type === candidate.type &&
-          item.file === candidate.file
+          (item.mediaId === candidate.mediaId || item.mediaId === mediaId) &&
+          item.type === type &&
+          (item.file === candidate.file || item.file === file)
       );
       const playlistItem: PlaylistItem = {
         id: typeof candidate.id === "string" ? candidate.id : `item-${index + 1}`,
-        mediaId: candidate.mediaId,
-        type: candidate.type,
-        file: candidate.file,
+        mediaId,
+        type,
+        file,
         duration: Math.max(Number(candidate.duration ?? existingItem?.duration ?? 10), 1),
         durationMode:
-          candidate.type === "video" &&
+          type === "video" &&
           (candidate.durationMode === "clip" ||
             (candidate.durationMode === undefined && existingItem?.durationMode === "clip"))
             ? "clip"
             : undefined
       };
 
+      // Legacy scheduling metadata is preserved for migration/inspection only.
+      // Runtime scheduling is owned by Assignments -> Scheduler Resolver.
       if (typeof candidate.startDate === "string" && datePattern.test(candidate.startDate)) {
         playlistItem.startDate = candidate.startDate;
       }
@@ -131,47 +149,6 @@ function normalizePlaylistItems(items: unknown, existingItems: PlaylistItem[] = 
     .filter((item): item is PlaylistItem => item !== null);
 }
 
-function getLocalDateKey(date: Date) {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function getLocalTimeKey(date: Date) {
-  const hours = `${date.getHours()}`.padStart(2, "0");
-  const minutes = `${date.getMinutes()}`.padStart(2, "0");
-  return `${hours}:${minutes}`;
-}
-
-function isPlaylistItemActive(item: PlaylistItem, now = new Date()) {
-  const today = getLocalDateKey(now);
-  const currentDay = dayNames[now.getDay()];
-  const currentTime = getLocalTimeKey(now);
-
-  if (item.startDate && today < item.startDate) {
-    return false;
-  }
-
-  if (item.endDate && today > item.endDate) {
-    return false;
-  }
-
-  if (item.daysOfWeek && item.daysOfWeek.length > 0 && !item.daysOfWeek.includes(currentDay)) {
-    return false;
-  }
-
-  if (item.startTime && currentTime < item.startTime) {
-    return false;
-  }
-
-  if (item.endTime && currentTime > item.endTime) {
-    return false;
-  }
-
-  return true;
-}
-
 export async function readPlaylist(): Promise<Playlist | null> {
   try {
     const content = await readFile(playlistPath, "utf8");
@@ -182,7 +159,11 @@ export async function readPlaylist(): Promise<Playlist | null> {
   }
 }
 
-function normalizePlaylistRecord(value: unknown, fallbackIndex: number): PlaylistRecord | null {
+function normalizePlaylistRecord(
+  value: unknown,
+  fallbackIndex: number,
+  mediaItems: MediaItem[] = []
+): PlaylistRecord | null {
   if (!isPlaylist(value)) {
     return null;
   }
@@ -206,7 +187,7 @@ function normalizePlaylistRecord(value: unknown, fallbackIndex: number): Playlis
     name,
     version: value.version,
     updatedAt: value.updatedAt,
-    items: normalizePlaylistItems(value.items)
+    items: normalizePlaylistItems(value.items, [], mediaItems)
   };
 }
 
@@ -234,13 +215,15 @@ async function writePlaylists(playlists: PlaylistRecord[]) {
 }
 
 export async function listPlaylists(): Promise<PlaylistRecord[]> {
+  const mediaItems = await listMedia();
+
   try {
     const content = await readFile(playlistsPath, "utf8");
     const value: unknown = JSON.parse(content);
 
     if (Array.isArray(value)) {
       const playlists = value
-        .map((item, index) => normalizePlaylistRecord(item, index))
+        .map((item, index) => normalizePlaylistRecord(item, index, mediaItems))
         .filter((item): item is PlaylistRecord => item !== null);
 
       if (playlists.length > 0) {
@@ -271,7 +254,7 @@ export async function listPlaylists(): Promise<PlaylistRecord[]> {
       name: "Default Playlist",
       version: defaultPlaylist.version,
       updatedAt: defaultPlaylist.updatedAt,
-      items: normalizePlaylistItems(defaultPlaylist.items)
+      items: normalizePlaylistItems(defaultPlaylist.items, [], mediaItems)
     }
   ];
 }
@@ -288,7 +271,7 @@ export async function savePlaylist(value: unknown): Promise<Playlist> {
         : existingPlaylist?.name ?? "Default Playlist",
     version: (existingPlaylist?.version ?? 0) + 1,
     updatedAt: new Date().toISOString(),
-    items: normalizePlaylistItems(incoming.items, existingPlaylist?.items)
+    items: normalizePlaylistItems(incoming.items, existingPlaylist?.items, await listMedia())
   };
 
   const otherPlaylists = playlists.filter((item) => item.id !== defaultPlaylistId);
@@ -345,7 +328,7 @@ export async function createPlaylist(value: unknown): Promise<PlaylistRecord> {
     name,
     version: 1,
     updatedAt: new Date().toISOString(),
-    items: normalizePlaylistItems(incoming.items)
+    items: normalizePlaylistItems(incoming.items, [], await listMedia())
   };
 
   await writePlaylists([...playlists, playlist]);
@@ -369,7 +352,7 @@ export async function savePlaylistRecord(id: string, value: unknown): Promise<Pl
         : existingPlaylist.name,
     version: existingPlaylist.version + 1,
     updatedAt: new Date().toISOString(),
-    items: normalizePlaylistItems(incoming.items, existingPlaylist.items)
+    items: normalizePlaylistItems(incoming.items, existingPlaylist.items, await listMedia())
   };
 
   await writePlaylists(playlists.map((item) => (item.id === id ? playlist : item)));
@@ -393,17 +376,18 @@ export async function deletePlaylist(id: string): Promise<boolean> {
 }
 
 export async function getScheduleFromPlaylist(): Promise<Schedule> {
-  const playlist = await readPlaylist();
+  const existingPlaylistFile = await readPlaylist();
 
-  if (!playlist) {
+  if (!existingPlaylistFile) {
     return staticSchedule;
   }
+
+  const playlist = await getPlaylistOrDefault();
 
   return {
     version: playlist.version,
     updatedAt: playlist.updatedAt,
     items: playlist.items
-      .filter((item) => isPlaylistItemActive(item))
       .map((item) => ({
         id: item.id,
         mediaId: item.mediaId,

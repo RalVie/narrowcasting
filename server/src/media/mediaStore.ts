@@ -14,6 +14,8 @@ export interface MediaItem {
   size: number;
 }
 
+type MediaReference = string | undefined;
+
 const mediaRoot = resolve(process.cwd(), "public", "media");
 const metadataPath = resolve(process.cwd(), "data", "media.json");
 const imageExtensions = new Set([".jpg", ".jpeg", ".png", ".webp"]);
@@ -50,6 +52,35 @@ export function getMediaContentType(filename: string) {
     default:
       return "application/octet-stream";
   }
+}
+
+export function resolveMediaReferenceFromList(
+  mediaItems: MediaItem[],
+  reference: MediaReference
+): MediaItem | null {
+  if (!reference) {
+    return null;
+  }
+
+  const normalizedReference = reference.trim();
+
+  if (!normalizedReference) {
+    return null;
+  }
+
+  const matches = mediaItems.filter(
+    (item) =>
+      item.mediaId === normalizedReference ||
+      item.id === normalizedReference ||
+      item.filename === normalizedReference
+  );
+  const uniqueMediaIds = new Set(matches.map((item) => item.mediaId));
+
+  if (uniqueMediaIds.size !== 1) {
+    return null;
+  }
+
+  return matches[0] ?? null;
 }
 
 function toLegacyMediaId(filename: string) {
