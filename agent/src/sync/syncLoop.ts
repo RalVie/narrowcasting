@@ -18,9 +18,12 @@ function isSchedule(value: unknown): value is Schedule {
 
 async function fetchSchedule(config: AgentConfig): Promise<Schedule> {
   const screenId = await readScreenId(config);
-  const scheduleUrl = screenId
-    ? `${config.serverUrl}/api/schedule?screenId=${encodeURIComponent(screenId)}`
-    : `${config.serverUrl}/api/schedule`;
+
+  if (!screenId) {
+    throw new Error("screenId is required for schedule sync; keeping existing local schedule");
+  }
+
+  const scheduleUrl = `${config.serverUrl}/api/schedule?screenId=${encodeURIComponent(screenId)}`;
   const response = await fetch(scheduleUrl);
 
   if (!response.ok) {

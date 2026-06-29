@@ -11,7 +11,7 @@ export async function getGeneratedScheduleForScreen(screenId: string): Promise<S
   return resolution.schedule;
 }
 
-export async function getGeneratedSchedule(): Promise<Schedule> {
+export async function getLegacyGeneratedSchedule(): Promise<Schedule> {
   const scheduler = await readScheduler();
 
   if (scheduler.blocks.length === 0) {
