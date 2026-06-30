@@ -9,7 +9,7 @@ import {
   getMediaPath,
   listMedia
 } from "../../media/mediaStore.js";
-import { DomainValidationError, validationErrorResponse } from "../../validation/domainValidation.js";
+import { badRequest, badRequestForError, conflict, notFound, payloadTooLarge } from "../apiErrors.js";
 import { validateMediaDelete } from "../../validation/referenceIntegrity.js";
 
 const imageUploadLimitBytes = 20 * 1024 * 1024;
@@ -41,7 +41,7 @@ export const mediaRoutes: FastifyPluginAsync = async (app) => {
       const uploadedFile = await request.file();
 
       if (!uploadedFile) {
-        return reply.code(400).send({ error: "missing media upload" });
+        return badRequest(reply, "missing media upload", "MEDIA_UPLOAD_REQUIRED");
       }
 
       const isImageUpload = uploadedFile.mimetype.startsWith("image/");
@@ -49,29 +49,23 @@ export const mediaRoutes: FastifyPluginAsync = async (app) => {
         uploadedFile.mimetype === "video/mp4" || uploadedFile.mimetype === "video/webm";
 
       if (!isImageUpload && !isVideoUpload) {
-        return reply.code(400).send({ error: "only image and mp4/webm video uploads are supported" });
+        return badRequest(reply, "only image and mp4/webm video uploads are supported", "UNSUPPORTED_MEDIA_TYPE");
       }
 
       const content = await uploadedFile.toBuffer();
 
       if (isImageUpload && content.byteLength > imageUploadLimitBytes) {
-        return reply.code(413).send({ error: imageTooLargeMessage });
+        return payloadTooLarge(reply, imageTooLargeMessage);
       }
 
       const item = await createMedia(uploadedFile.filename, content);
       return reply.code(201).send(item);
     } catch (error) {
       if (isMultipartSizeLimitError(error)) {
-        return reply.code(413).send({ error: videoTooLargeMessage });
+        return payloadTooLarge(reply, videoTooLargeMessage);
       }
 
-      if (error instanceof DomainValidationError) {
-        return reply.code(400).send(validationErrorResponse(error));
-      }
-
-      return reply.code(400).send({
-        error: error instanceof Error ? error.message : "media upload failed"
-      });
+      return badRequestForError(reply, error, "media upload failed");
     }
   });
 
@@ -79,13 +73,13 @@ export const mediaRoutes: FastifyPluginAsync = async (app) => {
     const validation = await validateMediaDelete(request.params.id);
 
     if (!validation.ok) {
-      return reply.code(409).send(validation.error);
+      return conflict(reply, validation.error);
     }
 
     const deleted = await deleteMedia(request.params.id);
 
     if (!deleted) {
-      return reply.code(404).send({ error: "media item not found" });
+      return notFound(reply, "media item not found", "MEDIA_NOT_FOUND");
     }
 
     return reply.code(204).send();
@@ -97,13 +91,13 @@ export const mediaRoutes: FastifyPluginAsync = async (app) => {
     try {
       filePath = getMediaPath(request.params.file);
     } catch {
-      return reply.code(400).send({ error: "invalid media file" });
+      return badRequest(reply, "invalid media file", "INVALID_MEDIA_FILE");
     }
 
     try {
       await access(filePath);
     } catch {
-      return reply.code(404).send({ error: "media file not found" });
+      return notFound(reply, "media file not found", "MEDIA_FILE_NOT_FOUND");
     }
 
     return reply.type(getMediaContentType(request.params.file)).send(createReadStream(filePath));

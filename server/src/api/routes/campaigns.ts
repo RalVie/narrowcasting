@@ -5,7 +5,7 @@ import {
   listCampaigns,
   updateCampaign
 } from "../../campaigns/campaignStore.js";
-import { DomainValidationError, validationErrorResponse } from "../../validation/domainValidation.js";
+import { badRequestForError, conflict, notFound } from "../apiErrors.js";
 import { validateCampaignDelete } from "../../validation/referenceIntegrity.js";
 
 export const campaignRoutes: FastifyPluginAsync = async (app) => {
@@ -16,13 +16,7 @@ export const campaignRoutes: FastifyPluginAsync = async (app) => {
       const campaign = await createCampaign(request.body ?? {});
       return reply.code(201).send(campaign);
     } catch (error) {
-      if (error instanceof DomainValidationError) {
-        return reply.code(400).send(validationErrorResponse(error));
-      }
-
-      return reply.code(400).send({
-        error: error instanceof Error ? error.message : "campaign could not be created"
-      });
+      return badRequestForError(reply, error, "campaign could not be created");
     }
   });
 
@@ -31,18 +25,12 @@ export const campaignRoutes: FastifyPluginAsync = async (app) => {
       const campaign = await updateCampaign(request.params.id, request.body ?? {});
 
       if (!campaign) {
-        return reply.code(404).send({ error: "campaign not found" });
+        return notFound(reply, "campaign not found", "CAMPAIGN_NOT_FOUND");
       }
 
       return reply.send(campaign);
     } catch (error) {
-      if (error instanceof DomainValidationError) {
-        return reply.code(400).send(validationErrorResponse(error));
-      }
-
-      return reply.code(400).send({
-        error: error instanceof Error ? error.message : "campaign could not be updated"
-      });
+      return badRequestForError(reply, error, "campaign could not be updated");
     }
   });
 
@@ -50,13 +38,13 @@ export const campaignRoutes: FastifyPluginAsync = async (app) => {
     const validation = await validateCampaignDelete(request.params.id);
 
     if (!validation.ok) {
-      return reply.code(409).send(validation.error);
+      return conflict(reply, validation.error);
     }
 
     const deleted = await deleteCampaign(request.params.id);
 
     if (!deleted) {
-      return reply.code(404).send({ error: "campaign not found" });
+      return notFound(reply, "campaign not found", "CAMPAIGN_NOT_FOUND");
     }
 
     return reply.send({ ok: true });

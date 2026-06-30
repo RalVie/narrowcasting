@@ -7,6 +7,7 @@ import {
   renameScreen,
   updateScreenHeartbeat
 } from "../../screens/screenStore.js";
+import { badRequest, notFound } from "../apiErrors.js";
 
 export const screensRoutes: FastifyPluginAsync = async (app) => {
   app.get("/screens", async () => listScreens());
@@ -16,9 +17,7 @@ export const screensRoutes: FastifyPluginAsync = async (app) => {
       const screen = await registerScreen(request.body ?? {});
       return reply.code(screen.status === "pending" ? 202 : 200).send(screen);
     } catch (error) {
-      return reply.code(400).send({
-        error: error instanceof Error ? error.message : "invalid screen registration"
-      });
+      return badRequest(reply, error instanceof Error ? error.message : "invalid screen registration");
     }
   });
 
@@ -26,7 +25,7 @@ export const screensRoutes: FastifyPluginAsync = async (app) => {
     const screen = await approveScreen(request.params.id);
 
     if (!screen) {
-      return reply.code(404).send({ error: "screen not found" });
+      return notFound(reply, "screen not found", "SCREEN_NOT_FOUND");
     }
 
     return reply.send(screen);
@@ -37,7 +36,7 @@ export const screensRoutes: FastifyPluginAsync = async (app) => {
     const screen = await renameScreen(request.params.id, body?.name);
 
     if (!screen) {
-      return reply.code(404).send({ error: "screen not found" });
+      return notFound(reply, "screen not found", "SCREEN_NOT_FOUND");
     }
 
     return reply.send(screen);
@@ -47,7 +46,7 @@ export const screensRoutes: FastifyPluginAsync = async (app) => {
     const screen = await updateScreenHeartbeat(request.params.id, request.body ?? {});
 
     if (!screen) {
-      return reply.code(404).send({ error: "screen not found or heartbeat rejected" });
+      return notFound(reply, "screen not found or heartbeat rejected", "SCREEN_NOT_FOUND");
     }
 
     return reply.send(screen);
@@ -57,7 +56,7 @@ export const screensRoutes: FastifyPluginAsync = async (app) => {
     const screen = await getScreenById(request.params.id);
 
     if (!screen) {
-      return reply.code(404).send({ error: "screen not found" });
+      return notFound(reply, "screen not found", "SCREEN_NOT_FOUND");
     }
 
     return reply.send({

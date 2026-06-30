@@ -7,6 +7,7 @@ import {
   removeScreenFromGroup,
   renameScreenGroup
 } from "../../screens/screenGroupStore.js";
+import { badRequest, notFound } from "../apiErrors.js";
 
 export const screenGroupsRoutes: FastifyPluginAsync = async (app) => {
   app.get("/screen-groups", async () => listScreenGroups());
@@ -20,7 +21,7 @@ export const screenGroupsRoutes: FastifyPluginAsync = async (app) => {
     const group = await renameScreenGroup(request.params.groupId, request.body ?? {});
 
     if (!group) {
-      return reply.code(404).send({ error: "screen group not found" });
+      return notFound(reply, "screen group not found", "SCREEN_GROUP_NOT_FOUND");
     }
 
     return reply.send(group);
@@ -30,7 +31,7 @@ export const screenGroupsRoutes: FastifyPluginAsync = async (app) => {
     const deleted = await deleteScreenGroup(request.params.groupId);
 
     if (!deleted) {
-      return reply.code(404).send({ error: "screen group not found" });
+      return notFound(reply, "screen group not found", "SCREEN_GROUP_NOT_FOUND");
     }
 
     return reply.send({ ok: true });
@@ -42,14 +43,12 @@ export const screenGroupsRoutes: FastifyPluginAsync = async (app) => {
       const group = await addScreenToGroup(request.params.groupId, body?.screenId);
 
       if (!group) {
-        return reply.code(404).send({ error: "screen group not found" });
+        return notFound(reply, "screen group not found", "SCREEN_GROUP_NOT_FOUND");
       }
 
       return reply.send(group);
     } catch (error) {
-      return reply.code(400).send({
-        error: error instanceof Error ? error.message : "screen could not be added"
-      });
+      return badRequest(reply, error instanceof Error ? error.message : "screen could not be added");
     }
   });
 
@@ -58,7 +57,7 @@ export const screenGroupsRoutes: FastifyPluginAsync = async (app) => {
     const group = await removeScreenFromGroup(request.params.groupId, body?.screenId);
 
     if (!group) {
-      return reply.code(404).send({ error: "screen group not found" });
+      return notFound(reply, "screen group not found", "SCREEN_GROUP_NOT_FOUND");
     }
 
     return reply.send(group);

@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { createProgram, deleteProgram, getProgramsOrDefault, saveProgram } from "../../program/programStore.js";
-import { DomainValidationError, validationErrorResponse } from "../../validation/domainValidation.js";
+import { badRequestForError, conflict, notFound } from "../apiErrors.js";
 import { validateProgramDelete } from "../../validation/referenceIntegrity.js";
 
 export const programRoutes: FastifyPluginAsync = async (app) => {
@@ -11,11 +11,7 @@ export const programRoutes: FastifyPluginAsync = async (app) => {
       const program = await createProgram(request.body);
       return reply.code(201).send(program);
     } catch (error) {
-      if (error instanceof DomainValidationError) {
-        return reply.code(400).send(validationErrorResponse(error));
-      }
-
-      throw error;
+      return badRequestForError(reply, error, "program could not be created");
     }
   });
 
@@ -25,15 +21,11 @@ export const programRoutes: FastifyPluginAsync = async (app) => {
     try {
       program = await saveProgram(request.params.id, request.body);
     } catch (error) {
-      if (error instanceof DomainValidationError) {
-        return reply.code(400).send(validationErrorResponse(error));
-      }
-
-      throw error;
+      return badRequestForError(reply, error, "program could not be updated");
     }
 
     if (!program) {
-      return reply.code(404).send({ error: "program not found" });
+      return notFound(reply, "program not found", "PROGRAM_NOT_FOUND");
     }
 
     return reply.send(program);
@@ -43,13 +35,13 @@ export const programRoutes: FastifyPluginAsync = async (app) => {
     const validation = await validateProgramDelete(request.params.id);
 
     if (!validation.ok) {
-      return reply.code(409).send(validation.error);
+      return conflict(reply, validation.error);
     }
 
     const deleted = await deleteProgram(request.params.id);
 
     if (!deleted) {
-      return reply.code(404).send({ error: "program not found" });
+      return notFound(reply, "program not found", "PROGRAM_NOT_FOUND");
     }
 
     return reply.code(204).send();
