@@ -1,48 +1,20 @@
 import { getScheduleFromPlaylist } from "../playlist/playlistStore.js";
-import { getProgramsOrDefault } from "../program/programStore.js";
-import { staticSchedule, type Schedule } from "../schedule/staticSchedule.js";
-import { getThemeOrDefault } from "../theme/themeStore.js";
-import { getScheduleForProgram } from "./scheduleBuilder.js";
+import type { Schedule } from "../schedule/staticSchedule.js";
 import { resolveScheduleForScreen } from "./schedulerResolver.js";
-import { isSchedulerBlockActive, readScheduler } from "./schedulerStore.js";
 
 export async function getGeneratedScheduleForScreen(screenId: string): Promise<Schedule> {
   const resolution = await resolveScheduleForScreen(screenId);
   return resolution.schedule;
 }
 
+/**
+ * Legacy diagnostic snapshot only.
+ *
+ * Production player schedules must use getGeneratedScheduleForScreen(), which
+ * goes through Assignments -> Candidates -> Scheduler Resolver -> Resolved Schedule.
+ * Legacy scheduler blocks are intentionally ignored here so this helper cannot
+ * become a second runtime scheduler.
+ */
 export async function getLegacyGeneratedSchedule(): Promise<Schedule> {
-  const scheduler = await readScheduler();
-
-  if (scheduler.blocks.length === 0) {
-    return getScheduleFromPlaylist();
-  }
-
-  const activeBlock = scheduler.blocks.find((block) => isSchedulerBlockActive(block));
-
-  if (!activeBlock) {
-    return {
-      version: scheduler.version,
-      updatedAt: scheduler.updatedAt,
-      theme: await getThemeOrDefault(),
-      items: []
-    };
-  }
-
-  const [programs, theme] = await Promise.all([
-    getProgramsOrDefault(),
-    getThemeOrDefault(activeBlock.themeId)
-  ]);
-  const activeProgram = programs.find((program) => program.id === activeBlock.programId);
-
-  if (!activeProgram) {
-    return {
-      version: scheduler.version,
-      updatedAt: scheduler.updatedAt,
-      theme,
-      items: []
-    };
-  }
-
-  return getScheduleForProgram(activeProgram, activeBlock.themeId);
+  return getScheduleFromPlaylist();
 }

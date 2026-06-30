@@ -87,47 +87,6 @@ function normalizeBlock(value: unknown, index: number): SchedulerBlock | null {
   return block;
 }
 
-function getLocalDateKey(date: Date) {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function getLocalTimeKey(date: Date) {
-  const hours = `${date.getHours()}`.padStart(2, "0");
-  const minutes = `${date.getMinutes()}`.padStart(2, "0");
-  return `${hours}:${minutes}`;
-}
-
-export function isSchedulerBlockActive(block: SchedulerBlock, now = new Date()) {
-  const today = getLocalDateKey(now);
-  const currentDay = dayNames[now.getDay()];
-  const currentTime = getLocalTimeKey(now);
-
-  if (block.startDate && today < block.startDate) {
-    return false;
-  }
-
-  if (block.endDate && today > block.endDate) {
-    return false;
-  }
-
-  if (block.daysOfWeek && block.daysOfWeek.length > 0 && !block.daysOfWeek.includes(currentDay)) {
-    return false;
-  }
-
-  if (block.startTime && currentTime < block.startTime) {
-    return false;
-  }
-
-  if (block.endTime && currentTime > block.endTime) {
-    return false;
-  }
-
-  return true;
-}
-
 export async function readScheduler(): Promise<SchedulerConfig> {
   try {
     const content = await readFile(schedulerPath, "utf8");
