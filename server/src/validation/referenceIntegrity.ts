@@ -162,15 +162,15 @@ export async function validateAssignmentDelete(assignmentId: string): Promise<Re
   const assignments = await listAssignments();
   const assignment = assignments.find((item) => item.id === assignmentId);
 
-  if (!assignment || assignment.source !== "campaign") {
+  if (!assignment || assignment.sourceType !== "campaign") {
     return { ok: true };
   }
 
   return inUseError("Assignment", assignmentId, [
     {
       objectType: "Campaign",
-      objectId: assignment.id.split(":")[1] ?? assignment.id,
-      objectName: "Generated campaign assignment",
+      objectId: assignment.sourceId ?? assignment.id.split(":")[1] ?? assignment.id,
+      objectName: assignment.sourceName ?? "Generated campaign assignment",
       field: "generatedAssignments"
     }
   ]);

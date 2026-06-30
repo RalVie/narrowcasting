@@ -24,6 +24,9 @@ export interface SchedulerCandidate {
   metadata: {
     assignmentId: string;
     assignmentSource: Assignment["source"];
+    assignmentSourceType: Assignment["sourceType"];
+    assignmentSourceId?: string;
+    assignmentSourceName?: string;
     assignment: Assignment;
     matchedGroupName?: string;
     scheduleStatus: "active" | "inactive";
@@ -98,7 +101,7 @@ function assignmentToCandidate(
 
   return {
     id: assignment.id,
-    sourceType: assignment.source === "campaign" ? "campaign" : "assignment",
+    sourceType: assignment.sourceType === "campaign" ? "campaign" : "assignment",
     targetType,
     targetId: assignment.targetId,
     programId: assignment.programId,
@@ -107,6 +110,9 @@ function assignmentToCandidate(
     metadata: {
       assignmentId: assignment.id,
       assignmentSource: assignment.source,
+      assignmentSourceType: assignment.sourceType,
+      assignmentSourceId: assignment.sourceId,
+      assignmentSourceName: assignment.sourceName,
       assignment,
       matchedGroupName: matchedGroup?.name,
       scheduleStatus: scheduleEvaluation.active ? "active" : "inactive",

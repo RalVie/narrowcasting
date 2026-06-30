@@ -163,6 +163,7 @@ async function syncCampaign(campaign: Campaign) {
     targetType: campaign.targetType,
     targetIds: campaign.targetIds,
     programId: campaign.programId,
+    campaignName: campaign.name,
     createdAt: campaign.createdAt,
     updatedAt: campaign.updatedAt
   });

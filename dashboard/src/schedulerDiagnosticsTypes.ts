@@ -16,6 +16,9 @@ export interface SchedulerCandidate {
   metadata: {
     assignmentId?: string;
     assignmentSource?: Assignment["source"];
+    assignmentSourceType?: Assignment["sourceType"];
+    assignmentSourceId?: string;
+    assignmentSourceName?: string;
     assignment?: Assignment;
     matchedGroupName?: string;
     scheduleStatus?: "active" | "inactive";

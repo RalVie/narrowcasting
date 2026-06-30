@@ -16,6 +16,10 @@ export interface Assignment {
   programId: string;
   enabled: boolean;
   source: "manual" | "campaign";
+  sourceType: "manual" | "campaign";
+  sourceId?: string;
+  sourceName?: string;
+  generatedAt?: string;
   schedule?: AssignmentSchedule;
   createdAt: string;
   updatedAt: string;

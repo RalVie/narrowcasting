@@ -29,6 +29,14 @@ function formatDateTime(value: string) {
   return Number.isFinite(time) ? new Date(time).toLocaleString() : "-";
 }
 
+function formatAssignmentOrigin(assignment: Assignment) {
+  if (assignment.sourceType === "campaign") {
+    return `Campaign: ${assignment.sourceName ?? assignment.sourceId ?? "Unknown campaign"}`;
+  }
+
+  return "Manual";
+}
+
 export function AssignmentsPage() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [screens, setScreens] = useState<ScreenRecord[]>([]);
@@ -493,7 +501,7 @@ export function AssignmentsPage() {
                       {formatTargetType(assignment.targetType)} to {programMap.get(assignment.programId)?.name ?? "Missing program"}
                     </span>
                     <small>
-                      Source {assignment.source} / Updated {formatDateTime(assignment.updatedAt)}
+                      Origin {formatAssignmentOrigin(assignment)} / Updated {formatDateTime(assignment.updatedAt)}
                     </small>
                   </div>
                   <div className="assignment-form-grid">

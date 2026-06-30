@@ -7,6 +7,7 @@ import { listScreens } from "../screens/screenStore.js";
 
 export type AssignmentTargetType = "SCREEN" | "SCREEN_GROUP";
 export type AssignmentSource = "manual" | "campaign";
+export type AssignmentSourceType = AssignmentSource;
 
 export interface AssignmentSchedule {
   enabled: boolean;
@@ -24,6 +25,10 @@ export interface Assignment {
   programId: string;
   enabled: boolean;
   source: AssignmentSource;
+  sourceType: AssignmentSourceType;
+  sourceId?: string;
+  sourceName?: string;
+  generatedAt?: string;
   schedule?: AssignmentSchedule;
   createdAt: string;
   updatedAt: string;
@@ -41,6 +46,15 @@ function normalizeTargetType(value: unknown): AssignmentTargetType | null {
 
 function normalizeSource(value: unknown): AssignmentSource {
   return value === "campaign" ? "campaign" : "manual";
+}
+
+function normalizeSourceType(value: unknown, fallback: AssignmentSource): AssignmentSourceType {
+  return value === "campaign" || value === "manual" ? value : fallback;
+}
+
+function campaignIdFromGeneratedAssignmentId(id: string) {
+  const match = /^campaign:([^:]+):/.exec(id);
+  return match?.[1];
 }
 
 function normalizeSchedule(value: unknown): AssignmentSchedule | undefined {
@@ -103,13 +117,23 @@ function normalizeAssignment(value: unknown): Assignment | null {
 
   const now = new Date().toISOString();
 
+  const sourceType = normalizeSourceType(candidate.sourceType, normalizeSource(candidate.source));
+  const source = sourceType;
+  const sourceId =
+    sanitizeText(candidate.sourceId) ||
+    (sourceType === "campaign" ? campaignIdFromGeneratedAssignmentId(candidate.id) : undefined);
+
   return {
     id: candidate.id,
     targetType,
     targetId: candidate.targetId,
     programId: candidate.programId,
     enabled: candidate.enabled !== false,
-    source: normalizeSource(candidate.source),
+    source,
+    sourceType,
+    sourceId,
+    sourceName: sanitizeText(candidate.sourceName) || undefined,
+    generatedAt: sanitizeText(candidate.generatedAt) || undefined,
     schedule: normalizeSchedule(candidate.schedule),
     createdAt: sanitizeText(candidate.createdAt, now),
     updatedAt: sanitizeText(candidate.updatedAt, candidate.createdAt ?? now)
@@ -153,6 +177,7 @@ async function migrateLegacyScreenAssignments(): Promise<Assignment[]> {
       programId: screen.assignedProgramId as string,
       enabled: true,
       source: "manual" as const,
+      sourceType: "manual" as const,
       schedule: undefined,
       createdAt: screen.lastAssignment ?? now,
       updatedAt: screen.lastAssignment ?? now
@@ -227,7 +252,6 @@ function readAssignmentInput(input: unknown) {
     targetId,
     programId,
     enabled: body.enabled !== false,
-    source: normalizeSource(body.source),
     schedule: normalizeSchedule(body.schedule)
   };
 }
@@ -241,7 +265,10 @@ export async function createAssignment(input: unknown): Promise<Assignment> {
 
   const assignments = await listAssignments();
   const existing = assignments.find(
-    (assignment) => assignment.targetType === next.targetType && assignment.targetId === next.targetId
+    (assignment) =>
+      assignment.sourceType === "manual" &&
+      assignment.targetType === next.targetType &&
+      assignment.targetId === next.targetId
   );
   const now = new Date().toISOString();
 
@@ -251,7 +278,11 @@ export async function createAssignment(input: unknown): Promise<Assignment> {
     targetId: next.targetId,
     programId: next.programId,
     enabled: next.enabled,
-    source: next.source,
+    source: "manual",
+    sourceType: "manual",
+    sourceId: undefined,
+    sourceName: undefined,
+    generatedAt: undefined,
     schedule: next.schedule,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now
@@ -288,6 +319,8 @@ export async function updateAssignment(id: string, input: unknown): Promise<Assi
   const duplicate = assignments.find(
     (assignment) =>
       assignment.id !== id &&
+      assignment.sourceType === existing.sourceType &&
+      assignment.sourceId === existing.sourceId &&
       assignment.targetType === targetType &&
       assignment.targetId === targetId
   );
@@ -303,6 +336,10 @@ export async function updateAssignment(id: string, input: unknown): Promise<Assi
     programId,
     enabled,
     source: existing.source,
+    sourceType: existing.sourceType,
+    sourceId: existing.sourceId,
+    sourceName: existing.sourceName,
+    generatedAt: existing.generatedAt,
     schedule,
     updatedAt: new Date().toISOString()
   };
@@ -329,6 +366,7 @@ export async function syncCampaignAssignments(input: {
   targetType: AssignmentTargetType;
   targetIds: string[];
   programId: string;
+  campaignName: string;
   createdAt: string;
   updatedAt: string;
 }): Promise<Assignment[]> {
@@ -339,14 +377,13 @@ export async function syncCampaignAssignments(input: {
 
   const assignments = await listAssignments();
   const campaignPrefix = `campaign:${input.campaignId}:`;
-  const targetKeys = new Set(input.targetIds.map((targetId) => `${input.targetType}:${targetId}`));
-  const retainedAssignments = assignments.filter((assignment) => {
-    if (assignment.id.startsWith(campaignPrefix)) {
-      return false;
-    }
-
-    return !input.enabled || !targetKeys.has(`${assignment.targetType}:${assignment.targetId}`);
-  });
+  const retainedAssignments = assignments.filter(
+    (assignment) =>
+      !(
+        assignment.sourceType === "campaign" &&
+        (assignment.sourceId === input.campaignId || assignment.id.startsWith(campaignPrefix))
+      )
+  );
   const nextCampaignAssignments = input.enabled
     ? input.targetIds.map((targetId) => {
         const id = `${campaignPrefix}${input.targetType}:${targetId}`;
@@ -359,6 +396,10 @@ export async function syncCampaignAssignments(input: {
           programId: input.programId,
           enabled: true,
           source: "campaign" as const,
+          sourceType: "campaign" as const,
+          sourceId: input.campaignId,
+          sourceName: input.campaignName,
+          generatedAt: existing?.generatedAt ?? input.createdAt,
           schedule: undefined,
           createdAt: existing?.createdAt ?? input.createdAt,
           updatedAt: input.updatedAt
@@ -374,7 +415,13 @@ export async function syncCampaignAssignments(input: {
 export async function deleteCampaignAssignments(campaignId: string): Promise<void> {
   const assignments = await listAssignments();
   const campaignPrefix = `campaign:${campaignId}:`;
-  const nextAssignments = assignments.filter((assignment) => !assignment.id.startsWith(campaignPrefix));
+  const nextAssignments = assignments.filter(
+    (assignment) =>
+      !(
+        assignment.sourceType === "campaign" &&
+        (assignment.sourceId === campaignId || assignment.id.startsWith(campaignPrefix))
+      )
+  );
 
   await writeAssignments(nextAssignments);
 }

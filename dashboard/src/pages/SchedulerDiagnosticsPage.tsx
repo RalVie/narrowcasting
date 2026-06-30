@@ -28,9 +28,31 @@ function getCampaignId(candidate: SchedulerCandidate | null) {
     return null;
   }
 
+  if (candidate.metadata.assignmentSourceId) {
+    return candidate.metadata.assignmentSourceId;
+  }
+
+  if (candidate.metadata.assignment?.sourceId) {
+    return candidate.metadata.assignment.sourceId;
+  }
+
   const assignmentId = candidate.metadata.assignmentId ?? candidate.id;
   const match = /^campaign:([^:]+):/.exec(assignmentId);
   return match?.[1] ?? null;
+}
+
+function getAssignmentOrigin(candidate: SchedulerCandidate) {
+  if (candidate.metadata.assignmentSourceType === "campaign" || candidate.sourceType === "campaign") {
+    return `Campaign: ${
+      candidate.metadata.assignmentSourceName ??
+      candidate.metadata.assignment?.sourceName ??
+      candidate.metadata.assignmentSourceId ??
+      candidate.metadata.assignment?.sourceId ??
+      "Unknown campaign"
+    }`;
+  }
+
+  return "Manual";
 }
 
 function describeCandidate(candidate: SchedulerCandidate | null) {
@@ -218,6 +240,8 @@ export function SchedulerDiagnosticsPage() {
           <dd>{candidate.priority}</dd>
           <dt>Source</dt>
           <dd>{candidate.sourceType}</dd>
+          <dt>Assignment Origin</dt>
+          <dd>{getAssignmentOrigin(candidate)}</dd>
           <dt>Target</dt>
           <dd>
             {candidate.targetType} / {candidate.targetId}
@@ -255,6 +279,8 @@ export function SchedulerDiagnosticsPage() {
           <dd>{candidate.priority}</dd>
           <dt>Source</dt>
           <dd>{candidate.sourceType}</dd>
+          <dt>Assignment Origin</dt>
+          <dd>{getAssignmentOrigin(candidate)}</dd>
           <dt>Target</dt>
           <dd>
             {candidate.targetType} / {candidate.targetId}
@@ -297,6 +323,8 @@ export function SchedulerDiagnosticsPage() {
           <dd>{entry.rejectionReason ?? "-"}</dd>
           <dt>Source</dt>
           <dd>{entry.sourceType}</dd>
+          <dt>Assignment Origin</dt>
+          <dd>{getAssignmentOrigin(entry.candidate)}</dd>
           <dt>Target</dt>
           <dd>
             {entry.targetType} / {entry.targetId}
@@ -407,6 +435,8 @@ export function SchedulerDiagnosticsPage() {
               <dd>{result.winningCandidate?.id ?? "-"}</dd>
               <dt>Source</dt>
               <dd>{result.winningCandidate?.sourceType ?? "-"}</dd>
+              <dt>Assignment Origin</dt>
+              <dd>{result.winningCandidate ? getAssignmentOrigin(result.winningCandidate) : "-"}</dd>
               <dt>Target</dt>
               <dd>
                 {result.winningCandidate
