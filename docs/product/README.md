@@ -26,7 +26,8 @@ The Product Specification complements the technical architecture. Architecture e
 4. [03 UX Foundations](03_UX_FOUNDATIONS.md)
 5. [04 Workspaces](04_WORKSPACES.md)
 6. Read the relevant product-area specification before implementation.
-7. [16 Implementation Guidelines](16_IMPLEMENTATION_GUIDELINES.md)
+7. [17 Workflows & Navigation](17_WORKFLOWS_AND_NAVIGATION.md)
+8. [16 Implementation Guidelines](16_IMPLEMENTATION_GUIDELINES.md)
 
 ## Product Documents
 
@@ -49,6 +50,7 @@ The Product Specification complements the technical architecture. Architecture e
 | [14 Storage & Media Management](14_STORAGE_AND_MEDIA_MANAGEMENT.md) | Media lifecycle, dependency tracking, safe deletion, and cache health. |
 | [15 Design System](15_DESIGN_SYSTEM.md) | Visual language, layout rules, components, accessibility, and responsive behaviour. |
 | [16 Implementation Guidelines](16_IMPLEMENTATION_GUIDELINES.md) | Development process, architecture compliance, documentation rules, and stable releases. |
+| [17 Workflows & Navigation](17_WORKFLOWS_AND_NAVIGATION.md) | Workflow-first navigation, progressive disclosure, workspace responsibilities, and current Dashboard page classification. |
 
 ## Relationship With Architecture
 

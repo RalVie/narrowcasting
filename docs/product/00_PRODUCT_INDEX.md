@@ -54,6 +54,7 @@ Architecture defines technical boundaries. Product Specification defines behavio
 | PRODUCT-014 | [Storage & Media Management](14_STORAGE_AND_MEDIA_MANAGEMENT.md) | Media lifecycle, storage, cache, cleanup, and dependency management. |
 | PRODUCT-015 | [Design System](15_DESIGN_SYSTEM.md) | Components, visual language, spacing, typography, colour, and accessibility. |
 | PRODUCT-016 | [Implementation Guidelines](16_IMPLEMENTATION_GUIDELINES.md) | Development process, architecture compliance, documentation rules, stable releases, and AI development guidelines. |
+| PRODUCT-017 | [Workflows & Navigation](17_WORKFLOWS_AND_NAVIGATION.md) | Workflow-first navigation, progressive disclosure, support workspace boundaries, and Dashboard page classification. |
 
 ## Reading Order
 
@@ -117,6 +118,7 @@ PRODUCT-002/004/006 -> PRODUCT-013 Installations & Locations
 PRODUCT-006/007/009 -> PRODUCT-014 Storage & Media Management
 PRODUCT-003/004 -> PRODUCT-015 Design System
 Architecture/Product Specification -> PRODUCT-016 Implementation Guidelines
+PRODUCT-003/004/007/008 -> PRODUCT-017 Workflows & Navigation
 ```
 
 ## Product Principles
@@ -151,12 +153,12 @@ Reserved future Product Specification numbers:
 
 | Product ID | Future document |
 | --- | --- |
-| PRODUCT-017 | API & Integrations |
-| PRODUCT-018 | Automation & Triggers |
-| PRODUCT-019 | Reporting & Analytics |
-| PRODUCT-020 | Cloud Services |
-| PRODUCT-021 | AI Services |
-| PRODUCT-022 | Multi-Tenant Architecture |
+| PRODUCT-018 | API & Integrations |
+| PRODUCT-019 | Automation & Triggers |
+| PRODUCT-020 | Reporting & Analytics |
+| PRODUCT-021 | Cloud Services |
+| PRODUCT-022 | AI Services |
+| PRODUCT-023 | Multi-Tenant Architecture |
 
 Future implementation contracts will live in `../implementation/` and may include domain models, API contracts, validation catalogs, security, multi-operator collaboration, player protocol, enterprise scale, and backup and recovery.
 

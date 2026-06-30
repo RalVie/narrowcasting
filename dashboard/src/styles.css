@@ -103,12 +103,32 @@ a {
   gap: 8px;
 }
 
+.sidebar-nav-details {
+  align-content: start;
+}
+
+.sidebar-nav-details summary {
+  cursor: pointer;
+  list-style-position: outside;
+}
+
+.sidebar-nav-details summary h2 {
+  display: inline;
+}
+
 .sidebar-nav-group h2 {
   margin: 0 0 2px;
   color: #b8d8c5;
   font-size: 12px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.sidebar-nav-description {
+  margin: -2px 0 2px;
+  color: rgb(248 251 246 / 70%);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .sidebar a {

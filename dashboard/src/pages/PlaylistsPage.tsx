@@ -417,7 +417,7 @@ export function PlaylistsPage() {
     <section className="page-section operator-section" id="playlists">
       <div className="section-header">
         <div>
-          <h2>Operator Workspace</h2>
+          <h2>Playlists</h2>
           <p>Build playlists from media with direct drag and drop.</p>
         </div>
         <div className="button-row">

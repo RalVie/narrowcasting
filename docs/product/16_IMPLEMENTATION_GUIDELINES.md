@@ -547,5 +547,5 @@ Over time, these Product Specifications become the authoritative source for both
 ## Document Navigation
 
 - **Previous:** 15_DESIGN_SYSTEM.md
-- **Next:** None
+- **Next:** 17_WORKFLOWS_AND_NAVIGATION.md
 - **Related specifications:** 00_PRODUCT_INDEX.md, ../architecture/ARCHITECTURE.md
