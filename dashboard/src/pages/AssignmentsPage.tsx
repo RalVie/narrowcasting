@@ -37,6 +37,10 @@ function formatAssignmentOrigin(assignment: Assignment) {
   return "Manual";
 }
 
+function isCampaignManagedAssignment(assignment: Assignment) {
+  return assignment.sourceType === "campaign";
+}
+
 export function AssignmentsPage() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [screens, setScreens] = useState<ScreenRecord[]>([]);
@@ -149,8 +153,7 @@ export function AssignmentsPage() {
       });
 
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(body?.error ?? `HTTP ${response.status}`);
+        throw new Error(await readApiError(response));
       }
 
       setStatus("Assignment saved.");
@@ -492,6 +495,7 @@ export function AssignmentsPage() {
             {assignments.map((assignment) => {
               const draft = drafts[assignment.id] ?? assignment;
               const targetOptions = renderTargetOptions(draft.targetType);
+              const isManaged = isCampaignManagedAssignment(assignment);
 
               return (
                 <article className="assignment-card" key={assignment.id}>
@@ -503,11 +507,13 @@ export function AssignmentsPage() {
                     <small>
                       Origin {formatAssignmentOrigin(assignment)} / Updated {formatDateTime(assignment.updatedAt)}
                     </small>
+                    {isManaged ? <small>Managed by campaign. Edit the campaign to change this assignment.</small> : null}
                   </div>
                   <div className="assignment-form-grid">
                     <label>
                       Target type
                       <select
+                        disabled={isManaged}
                         onChange={(event) =>
                           setDrafts((currentDrafts) => ({
                             ...currentDrafts,
@@ -527,6 +533,7 @@ export function AssignmentsPage() {
                     <label>
                       Target
                       <select
+                        disabled={isManaged}
                         onChange={(event) =>
                           setDrafts((currentDrafts) => ({
                             ...currentDrafts,
@@ -545,6 +552,7 @@ export function AssignmentsPage() {
                     <label>
                       Program
                       <select
+                        disabled={isManaged}
                         onChange={(event) =>
                           setDrafts((currentDrafts) => ({
                             ...currentDrafts,
@@ -567,6 +575,7 @@ export function AssignmentsPage() {
                       Enabled
                       <input
                         checked={draft.enabled}
+                        disabled={isManaged}
                         onChange={(event) =>
                           setDrafts((currentDrafts) => ({
                             ...currentDrafts,
@@ -580,15 +589,15 @@ export function AssignmentsPage() {
                       />
                     </label>
                     <div className="assignment-actions">
-                      <button disabled={isBusy} onClick={() => void updateExistingAssignment(assignment)} type="button">
+                      <button disabled={isBusy || isManaged} onClick={() => void updateExistingAssignment(assignment)} type="button">
                         Save
                       </button>
-                      <button disabled={isBusy} onClick={() => void deleteExistingAssignment(assignment)} type="button">
+                      <button disabled={isBusy || isManaged} onClick={() => void deleteExistingAssignment(assignment)} type="button">
                         Delete
                       </button>
                     </div>
                   </div>
-                  {renderScheduleEditor(assignment, draft)}
+                  {isManaged ? null : renderScheduleEditor(assignment, draft)}
                 </article>
               );
             })}

@@ -34,6 +34,17 @@ export interface Assignment {
   updatedAt: string;
 }
 
+export class AssignmentOwnershipError extends Error {
+  code = "ASSIGNMENT_MANAGED_BY_CAMPAIGN" as const;
+
+  constructor(
+    public assignment: Assignment,
+    action: "update" | "delete"
+  ) {
+    super(`Assignment cannot be manually ${action}d because it is managed by campaign.`);
+  }
+}
+
 const assignmentsPath = resolve(process.cwd(), "data", "assignments.json");
 
 function sanitizeText(value: unknown, fallback = "") {
@@ -55,6 +66,16 @@ function normalizeSourceType(value: unknown, fallback: AssignmentSource): Assign
 function campaignIdFromGeneratedAssignmentId(id: string) {
   const match = /^campaign:([^:]+):/.exec(id);
   return match?.[1];
+}
+
+export function isCampaignManagedAssignment(assignment: Assignment) {
+  return assignment.sourceType === "campaign";
+}
+
+function assertManualAssignmentMutation(assignment: Assignment, action: "update" | "delete") {
+  if (isCampaignManagedAssignment(assignment)) {
+    throw new AssignmentOwnershipError(assignment, action);
+  }
 }
 
 function normalizeSchedule(value: unknown): AssignmentSchedule | undefined {
@@ -304,6 +325,8 @@ export async function updateAssignment(id: string, input: unknown): Promise<Assi
     return null;
   }
 
+  assertManualAssignmentMutation(existing, "update");
+
   const body = input && typeof input === "object" ? (input as Partial<Assignment>) : {};
   const targetType = normalizeTargetType(body.targetType) ?? existing.targetType;
   const targetId = sanitizeText(body.targetId, existing.targetId);
@@ -350,11 +373,15 @@ export async function updateAssignment(id: string, input: unknown): Promise<Assi
 
 export async function deleteAssignment(id: string): Promise<boolean> {
   const assignments = await listAssignments();
-  const nextAssignments = assignments.filter((assignment) => assignment.id !== id);
+  const existing = assignments.find((assignment) => assignment.id === id);
 
-  if (nextAssignments.length === assignments.length) {
+  if (!existing) {
     return false;
   }
+
+  assertManualAssignmentMutation(existing, "delete");
+
+  const nextAssignments = assignments.filter((assignment) => assignment.id !== id);
 
   await writeAssignments(nextAssignments);
   return true;

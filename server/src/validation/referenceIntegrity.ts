@@ -15,7 +15,7 @@ export interface ReferenceUsage {
 
 export interface ReferenceValidationError {
   error: "validation_error";
-  code: "REFERENCE_IN_USE";
+  code: "REFERENCE_IN_USE" | "ASSIGNMENT_MANAGED_BY_CAMPAIGN";
   message: string;
   objectType: string;
   objectId: string;
@@ -49,6 +49,31 @@ function inUseError(
 
 function resultForReferences(objectType: string, objectId: string, references: ReferenceUsage[]) {
   return references.length > 0 ? inUseError(objectType, objectId, references) : { ok: true as const };
+}
+
+function assignmentOwnershipError(
+  assignmentId: string,
+  campaignId: string,
+  campaignName: string
+): ReferenceValidationResult {
+  return {
+    ok: false,
+    error: {
+      error: "validation_error",
+      code: "ASSIGNMENT_MANAGED_BY_CAMPAIGN",
+      message: "Assignment cannot be manually deleted because it is managed by campaign.",
+      objectType: "Assignment",
+      objectId: assignmentId,
+      references: [
+        {
+          objectType: "Campaign",
+          objectId: campaignId,
+          objectName: campaignName,
+          field: "generatedAssignments"
+        }
+      ]
+    }
+  };
 }
 
 export async function validateMediaDelete(reference: string): Promise<ReferenceValidationResult> {
@@ -166,14 +191,11 @@ export async function validateAssignmentDelete(assignmentId: string): Promise<Re
     return { ok: true };
   }
 
-  return inUseError("Assignment", assignmentId, [
-    {
-      objectType: "Campaign",
-      objectId: assignment.sourceId ?? assignment.id.split(":")[1] ?? assignment.id,
-      objectName: assignment.sourceName ?? "Generated campaign assignment",
-      field: "generatedAssignments"
-    }
-  ]);
+  return assignmentOwnershipError(
+    assignmentId,
+    assignment.sourceId ?? assignment.id.split(":")[1] ?? assignment.id,
+    assignment.sourceName ?? "Generated campaign assignment"
+  );
 }
 
 export async function validateCampaignDelete(_campaignId: string): Promise<ReferenceValidationResult> {

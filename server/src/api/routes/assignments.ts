@@ -1,11 +1,27 @@
 import type { FastifyPluginAsync } from "fastify";
 import {
+  AssignmentOwnershipError,
   createAssignment,
   deleteAssignment,
   listAssignments,
   updateAssignment
 } from "../../assignments/assignmentStore.js";
 import { validateAssignmentDelete } from "../../validation/referenceIntegrity.js";
+
+function assignmentOwnershipError(error: AssignmentOwnershipError) {
+  return {
+    error: "validation_error",
+    code: error.code,
+    message: error.message,
+    objectType: "Assignment",
+    objectId: error.assignment.id,
+    owner: {
+      sourceType: error.assignment.sourceType,
+      sourceId: error.assignment.sourceId ?? null,
+      sourceName: error.assignment.sourceName ?? null
+    }
+  };
+}
 
 export const assignmentRoutes: FastifyPluginAsync = async (app) => {
   app.get("/assignments", async () => listAssignments());
@@ -31,6 +47,10 @@ export const assignmentRoutes: FastifyPluginAsync = async (app) => {
 
       return reply.send(assignment);
     } catch (error) {
+      if (error instanceof AssignmentOwnershipError) {
+        return reply.code(409).send(assignmentOwnershipError(error));
+      }
+
       return reply.code(400).send({
         error: error instanceof Error ? error.message : "assignment could not be updated"
       });
@@ -44,7 +64,17 @@ export const assignmentRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(409).send(validation.error);
     }
 
-    const deleted = await deleteAssignment(request.params.id);
+    let deleted: boolean;
+
+    try {
+      deleted = await deleteAssignment(request.params.id);
+    } catch (error) {
+      if (error instanceof AssignmentOwnershipError) {
+        return reply.code(409).send(assignmentOwnershipError(error));
+      }
+
+      throw error;
+    }
 
     if (!deleted) {
       return reply.code(404).send({ error: "assignment not found" });
