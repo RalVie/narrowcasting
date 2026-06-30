@@ -13,6 +13,23 @@ function getDefaultApiBaseUrl() {
 export const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? getDefaultApiBaseUrl();
 const adminKeyStorageKey = "narrowcasting:admin-key";
 const adminKeyHeader = "X-Narrowcasting-Admin-Key";
+const adminKeyChangedEvent = "narrowcasting-admin-key-changed";
+const protectedManagementReadPrefixes = [
+  "/api/media",
+  "/api/playlist",
+  "/api/playlists",
+  "/api/programs",
+  "/api/themes",
+  "/api/campaigns",
+  "/api/assignments",
+  "/api/screens",
+  "/api/screen-groups",
+  "/api/scheduler",
+  "/api/status",
+  "/api/player-cache",
+  "/api/agent-status",
+  "/api/audit"
+];
 
 export function apiUrl(path: string) {
   return `${apiBaseUrl}${path}`;
@@ -39,13 +56,25 @@ function isProtectedDashboardRead(url: string) {
   try {
     const targetUrl = new URL(url, window.location.origin);
 
-    return targetUrl.pathname === "/api/audit" || targetUrl.pathname.startsWith("/api/audit/");
+    return protectedManagementReadPrefixes.some(
+      (prefix) => targetUrl.pathname === prefix || targetUrl.pathname.startsWith(`${prefix}/`)
+    );
   } catch {
     return false;
   }
 }
 
-function readStoredAdminKey() {
+function notifyAdminKeyChanged() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(adminKeyChangedEvent));
+  }
+}
+
+export function readDashboardAdminKey() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
   const envKey = import.meta.env.VITE_ADMIN_KEY;
 
   if (typeof envKey === "string" && envKey.trim()) {
@@ -55,19 +84,53 @@ function readStoredAdminKey() {
   return window.localStorage.getItem(adminKeyStorageKey)?.trim() || null;
 }
 
-function requestAdminKey() {
-  const key = window.prompt("Enter Narrowcasting admin key for management changes.");
+export function hasDashboardAdminKey() {
+  return Boolean(readDashboardAdminKey());
+}
+
+export function setDashboardAdminKey(key: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const trimmedKey = key.trim();
+
+  if (!trimmedKey) {
+    return;
+  }
+
+  window.localStorage.setItem(adminKeyStorageKey, trimmedKey);
+  notifyAdminKeyChanged();
+}
+
+export function clearDashboardAdminKey() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.removeItem(adminKeyStorageKey);
+  notifyAdminKeyChanged();
+}
+
+export function promptForDashboardAdminKey() {
+  const key = window.prompt("Enter Narrowcasting admin key for management access.");
 
   if (key && key.trim()) {
-    window.localStorage.setItem(adminKeyStorageKey, key.trim());
+    setDashboardAdminKey(key);
     return key.trim();
   }
 
   return null;
 }
 
-function getAdminKeyForMutation() {
-  return readStoredAdminKey() ?? requestAdminKey();
+export function subscribeDashboardAdminKeyChange(callback: () => void) {
+  window.addEventListener(adminKeyChangedEvent, callback);
+
+  return () => window.removeEventListener(adminKeyChangedEvent, callback);
+}
+
+function getAdminKeyForProtectedRequest() {
+  return readDashboardAdminKey() ?? promptForDashboardAdminKey();
 }
 
 function installAdminFetchBoundary() {
@@ -89,7 +152,7 @@ function installAdminFetchBoundary() {
     const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
 
     if (isDashboardApiRequest(url) && (isMutationMethod(method) || isProtectedDashboardRead(url))) {
-      const adminKey = getAdminKeyForMutation();
+      const adminKey = getAdminKeyForProtectedRequest();
       const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
 
       if (adminKey) {
@@ -101,7 +164,7 @@ function installAdminFetchBoundary() {
         headers
       }).then((response) => {
         if (response.status === 401) {
-          window.localStorage.removeItem(adminKeyStorageKey);
+          clearDashboardAdminKey();
         }
 
         return response;

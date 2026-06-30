@@ -2,6 +2,22 @@ import { timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 const adminKeyHeader = "x-narrowcasting-admin-key";
+const adminProtectedReadPrefixes = [
+  "/api/media",
+  "/api/playlist",
+  "/api/playlists",
+  "/api/programs",
+  "/api/themes",
+  "/api/campaigns",
+  "/api/assignments",
+  "/api/screens",
+  "/api/screen-groups",
+  "/api/scheduler",
+  "/api/status",
+  "/api/player-cache",
+  "/api/agent-status",
+  "/api/audit"
+];
 let warnedAboutDevBypass = false;
 
 function getConfiguredAdminKey() {
@@ -13,13 +29,13 @@ function isProduction() {
 }
 
 function isReadMethod(method: string) {
-  return method === "GET" || method === "HEAD" || method === "OPTIONS";
+  return method === "GET" || method === "HEAD";
 }
 
 function isAdminProtectedRead(request: FastifyRequest) {
   const path = request.url.split("?")[0];
 
-  return path === "/api/audit" || path.startsWith("/api/audit/");
+  return adminProtectedReadPrefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 }
 
 function isDeviceRuntimeMutation(request: FastifyRequest) {
@@ -90,6 +106,7 @@ function authNotConfigured(reply: FastifyReply) {
 export function registerAdminAuth(app: FastifyInstance) {
   app.addHook("onRequest", async (request, reply) => {
     if (
+      request.method === "OPTIONS" ||
       (isReadMethod(request.method) && !isAdminProtectedRead(request)) ||
       !isProtectedApiPath(request) ||
       isDeviceRuntimeMutation(request)
@@ -106,7 +123,7 @@ export function registerAdminAuth(app: FastifyInstance) {
 
       if (!warnedAboutDevBypass) {
         request.log.warn(
-          "admin API mutations are unprotected because NARROWCASTING_ADMIN_KEY is not configured outside production"
+          "admin API management routes are unprotected because NARROWCASTING_ADMIN_KEY is not configured outside production"
         );
         warnedAboutDevBypass = true;
       }

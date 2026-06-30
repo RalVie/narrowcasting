@@ -1,3 +1,10 @@
+import { useEffect, useState } from "react";
+import {
+  clearDashboardAdminKey,
+  hasDashboardAdminKey,
+  promptForDashboardAdminKey,
+  subscribeDashboardAdminKeyChange
+} from "./api/apiBase";
 import { AssignmentsPage } from "./pages/AssignmentsPage";
 import { AuditPage } from "./pages/AuditPage";
 import { CampaignsPage } from "./pages/CampaignsPage";
@@ -54,6 +61,42 @@ function toSectionId(label: string) {
   return label.toLowerCase().replace(/\s+/g, "-");
 }
 
+function AdminSessionControl() {
+  const [isUnlocked, setIsUnlocked] = useState(() => hasDashboardAdminKey());
+
+  useEffect(() => subscribeDashboardAdminKeyChange(() => setIsUnlocked(hasDashboardAdminKey())), []);
+
+  function handleChangeKey() {
+    promptForDashboardAdminKey();
+    setIsUnlocked(hasDashboardAdminKey());
+  }
+
+  function handleClearKey() {
+    clearDashboardAdminKey();
+    setIsUnlocked(hasDashboardAdminKey());
+  }
+
+  return (
+    <section className={`admin-session ${isUnlocked ? "admin-session-unlocked" : "admin-session-locked"}`}>
+      <div>
+        <p className="admin-session-label">Admin session</p>
+        <strong>{isUnlocked ? "Admin unlocked" : "Admin locked"}</strong>
+      </div>
+      <div className="admin-session-actions">
+        <button type="button" onClick={handleChangeKey}>
+          {isUnlocked ? "Change key" : "Enter key"}
+        </button>
+        <button type="button" onClick={handleClearKey}>
+          Clear key
+        </button>
+        <button type="button" onClick={() => window.location.reload()}>
+          Retry
+        </button>
+      </div>
+    </section>
+  );
+}
+
 export function App() {
   return (
     <main className="app-shell">
@@ -62,6 +105,7 @@ export function App() {
           <p className="eyebrow">Local-first</p>
           <h1>Narrowcasting</h1>
         </div>
+        <AdminSessionControl />
         <nav aria-label="Dashboard sections">
           {pageGroups.map((group) => (
             <section className="sidebar-nav-group" key={group.label}>
