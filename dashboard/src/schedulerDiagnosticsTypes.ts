@@ -23,6 +23,8 @@ export interface SchedulerCandidate {
     matchedGroupName?: string;
     scheduleStatus?: "active" | "inactive";
     scheduleReason?: string;
+    selectionReason?: string;
+    tieBreakRank?: string[];
   };
 }
 
@@ -33,12 +35,15 @@ export interface RejectedSchedulerCandidate extends SchedulerCandidate {
 export type CandidateEvaluationStatus = "Selected" | "Rejected" | "Ignored";
 export type CandidateRejectionReason =
   | "Lower priority"
+  | "Less specific target"
+  | "Campaign loses to manual assignment"
+  | "Older assignment"
   | "Disabled"
   | "Outside date range"
   | "Outside daily time"
   | "Wrong weekday"
   | "No valid assignment"
-  | "Tie (deterministic ordering)";
+  | "Stable id fallback";
 
 export interface SchedulerResolutionTraceEntry {
   candidateId: string;

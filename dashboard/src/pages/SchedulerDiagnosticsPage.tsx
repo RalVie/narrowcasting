@@ -64,6 +64,10 @@ function describeCandidate(candidate: SchedulerCandidate | null) {
 }
 
 function describeCandidateDecision(candidate: SchedulerCandidate, winner: SchedulerCandidate | null) {
+  if (candidate.metadata.selectionReason) {
+    return candidate.metadata.selectionReason;
+  }
+
   if (!candidate.enabled) {
     return "Rejected: disabled";
   }
@@ -81,10 +85,14 @@ function describeCandidateDecision(candidate: SchedulerCandidate, winner: Schedu
   }
 
   if (candidate.priority === winner.priority) {
-    return "Rejected: equal priority, deterministic ordering selected another candidate";
+    return "Rejected: deterministic resolver order selected another candidate";
   }
 
   return "Rejected";
+}
+
+function formatTieBreakRank(candidate: SchedulerCandidate) {
+  return candidate.metadata.tieBreakRank?.join(" / ") ?? "-";
 }
 
 function formatAssignmentSchedule(candidate: SchedulerCandidate) {
@@ -252,6 +260,8 @@ export function SchedulerDiagnosticsPage() {
           <dd>{candidate.metadata.scheduleStatus ?? "active"}</dd>
           <dt>Schedule Reason</dt>
           <dd>{candidate.metadata.scheduleReason ?? "Active"}</dd>
+          <dt>Tie-break Rank</dt>
+          <dd>{formatTieBreakRank(candidate)}</dd>
           <dt>Assignment Schedule</dt>
           <dd>{formatAssignmentSchedule(candidate)}</dd>
           <dt>Program</dt>
@@ -289,6 +299,8 @@ export function SchedulerDiagnosticsPage() {
           <dd>{candidate.metadata.scheduleStatus ?? "inactive"}</dd>
           <dt>Schedule Reason</dt>
           <dd>{candidate.metadata.scheduleReason ?? candidate.rejectedReason}</dd>
+          <dt>Tie-break Rank</dt>
+          <dd>{formatTieBreakRank(candidate)}</dd>
           <dt>Assignment Schedule</dt>
           <dd>{formatAssignmentSchedule(candidate)}</dd>
           <dt>Program</dt>
@@ -321,6 +333,8 @@ export function SchedulerDiagnosticsPage() {
           <dd>{entry.selectionResult}</dd>
           <dt>Rejection Reason</dt>
           <dd>{entry.rejectionReason ?? "-"}</dd>
+          <dt>Tie-break Rank</dt>
+          <dd>{formatTieBreakRank(entry.candidate)}</dd>
           <dt>Source</dt>
           <dd>{entry.sourceType}</dd>
           <dt>Assignment Origin</dt>
@@ -447,6 +461,10 @@ export function SchedulerDiagnosticsPage() {
               <dd>{result.winningCandidate?.metadata.assignmentId ?? "-"}</dd>
               <dt>Priority</dt>
               <dd>{result.winningCandidate?.priority ?? "-"}</dd>
+              <dt>Selection Reason</dt>
+              <dd>{result.winningCandidate?.metadata.selectionReason ?? result.reason}</dd>
+              <dt>Tie-break Rank</dt>
+              <dd>{result.winningCandidate ? formatTieBreakRank(result.winningCandidate) : "-"}</dd>
               <dt>Campaign</dt>
               <dd>{winningCampaign?.name ?? winningCampaignId ?? "-"}</dd>
             </dl>

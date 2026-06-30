@@ -31,6 +31,8 @@ export interface SchedulerCandidate {
     matchedGroupName?: string;
     scheduleStatus: "active" | "inactive";
     scheduleReason: string;
+    selectionReason?: string;
+    tieBreakRank?: string[];
   };
 }
 
@@ -41,12 +43,15 @@ export interface RejectedSchedulerCandidate extends SchedulerCandidate {
 export type CandidateEvaluationStatus = "Selected" | "Rejected" | "Ignored";
 export type CandidateRejectionReason =
   | "Lower priority"
+  | "Less specific target"
+  | "Campaign loses to manual assignment"
+  | "Older assignment"
   | "Disabled"
   | "Outside date range"
   | "Outside daily time"
   | "Wrong weekday"
   | "No valid assignment"
-  | "Tie (deterministic ordering)";
+  | "Stable id fallback";
 
 export interface SchedulerResolutionTraceEntry {
   candidateId: string;
@@ -124,6 +129,108 @@ function assignmentToCandidate(
 interface ScheduleEvaluation {
   active: boolean;
   reason: string;
+}
+
+function targetSpecificity(candidate: SchedulerCandidate) {
+  return candidate.targetType === "screen" ? 2 : 1;
+}
+
+function sourceSpecificity(candidate: SchedulerCandidate) {
+  return candidate.metadata.assignmentSourceType === "manual" ? 2 : 1;
+}
+
+function assignmentTime(candidate: SchedulerCandidate) {
+  const time =
+    Date.parse(candidate.metadata.assignment.updatedAt) ||
+    Date.parse(candidate.metadata.assignment.createdAt);
+
+  return Number.isFinite(time) ? time : 0;
+}
+
+function assignmentId(candidate: SchedulerCandidate) {
+  return candidate.metadata.assignmentId || candidate.id;
+}
+
+function compareCandidates(left: SchedulerCandidate, right: SchedulerCandidate) {
+  if (right.priority !== left.priority) {
+    return right.priority - left.priority;
+  }
+
+  const specificityDiff = targetSpecificity(right) - targetSpecificity(left);
+
+  if (specificityDiff !== 0) {
+    return specificityDiff;
+  }
+
+  const sourceDiff = sourceSpecificity(right) - sourceSpecificity(left);
+
+  if (sourceDiff !== 0) {
+    return sourceDiff;
+  }
+
+  const timeDiff = assignmentTime(right) - assignmentTime(left);
+
+  if (timeDiff !== 0) {
+    return timeDiff;
+  }
+
+  return assignmentId(left).localeCompare(assignmentId(right));
+}
+
+function getTieBreakRank(candidate: SchedulerCandidate) {
+  return [
+    `priority=${candidate.priority}`,
+    `target=${candidate.targetType}`,
+    `source=${candidate.metadata.assignmentSourceType}`,
+    `updatedAt=${candidate.metadata.assignment.updatedAt || "-"}`,
+    `createdAt=${candidate.metadata.assignment.createdAt || "-"}`,
+    `id=${assignmentId(candidate)}`
+  ];
+}
+
+function describeCandidateSelection(candidate: SchedulerCandidate) {
+  return `Selected by deterministic resolver order: ${getTieBreakRank(candidate).join(" / ")}`;
+}
+
+function describeCandidateRejection(candidate: SchedulerCandidate, winner: SchedulerCandidate): {
+  reason: CandidateRejectionReason;
+  message: string;
+} {
+  if (candidate.priority < winner.priority) {
+    return {
+      reason: "Lower priority",
+      message: `Rejected because winning candidate has higher priority (${winner.priority} > ${candidate.priority}).`
+    };
+  }
+
+  if (targetSpecificity(candidate) < targetSpecificity(winner)) {
+    return {
+      reason: "Less specific target",
+      message: "Rejected because another candidate had the same priority but a more specific screen target."
+    };
+  }
+
+  if (sourceSpecificity(candidate) < sourceSpecificity(winner)) {
+    return {
+      reason: "Campaign loses to manual assignment",
+      message:
+        "Rejected because another candidate had the same priority and target specificity, but the winning assignment was manual."
+    };
+  }
+
+  if (assignmentTime(candidate) < assignmentTime(winner)) {
+    return {
+      reason: "Older assignment",
+      message:
+        "Rejected because another candidate had the same priority, target specificity, and source type, but was updated more recently."
+    };
+  }
+
+  return {
+    reason: "Stable id fallback",
+    message:
+      "Rejected because all tie-break fields matched and the winning assignment id sorted first deterministically."
+  };
 }
 
 function parseMinutes(value: string) {
@@ -219,21 +326,23 @@ function evaluateAssignmentSchedule(assignment: Assignment, now = new Date()): S
 
 function chooseWinningCandidate(candidates: SchedulerCandidate[]) {
   const validCandidates = candidates
-    .map((candidate, index) => ({ candidate, index }))
-    .filter((item) => item.candidate.enabled)
-    .sort((left, right) => {
-      if (right.candidate.priority !== left.candidate.priority) {
-        return right.candidate.priority - left.candidate.priority;
-      }
-
-      return left.index - right.index;
-    });
-  const winner = validCandidates[0]?.candidate ?? null;
+    .filter((candidate) => candidate.enabled)
+    .sort(compareCandidates);
+  const winner = validCandidates[0] ?? null;
 
   if (winner) {
+    const reason = describeCandidateSelection(winner);
+
     return {
-      candidate: winner,
-      reason: `selected highest-priority valid candidate: ${winner.priority}`
+      candidate: {
+        ...winner,
+        metadata: {
+          ...winner.metadata,
+          selectionReason: reason,
+          tieBreakRank: getTieBreakRank(winner)
+        }
+      },
+      reason
     };
   }
 
@@ -268,9 +377,12 @@ function buildTrace(input: {
   candidates: SchedulerCandidate[];
   rejectedCandidates: RejectedSchedulerCandidate[];
   winningCandidate: SchedulerCandidate | null;
+  reason: string;
 }): SchedulerResolutionTrace {
   const activeTraceEntries: SchedulerResolutionTraceEntry[] = input.candidates.map((candidate) => {
     if (input.winningCandidate?.id === candidate.id) {
+      const selectionResult = input.reason || describeCandidateSelection(candidate);
+
       return {
         candidateId: candidate.id,
         sourceType: candidate.sourceType,
@@ -280,15 +392,24 @@ function buildTrace(input: {
         priority: candidate.priority,
         scheduleStatus: candidate.metadata.scheduleStatus,
         evaluationStatus: "Selected",
-        selectionResult: "Selected highest-priority valid candidate",
-        candidate
+        selectionResult,
+        candidate: {
+          ...candidate,
+          metadata: {
+            ...candidate.metadata,
+            selectionReason: selectionResult,
+            tieBreakRank: getTieBreakRank(candidate)
+          }
+        }
       };
     }
 
-    const rejectionReason: CandidateRejectionReason =
-      input.winningCandidate && candidate.priority === input.winningCandidate.priority
-        ? "Tie (deterministic ordering)"
-        : "Lower priority";
+    const rejection = input.winningCandidate
+      ? describeCandidateRejection(candidate, input.winningCandidate)
+      : {
+          reason: "No valid assignment" as const,
+          message: "Rejected because no winning candidate was selected."
+        };
 
     return {
       candidateId: candidate.id,
@@ -299,9 +420,16 @@ function buildTrace(input: {
       priority: candidate.priority,
       scheduleStatus: candidate.metadata.scheduleStatus,
       evaluationStatus: "Rejected",
-      selectionResult: `Rejected: ${rejectionReason}`,
-      rejectionReason,
-      candidate
+      selectionResult: rejection.message,
+      rejectionReason: rejection.reason,
+      candidate: {
+        ...candidate,
+        metadata: {
+          ...candidate.metadata,
+          selectionReason: rejection.message,
+          tieBreakRank: getTieBreakRank(candidate)
+        }
+      }
     };
   });
   const rejectedTraceEntries: SchedulerResolutionTraceEntry[] = input.rejectedCandidates.map((candidate) => ({
@@ -325,13 +453,9 @@ function buildTrace(input: {
     totalCandidatesDiscovered: input.candidates.length + input.rejectedCandidates.length,
     totalCandidatesEvaluated: input.candidates.length,
     winningCandidate: input.winningCandidate,
-    orderedEvaluationList: [...activeTraceEntries, ...rejectedTraceEntries].sort((left, right) => {
-      if (right.priority !== left.priority) {
-        return right.priority - left.priority;
-      }
-
-      return 0;
-    })
+    orderedEvaluationList: [...activeTraceEntries, ...rejectedTraceEntries].sort((left, right) =>
+      compareCandidates(left.candidate, right.candidate)
+    )
   };
 }
 
@@ -368,27 +492,46 @@ async function loadResolution(screenId: string): Promise<SchedulerResolution> {
   const candidates = candidateEvaluations
     .filter((item) => item.scheduleEvaluation.active)
     .map((item) => item.candidate)
-    .map((candidate, index) => ({ candidate, index }))
-    .sort((left, right) => {
-      if (right.candidate.priority !== left.candidate.priority) {
-        return right.candidate.priority - left.candidate.priority;
-      }
-
-      return left.index - right.index;
-    })
-    .map((item) => item.candidate);
+    .sort(compareCandidates);
   const rejectedCandidates = candidateEvaluations
     .filter((item) => !item.scheduleEvaluation.active)
     .map((item) => ({
       ...item.candidate,
-      rejectedReason: item.scheduleEvaluation.reason
+      rejectedReason: item.scheduleEvaluation.reason,
+      metadata: {
+        ...item.candidate.metadata,
+        selectionReason: `Rejected: ${item.scheduleEvaluation.reason}`,
+        tieBreakRank: getTieBreakRank(item.candidate)
+      }
     }));
   const winner = chooseWinningCandidate(candidates);
+  const diagnosticCandidates = candidates.map((candidate) => {
+    if (winner.candidate?.id === candidate.id) {
+      return winner.candidate;
+    }
+
+    const rejection = winner.candidate
+      ? describeCandidateRejection(candidate, winner.candidate)
+      : {
+          reason: "No valid assignment" as const,
+          message: "Rejected because no winning candidate was selected."
+        };
+
+    return {
+      ...candidate,
+      metadata: {
+        ...candidate.metadata,
+        selectionReason: rejection.message,
+        tieBreakRank: getTieBreakRank(candidate)
+      }
+    };
+  });
   const trace = buildTrace({
     screenId,
-    candidates,
+    candidates: diagnosticCandidates,
     rejectedCandidates,
-    winningCandidate: winner.candidate
+    winningCandidate: winner.candidate,
+    reason: winner.reason
   });
 
   return {
@@ -397,7 +540,7 @@ async function loadResolution(screenId: string): Promise<SchedulerResolution> {
       screen,
       groups: matchingGroups
     },
-    candidates,
+    candidates: diagnosticCandidates,
     rejectedCandidates,
     winningCandidate: winner.candidate,
     reason: winner.reason,
