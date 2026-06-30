@@ -7,6 +7,11 @@ import {
   type AssignmentTargetType
 } from "../assignments/assignmentStore.js";
 import { getProgramsOrDefault } from "../program/programStore.js";
+import {
+  assertPublishable,
+  validatePublishIntent,
+  type PublishValidationReport
+} from "../publishing/publishValidation.js";
 import { listScreenGroups } from "../screens/screenGroupStore.js";
 import { listScreens } from "../screens/screenStore.js";
 import { assertValid, type DomainValidationIssue } from "../validation/domainValidation.js";
@@ -198,6 +203,32 @@ function readCampaignInput(input: unknown, existing?: Campaign) {
   };
 }
 
+export async function validateCampaignPublishDraft(
+  input: unknown,
+  existing?: Campaign
+): Promise<PublishValidationReport> {
+  const campaignInput = readCampaignInput(input, existing);
+
+  return validatePublishIntent({
+    campaignId: existing?.id,
+    ...campaignInput
+  });
+}
+
+export async function validateExistingCampaignPublishDraft(
+  id: string,
+  input: unknown
+): Promise<PublishValidationReport | null> {
+  const campaigns = await listCampaigns();
+  const existing = campaigns.find((campaign) => campaign.id === id);
+
+  if (!existing) {
+    return null;
+  }
+
+  return validateCampaignPublishDraft(input, existing);
+}
+
 async function syncCampaign(campaign: Campaign) {
   await syncCampaignAssignments({
     campaignId: campaign.id,
@@ -230,6 +261,11 @@ export async function listCampaigns(): Promise<Campaign[]> {
 
 export async function createCampaign(input: unknown): Promise<Campaign> {
   const campaignInput = readCampaignInput(input);
+  assertPublishable(
+    await validatePublishIntent({
+      ...campaignInput
+    })
+  );
   await validateCampaignInput(campaignInput);
 
   const campaigns = await listCampaigns();
@@ -269,6 +305,12 @@ export async function updateCampaign(id: string, input: unknown): Promise<Campai
   }
 
   const campaignInput = readCampaignInput(input, existing);
+  assertPublishable(
+    await validatePublishIntent({
+      campaignId: existing.id,
+      ...campaignInput
+    })
+  );
   await validateCampaignInput(campaignInput);
 
   const campaign: Campaign = {

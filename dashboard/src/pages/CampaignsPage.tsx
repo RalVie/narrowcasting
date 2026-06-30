@@ -4,6 +4,7 @@ import { readApiError } from "../api/readApiError";
 import type { AssignmentTargetType } from "../assignmentTypes";
 import type { Campaign } from "../campaignTypes";
 import type { Program } from "../programTypes";
+import type { PublishValidationMessage, PublishValidationReport } from "../publishValidationTypes";
 import type { ScreenGroup, ScreenRecord } from "../screenTypes";
 
 const refreshIntervalMs = 10_000;
@@ -44,6 +45,7 @@ export function CampaignsPage() {
   const [screenGroups, setScreenGroups] = useState<ScreenGroup[]>([]);
   const [status, setStatus] = useState("Loading campaigns...");
   const [isBusy, setIsBusy] = useState(false);
+  const [publishReport, setPublishReport] = useState<PublishValidationReport | null>(null);
   const [newDraft, setNewDraft] = useState<CampaignDraft>({
     name: "",
     description: "",
@@ -70,6 +72,74 @@ export function CampaignsPage() {
     () => new Map(screenGroups.map((group) => [group.groupId, group])),
     [screenGroups]
   );
+
+  function campaignPayload(draft: CampaignDraft, fallbackName: string) {
+    return {
+      ...draft,
+      name: draft.name.trim() || fallbackName,
+      description: draft.description.trim() || null
+    };
+  }
+
+  function isPublishValidationReport(value: unknown): value is PublishValidationReport {
+    return Boolean(
+      value &&
+        typeof value === "object" &&
+        "summary" in value &&
+        "blockingErrors" in value &&
+        "warnings" in value &&
+        "information" in value
+    );
+  }
+
+  async function readCampaignMutationError(response: Response) {
+    const body: unknown = await response.json().catch(() => null);
+
+    if (
+      body &&
+      typeof body === "object" &&
+      "report" in body &&
+      isPublishValidationReport((body as { report?: unknown }).report)
+    ) {
+      setPublishReport((body as { report: PublishValidationReport }).report);
+    }
+
+    if (body && typeof body === "object") {
+      if ("message" in body && typeof (body as { message?: unknown }).message === "string") {
+        return (body as { message: string }).message;
+      }
+
+      if ("error" in body && typeof (body as { error?: unknown }).error === "string") {
+        return (body as { error: string }).error;
+      }
+    }
+
+    return `HTTP ${response.status}`;
+  }
+
+  async function runPublishPreflight(endpoint: string, payload: unknown) {
+    const response = await fetch(apiUrl(endpoint), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      throw new Error(await readCampaignMutationError(response));
+    }
+
+    const report = (await response.json()) as PublishValidationReport;
+    setPublishReport(report);
+
+    if (report.summary.blockingErrors > 0) {
+      setStatus("Publishing blocked by validation.");
+      return null;
+    }
+
+    return report;
+  }
 
   async function loadCampaigns() {
     try {
@@ -120,30 +190,29 @@ export function CampaignsPage() {
   }
 
   async function createCampaign() {
-    if (!newDraft.programId || newDraft.targetIds.length === 0) {
-      setStatus("Choose a program and at least one target before publishing.");
-      return;
-    }
-
     setIsBusy(true);
-    setStatus("Publishing campaign...");
+    setStatus("Running publish validation...");
 
     try {
+      const payload = campaignPayload(newDraft, "New Campaign");
+      const report = await runPublishPreflight("/api/campaigns/validate", payload);
+
+      if (!report) {
+        return;
+      }
+
+      setStatus(report.summary.warnings > 0 ? "Validation passed with warnings. Publishing campaign..." : "Validation passed. Publishing campaign...");
+
       const response = await fetch(apiUrl("/api/campaigns"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          ...newDraft,
-          name: newDraft.name.trim() || "New Campaign",
-          description: newDraft.description.trim() || null
-        })
+        body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(body?.error ?? `HTTP ${response.status}`);
+        throw new Error(await readCampaignMutationError(response));
       }
 
       setNewDraft({
@@ -171,24 +240,28 @@ export function CampaignsPage() {
     }
 
     setIsBusy(true);
-    setStatus("Updating campaign...");
+    setStatus("Running publish validation...");
 
     try {
+      const payload = campaignPayload(draft, "Untitled Campaign");
+      const report = await runPublishPreflight(`/api/campaigns/${encodeURIComponent(campaign.id)}/validate`, payload);
+
+      if (!report) {
+        return;
+      }
+
+      setStatus(report.summary.warnings > 0 ? "Validation passed with warnings. Updating campaign..." : "Validation passed. Updating campaign...");
+
       const response = await fetch(apiUrl(`/api/campaigns/${encodeURIComponent(campaign.id)}/update`), {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          ...draft,
-          name: draft.name.trim() || "Untitled Campaign",
-          description: draft.description.trim() || null
-        })
+        body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(body?.error ?? `HTTP ${response.status}`);
+        throw new Error(await readCampaignMutationError(response));
       }
 
       setStatus("Campaign updated.");
@@ -341,6 +414,65 @@ export function CampaignsPage() {
     );
   }
 
+  function reportStatusLabel(report: PublishValidationReport) {
+    if (report.status === "blocked") {
+      return "Blocking Errors";
+    }
+
+    if (report.status === "warnings") {
+      return "Warnings";
+    }
+
+    return "Ready";
+  }
+
+  function renderReportMessages(title: string, messages: PublishValidationMessage[]) {
+    if (messages.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="publish-report-group">
+        <strong>{title}</strong>
+        {messages.map((message) => (
+          <p key={message.id}>
+            <span>{message.category}</span>
+            {message.message}
+            {message.affectedObject ? (
+              <small>
+                {message.affectedObject.type}: {message.affectedObject.name ?? message.affectedObject.id}
+              </small>
+            ) : null}
+            {message.suggestedFix ? <small>{message.suggestedFix}</small> : null}
+          </p>
+        ))}
+      </div>
+    );
+  }
+
+  function renderPublishReport() {
+    if (!publishReport) {
+      return null;
+    }
+
+    return (
+      <section className={`operator-panel publish-report ${publishReport.status}`}>
+        <div className="operator-panel-header">
+          <h3>Publish Validation</h3>
+          <span>{reportStatusLabel(publishReport)}</span>
+        </div>
+        <div className="publish-report-summary">
+          <span>{publishReport.summary.blockingErrors} blocking</span>
+          <span>{publishReport.summary.warnings} warnings</span>
+          <span>{publishReport.summary.information} info</span>
+        </div>
+        {renderReportMessages("Blocking Errors", publishReport.blockingErrors)}
+        {renderReportMessages("Warnings", publishReport.warnings)}
+        {renderReportMessages("Information", publishReport.information)}
+      </section>
+    );
+  }
+
   return (
     <section className="page-section" id="campaigns">
       <div className="section-heading">
@@ -354,6 +486,7 @@ export function CampaignsPage() {
       </div>
 
       <p className="status-text">{status}</p>
+      {renderPublishReport()}
 
       <section className="operator-panel campaign-create-panel">
         <div className="operator-panel-header">

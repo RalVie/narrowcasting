@@ -1143,6 +1143,60 @@ button:disabled {
   gap: 8px;
 }
 
+.publish-report {
+  margin-top: 14px;
+  border-color: #b9c8bd;
+}
+
+.publish-report.ready {
+  border-color: #7fb58b;
+}
+
+.publish-report.warnings {
+  border-color: #d6a742;
+}
+
+.publish-report.blocked {
+  border-color: #c65f5f;
+}
+
+.publish-report-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.publish-report-summary span {
+  border: 1px solid #d9dfd4;
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: #17201a;
+  background: #ffffff;
+  font-size: 12px;
+}
+
+.publish-report-group {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.publish-report-group p {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  border-left: 3px solid #b9c8bd;
+  padding: 6px 8px;
+  background: #f8faf7;
+}
+
+.publish-report-group span,
+.publish-report-group small {
+  color: #647064;
+  font-size: 12px;
+}
+
 .diagnostics-control-panel {
   margin-top: 14px;
 }
