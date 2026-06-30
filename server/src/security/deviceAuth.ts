@@ -51,9 +51,18 @@ export function deviceAuthRequired(reply: FastifyReply) {
 export function deviceAuthFailed(reply: FastifyReply) {
   return reply.code(401).send({
     error: "unauthorized",
-    code: "DEVICE_AUTH_FAILED",
+    code: "INVALID_DEVICE_SECRET",
     status: 401,
     message: "Device authorization failed."
+  });
+}
+
+export function unknownScreen(reply: FastifyReply) {
+  return reply.code(404).send({
+    error: "not_found",
+    code: "SCREEN_NOT_FOUND",
+    status: 404,
+    message: "Screen was not found."
   });
 }
 
@@ -80,7 +89,12 @@ export async function authenticateScreenDevice(
 
   const screen = await getScreenById(screenId);
 
-  if (!screen || screen.status !== "approved") {
+  if (!screen) {
+    unknownScreen(reply);
+    return null;
+  }
+
+  if (screen.status !== "approved") {
     screenNotApproved(reply);
     return null;
   }
@@ -92,4 +106,3 @@ export async function authenticateScreenDevice(
 
   return screen;
 }
-

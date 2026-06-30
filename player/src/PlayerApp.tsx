@@ -258,6 +258,14 @@ function writeLocalStorage(key: string, value: string) {
   }
 }
 
+function removeLocalStorage(key: string) {
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // Local storage may be unavailable in hardened browser profiles.
+  }
+}
+
 function getOrCreatePlayerId() {
   const existingPlayerId = readLocalStorage(playerIdKey);
 
@@ -271,6 +279,14 @@ function getOrCreatePlayerId() {
       : `player-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   writeLocalStorage(playerIdKey, playerId);
   return playerId;
+}
+
+function isInvalidDeviceIdentity(status: number, code: unknown) {
+  return (
+    (status === 404 && (code === "SCREEN_NOT_FOUND" || code === "UNKNOWN_SCREEN")) ||
+    ((status === 401 || status === 403) &&
+      (code === "INVALID_DEVICE_SECRET" || code === "DEVICE_AUTH_FAILED" || code === "DEVICE_AUTH_REQUIRED"))
+  );
 }
 
 function normalizeServerUrl(value: string | null) {
@@ -761,6 +777,22 @@ export function PlayerApp() {
   const heartbeatFailureCountRef = useRef(0);
   const heartbeatBackoffUntilRef = useRef(0);
 
+  const resetInvalidDeviceIdentity = useCallback(() => {
+    removeLocalStorage(screenIdKey);
+    removeLocalStorage(deviceSecretKey);
+    removeLocalStorage(serverUrlKey);
+    heartbeatFailureCountRef.current = 0;
+    heartbeatBackoffUntilRef.current = 0;
+    setRegistration((state) => ({
+      ...state,
+      screenId: null,
+      deviceSecret: null,
+      serverUrl: null,
+      status: "discovering",
+      message: "Screen was removed or credentials expired. Please register this player again."
+    }));
+  }, []);
+
   function clearFailureTimer() {
     if (failureTimerRef.current !== null) {
       window.clearTimeout(failureTimerRef.current);
@@ -1045,6 +1077,13 @@ export function PlayerApp() {
         );
 
         if (!response.ok) {
+          const body = (await response.json().catch(() => null)) as { code?: unknown } | null;
+
+          if (isInvalidDeviceIdentity(response.status, body?.code)) {
+            resetInvalidDeviceIdentity();
+            return;
+          }
+
           throw new Error(`heartbeat HTTP ${response.status}`);
         }
 
@@ -1090,7 +1129,13 @@ export function PlayerApp() {
       cancelled = true;
       window.clearInterval(heartbeatTimer);
     };
-  }, [registration.deviceSecret, registration.playerId, registration.screenId, registration.serverUrl]);
+  }, [
+    registration.deviceSecret,
+    registration.playerId,
+    registration.screenId,
+    registration.serverUrl,
+    resetInvalidDeviceIdentity
+  ]);
 
   useEffect(() => {
     let cancelled = false;
