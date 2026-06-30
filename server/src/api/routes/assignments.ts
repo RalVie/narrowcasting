@@ -6,6 +6,7 @@ import {
   listAssignments,
   updateAssignment
 } from "../../assignments/assignmentStore.js";
+import { DomainValidationError, validationErrorResponse } from "../../validation/domainValidation.js";
 import { validateAssignmentDelete } from "../../validation/referenceIntegrity.js";
 
 function assignmentOwnershipError(error: AssignmentOwnershipError) {
@@ -31,6 +32,10 @@ export const assignmentRoutes: FastifyPluginAsync = async (app) => {
       const assignment = await createAssignment(request.body ?? {});
       return reply.code(201).send(assignment);
     } catch (error) {
+      if (error instanceof DomainValidationError) {
+        return reply.code(400).send(validationErrorResponse(error));
+      }
+
       return reply.code(400).send({
         error: error instanceof Error ? error.message : "assignment could not be created"
       });
@@ -49,6 +54,10 @@ export const assignmentRoutes: FastifyPluginAsync = async (app) => {
     } catch (error) {
       if (error instanceof AssignmentOwnershipError) {
         return reply.code(409).send(assignmentOwnershipError(error));
+      }
+
+      if (error instanceof DomainValidationError) {
+        return reply.code(400).send(validationErrorResponse(error));
       }
 
       return reply.code(400).send({

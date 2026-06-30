@@ -7,25 +7,52 @@ import {
   savePlaylist,
   savePlaylistRecord
 } from "../../playlist/playlistStore.js";
+import { DomainValidationError, validationErrorResponse } from "../../validation/domainValidation.js";
 import { validatePlaylistDelete } from "../../validation/referenceIntegrity.js";
 
 export const playlistRoutes: FastifyPluginAsync = async (app) => {
   app.get("/playlist", async () => getPlaylistOrDefault());
 
   app.put("/playlist", async (request, reply) => {
-    const playlist = await savePlaylist(request.body);
-    return reply.send(playlist);
+    try {
+      const playlist = await savePlaylist(request.body);
+      return reply.send(playlist);
+    } catch (error) {
+      if (error instanceof DomainValidationError) {
+        return reply.code(400).send(validationErrorResponse(error));
+      }
+
+      throw error;
+    }
   });
 
   app.get("/playlists", async () => listPlaylists());
 
   app.post("/playlists", async (request, reply) => {
-    const playlist = await createPlaylist(request.body);
-    return reply.code(201).send(playlist);
+    try {
+      const playlist = await createPlaylist(request.body);
+      return reply.code(201).send(playlist);
+    } catch (error) {
+      if (error instanceof DomainValidationError) {
+        return reply.code(400).send(validationErrorResponse(error));
+      }
+
+      throw error;
+    }
   });
 
   app.put<{ Params: { id: string } }>("/playlists/:id", async (request, reply) => {
-    const playlist = await savePlaylistRecord(request.params.id, request.body);
+    let playlist;
+
+    try {
+      playlist = await savePlaylistRecord(request.params.id, request.body);
+    } catch (error) {
+      if (error instanceof DomainValidationError) {
+        return reply.code(400).send(validationErrorResponse(error));
+      }
+
+      throw error;
+    }
 
     if (!playlist) {
       return reply.code(404).send({ error: "playlist not found" });

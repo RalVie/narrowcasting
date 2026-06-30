@@ -9,6 +9,7 @@ import {
 import { getProgramsOrDefault } from "../program/programStore.js";
 import { listScreenGroups } from "../screens/screenGroupStore.js";
 import { listScreens } from "../screens/screenStore.js";
+import { assertValid, type DomainValidationIssue } from "../validation/domainValidation.js";
 
 export interface Campaign {
   id: string;
@@ -106,15 +107,26 @@ async function validateCampaignInput(input: {
   targetType: AssignmentTargetType;
   targetIds: string[];
 }) {
+  const issues: DomainValidationIssue[] = [];
   const programs = await getProgramsOrDefault();
   const program = programs.find((item) => item.id === input.programId);
 
   if (!program) {
-    throw new Error("program not found");
+    issues.push({
+      ruleId: "VAL-CAMPAIGN-003",
+      field: "programId",
+      severity: "blocking_error",
+      message: "Campaign program must exist."
+    });
   }
 
   if (input.targetIds.length === 0) {
-    throw new Error("at least one target is required");
+    issues.push({
+      ruleId: "VAL-CAMPAIGN-004",
+      field: "targetIds",
+      severity: "blocking_error",
+      message: "Campaign must target at least one screen or screen group."
+    });
   }
 
   if (input.targetType === "SCREEN") {
@@ -125,9 +137,15 @@ async function validateCampaignInput(input: {
     const invalidScreen = input.targetIds.find((targetId) => !approvedScreenIds.has(targetId));
 
     if (invalidScreen) {
-      throw new Error("all target screens must be approved");
+      issues.push({
+        ruleId: "VAL-CAMPAIGN-004",
+        field: "targetIds",
+        severity: "blocking_error",
+        message: "Campaign target screens must exist and be approved."
+      });
     }
 
+    assertValid(issues);
     return;
   }
 
@@ -136,12 +154,36 @@ async function validateCampaignInput(input: {
   const invalidGroup = input.targetIds.find((targetId) => !groupIds.has(targetId));
 
   if (invalidGroup) {
-    throw new Error("all target screen groups must exist");
+    issues.push({
+      ruleId: "VAL-CAMPAIGN-004",
+      field: "targetIds",
+      severity: "blocking_error",
+      message: "Campaign target screen groups must exist."
+    });
   }
+
+  assertValid(issues);
 }
 
 function readCampaignInput(input: unknown, existing?: Campaign) {
   const body = input && typeof input === "object" ? (input as Partial<Campaign>) : {};
+
+  if (
+    "targetType" in body &&
+    body.targetType !== undefined &&
+    body.targetType !== "SCREEN" &&
+    body.targetType !== "SCREEN_GROUP"
+  ) {
+    assertValid([
+      {
+        ruleId: "VAL-CAMPAIGN-004",
+        field: "targetType",
+        severity: "blocking_error",
+        message: "Campaign target type must be SCREEN or SCREEN_GROUP."
+      }
+    ]);
+  }
+
   const targetType = normalizeTargetType(body.targetType ?? existing?.targetType);
   const targetIds = normalizeTargetIds(body.targetIds ?? existing?.targetIds);
   const programId = sanitizeText(body.programId, existing?.programId ?? "");

@@ -1,17 +1,36 @@
 import type { FastifyPluginAsync } from "fastify";
 import { createProgram, deleteProgram, getProgramsOrDefault, saveProgram } from "../../program/programStore.js";
+import { DomainValidationError, validationErrorResponse } from "../../validation/domainValidation.js";
 import { validateProgramDelete } from "../../validation/referenceIntegrity.js";
 
 export const programRoutes: FastifyPluginAsync = async (app) => {
   app.get("/programs", async () => getProgramsOrDefault());
 
   app.post("/programs", async (request, reply) => {
-    const program = await createProgram(request.body);
-    return reply.code(201).send(program);
+    try {
+      const program = await createProgram(request.body);
+      return reply.code(201).send(program);
+    } catch (error) {
+      if (error instanceof DomainValidationError) {
+        return reply.code(400).send(validationErrorResponse(error));
+      }
+
+      throw error;
+    }
   });
 
   app.put<{ Params: { id: string } }>("/programs/:id", async (request, reply) => {
-    const program = await saveProgram(request.params.id, request.body);
+    let program;
+
+    try {
+      program = await saveProgram(request.params.id, request.body);
+    } catch (error) {
+      if (error instanceof DomainValidationError) {
+        return reply.code(400).send(validationErrorResponse(error));
+      }
+
+      throw error;
+    }
 
     if (!program) {
       return reply.code(404).send({ error: "program not found" });

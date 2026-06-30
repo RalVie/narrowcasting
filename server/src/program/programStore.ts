@@ -1,5 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { listPlaylists } from "../playlist/playlistStore.js";
+import { assertValid, isPlainObject, type DomainValidationIssue } from "../validation/domainValidation.js";
 
 export interface Program {
   id: string;
@@ -46,6 +48,57 @@ function normalizeProgram(value: unknown, fallbackIndex: number): Program | null
   };
 }
 
+async function validateProgramWrite(value: unknown) {
+  const body = isPlainObject(value) ? value : {};
+  const issues: DomainValidationIssue[] = [];
+
+  if ("name" in body && (typeof body.name !== "string" || !body.name.trim())) {
+    issues.push({
+      ruleId: "VAL-PROGRAM-001",
+      field: "name",
+      severity: "blocking_error",
+      message: "Program name is required."
+    });
+  }
+
+  if (body.playlistIds !== undefined && !Array.isArray(body.playlistIds)) {
+    issues.push({
+      ruleId: "VAL-PROGRAM-002",
+      field: "playlistIds",
+      severity: "blocking_error",
+      message: "Program playlistIds must be an array."
+    });
+  }
+
+  if (Array.isArray(body.playlistIds)) {
+    const playlists = await listPlaylists();
+    const playlistIds = new Set(playlists.map((playlist) => playlist.id));
+
+    body.playlistIds.forEach((playlistId, index) => {
+      if (typeof playlistId !== "string" || !playlistId.trim()) {
+        issues.push({
+          ruleId: "VAL-PROGRAM-002",
+          field: `playlistIds[${index}]`,
+          severity: "blocking_error",
+          message: "Program playlist reference must be a valid playlist ID."
+        });
+        return;
+      }
+
+      if (!playlistIds.has(playlistId)) {
+        issues.push({
+          ruleId: "VAL-PROGRAM-002",
+          field: `playlistIds[${index}]`,
+          severity: "blocking_error",
+          message: "Program playlist reference must exist."
+        });
+      }
+    });
+  }
+
+  assertValid(issues);
+}
+
 async function writePrograms(programs: Program[]) {
   await mkdir(resolve(process.cwd(), "data"), { recursive: true });
   await writeFile(programsPath, `${JSON.stringify(programs, null, 2)}\n`, "utf8");
@@ -89,6 +142,7 @@ export async function getProgramsOrDefault(): Promise<Program[]> {
 }
 
 export async function createProgram(value: unknown): Promise<Program> {
+  await validateProgramWrite(value);
   const programs = await getProgramsOrDefault();
   const incoming = value as Partial<Program>;
   const name = typeof incoming.name === "string" && incoming.name.trim() ? incoming.name.trim() : "New Program";
@@ -121,6 +175,8 @@ export async function saveProgram(id: string, value: unknown): Promise<Program |
   if (!existingProgram) {
     return null;
   }
+
+  await validateProgramWrite(value);
 
   const incoming = value as Partial<Program>;
   const program: Program = {

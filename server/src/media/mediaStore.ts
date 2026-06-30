@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { access, mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, extname, resolve } from "node:path";
+import { assertValid, type DomainValidationIssue } from "../validation/domainValidation.js";
 
 export interface MediaItem {
   /**
@@ -120,6 +121,68 @@ function getMediaType(filename: string): MediaItem["type"] | null {
   return null;
 }
 
+function validateMediaItem(item: MediaItem, existingIds = new Set<string>()): DomainValidationIssue[] {
+  const issues: DomainValidationIssue[] = [];
+
+  if (!item.mediaId.trim()) {
+    issues.push({
+      ruleId: "VAL-MEDIA-001",
+      field: "mediaId",
+      severity: "blocking_error",
+      message: "Media must have a stable mediaId."
+    });
+  }
+
+  if (existingIds.has(item.mediaId)) {
+    issues.push({
+      ruleId: "VAL-MEDIA-001",
+      field: "mediaId",
+      severity: "blocking_error",
+      message: "Media IDs must be unique."
+    });
+  }
+
+  if (!item.filename.trim()) {
+    issues.push({
+      ruleId: "VAL-MEDIA-001",
+      field: "filename",
+      severity: "blocking_error",
+      message: "Media filename is required."
+    });
+  }
+
+  if (getMediaType(item.filename) !== item.type) {
+    issues.push({
+      ruleId: "VAL-MEDIA-002",
+      field: "type",
+      severity: "blocking_error",
+      message: "Media type must match a supported file extension."
+    });
+  }
+
+  if (!Number.isFinite(item.size) || item.size < 0) {
+    issues.push({
+      ruleId: "VAL-MEDIA-003",
+      field: "size",
+      severity: "blocking_error",
+      message: "Media size must be a valid number."
+    });
+  }
+
+  return issues;
+}
+
+function validateMediaCollection(items: MediaItem[]) {
+  const usedIds = new Set<string>();
+  const issues = items.flatMap((item) => {
+    const itemIssues = validateMediaItem(item, usedIds);
+    usedIds.add(item.mediaId);
+    return itemIssues;
+  });
+
+  assertValid(issues);
+}
+
 function normalizeMetadataItem(value: unknown): MediaItem | null {
   if (!value || typeof value !== "object") {
     return null;
@@ -167,6 +230,7 @@ async function readMetadataFile(): Promise<MediaItem[]> {
 }
 
 async function writeMetadataFile(items: MediaItem[]) {
+  validateMediaCollection(items);
   await mkdir(resolve(process.cwd(), "data"), { recursive: true });
   await writeFile(metadataPath, `${JSON.stringify(items, null, 2)}\n`, "utf8");
 }
@@ -241,7 +305,14 @@ export async function createMedia(filename: string, content: Buffer): Promise<Me
   const mediaType = getMediaType(safeFilename);
 
   if (!safeFilename || !mediaType) {
-    throw new Error("only jpg, jpeg, png, webp, mp4, and webm media files are supported");
+    assertValid([
+      {
+        ruleId: "VAL-MEDIA-002",
+        field: "filename",
+        severity: "blocking_error",
+        message: "Only jpg, jpeg, png, webp, mp4, and webm media files are supported."
+      }
+    ]);
   }
 
   await mkdir(mediaRoot, { recursive: true });

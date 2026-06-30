@@ -4,6 +4,13 @@ import { resolve } from "node:path";
 import { getProgramsOrDefault } from "../program/programStore.js";
 import { listScreenGroups } from "../screens/screenGroupStore.js";
 import { listScreens } from "../screens/screenStore.js";
+import {
+  assertValid,
+  isPlainObject,
+  isValidClockTime,
+  isValidDateBoundary,
+  type DomainValidationIssue
+} from "../validation/domainValidation.js";
 
 export type AssignmentTargetType = "SCREEN" | "SCREEN_GROUP";
 export type AssignmentSource = "manual" | "campaign";
@@ -227,7 +234,14 @@ async function validateAssignmentTarget(targetType: AssignmentTargetType, target
     const screen = screens.find((item) => item.screenId === targetId && item.status === "approved");
 
     if (!screen) {
-      throw new Error("target screen must be approved");
+      assertValid([
+        {
+          ruleId: "VAL-ASSIGN-002",
+          field: "targetId",
+          severity: "blocking_error",
+          message: "Assignment target screen must exist and be approved."
+        }
+      ]);
     }
 
     return;
@@ -237,7 +251,14 @@ async function validateAssignmentTarget(targetType: AssignmentTargetType, target
   const group = groups.find((item) => item.groupId === targetId);
 
   if (!group) {
-    throw new Error("target screen group not found");
+    assertValid([
+      {
+        ruleId: "VAL-ASSIGN-002",
+        field: "targetId",
+        severity: "blocking_error",
+        message: "Assignment target screen group must exist."
+      }
+    ]);
   }
 }
 
@@ -246,8 +267,136 @@ async function validateProgram(programId: string) {
   const program = programs.find((item) => item.id === programId);
 
   if (!program) {
-    throw new Error("program not found");
+    assertValid([
+      {
+        ruleId: "VAL-ASSIGN-003",
+        field: "programId",
+        severity: "blocking_error",
+        message: "Assignment program must exist."
+      }
+    ]);
   }
+}
+
+function validateAssignmentScheduleInput(value: unknown): DomainValidationIssue[] {
+  if (value === undefined || value === null) {
+    return [];
+  }
+
+  if (!isPlainObject(value)) {
+    return [
+      {
+        ruleId: "VAL-ASSIGN-004",
+        field: "schedule",
+        severity: "blocking_error",
+        message: "Assignment schedule must be an object."
+      }
+    ];
+  }
+
+  const issues: DomainValidationIssue[] = [];
+
+  if ("enabled" in value && typeof value.enabled !== "boolean") {
+    issues.push({
+      ruleId: "VAL-ASSIGN-004",
+      field: "schedule.enabled",
+      severity: "blocking_error",
+      message: "Assignment schedule enabled must be true or false."
+    });
+  }
+
+  if ("startDate" in value && typeof value.startDate !== "string") {
+    issues.push({
+      ruleId: "VAL-ASSIGN-004",
+      field: "schedule.startDate",
+      severity: "blocking_error",
+      message: "Assignment schedule start date must be a string."
+    });
+  }
+
+  if (typeof value.startDate === "string" && !isValidDateBoundary(value.startDate)) {
+    issues.push({
+      ruleId: "VAL-ASSIGN-004",
+      field: "schedule.startDate",
+      severity: "blocking_error",
+      message: "Assignment schedule start date must be a valid ISO date."
+    });
+  }
+
+  if ("endDate" in value && typeof value.endDate !== "string") {
+    issues.push({
+      ruleId: "VAL-ASSIGN-004",
+      field: "schedule.endDate",
+      severity: "blocking_error",
+      message: "Assignment schedule end date must be a string."
+    });
+  }
+
+  if (typeof value.endDate === "string" && !isValidDateBoundary(value.endDate)) {
+    issues.push({
+      ruleId: "VAL-ASSIGN-004",
+      field: "schedule.endDate",
+      severity: "blocking_error",
+      message: "Assignment schedule end date must be a valid ISO date."
+    });
+  }
+
+  if (
+    typeof value.startDate === "string" &&
+    typeof value.endDate === "string" &&
+    isValidDateBoundary(value.startDate) &&
+    isValidDateBoundary(value.endDate) &&
+    Date.parse(value.startDate) > Date.parse(value.endDate)
+  ) {
+    issues.push({
+      ruleId: "VAL-ASSIGN-004",
+      field: "schedule.endDate",
+      severity: "blocking_error",
+      message: "Assignment schedule end date must not be before the start date."
+    });
+  }
+
+  if (value.daysOfWeek !== undefined) {
+    if (!Array.isArray(value.daysOfWeek)) {
+      issues.push({
+        ruleId: "VAL-ASSIGN-004",
+        field: "schedule.daysOfWeek",
+        severity: "blocking_error",
+        message: "Assignment schedule daysOfWeek must be an array."
+      });
+    } else {
+      value.daysOfWeek.forEach((day, index) => {
+        if (!Number.isInteger(day) || day < 0 || day > 6) {
+          issues.push({
+            ruleId: "VAL-ASSIGN-004",
+            field: `schedule.daysOfWeek[${index}]`,
+            severity: "blocking_error",
+            message: "Assignment schedule days must be numbers from 0 to 6."
+          });
+        }
+      });
+    }
+  }
+
+  if (typeof value.startTime === "string" && !isValidClockTime(value.startTime)) {
+    issues.push({
+      ruleId: "VAL-ASSIGN-004",
+      field: "schedule.startTime",
+      severity: "blocking_error",
+      message: "Assignment schedule start time must use HH:mm format."
+    });
+  }
+
+  if (typeof value.endTime === "string" && !isValidClockTime(value.endTime)) {
+    issues.push({
+      ruleId: "VAL-ASSIGN-004",
+      field: "schedule.endTime",
+      severity: "blocking_error",
+      message: "Assignment schedule end time must use HH:mm format."
+    });
+  }
+
+  return issues;
 }
 
 function readAssignmentInput(input: unknown) {
@@ -257,19 +406,43 @@ function readAssignmentInput(input: unknown) {
   const programId = sanitizeText(body.programId);
 
   if (!targetType) {
-    throw new Error("targetType must be SCREEN or SCREEN_GROUP");
+    assertValid([
+      {
+        ruleId: "VAL-ASSIGN-002",
+        field: "targetType",
+        severity: "blocking_error",
+        message: "Assignment target type must be SCREEN or SCREEN_GROUP."
+      }
+    ]);
   }
+  const validTargetType = targetType ?? "SCREEN";
 
   if (!targetId) {
-    throw new Error("targetId is required");
+    assertValid([
+      {
+        ruleId: "VAL-ASSIGN-002",
+        field: "targetId",
+        severity: "blocking_error",
+        message: "Assignment target is required."
+      }
+    ]);
   }
 
   if (!programId) {
-    throw new Error("programId is required");
+    assertValid([
+      {
+        ruleId: "VAL-ASSIGN-003",
+        field: "programId",
+        severity: "blocking_error",
+        message: "Assignment program is required."
+      }
+    ]);
   }
 
+  assertValid(validateAssignmentScheduleInput(body.schedule));
+
   return {
-    targetType,
+    targetType: validTargetType,
     targetId,
     programId,
     enabled: body.enabled !== false,
@@ -328,10 +501,21 @@ export async function updateAssignment(id: string, input: unknown): Promise<Assi
   assertManualAssignmentMutation(existing, "update");
 
   const body = input && typeof input === "object" ? (input as Partial<Assignment>) : {};
+  if ("targetType" in body && !normalizeTargetType(body.targetType)) {
+    assertValid([
+      {
+        ruleId: "VAL-ASSIGN-002",
+        field: "targetType",
+        severity: "blocking_error",
+        message: "Assignment target type must be SCREEN or SCREEN_GROUP."
+      }
+    ]);
+  }
   const targetType = normalizeTargetType(body.targetType) ?? existing.targetType;
   const targetId = sanitizeText(body.targetId, existing.targetId);
   const programId = sanitizeText(body.programId, existing.programId);
   const enabled = typeof body.enabled === "boolean" ? body.enabled : existing.enabled;
+  assertValid("schedule" in body ? validateAssignmentScheduleInput(body.schedule) : []);
   const schedule = "schedule" in body ? normalizeSchedule(body.schedule) : existing.schedule;
 
   await Promise.all([
@@ -349,7 +533,14 @@ export async function updateAssignment(id: string, input: unknown): Promise<Assi
   );
 
   if (duplicate) {
-    throw new Error("target already has an assignment");
+    assertValid([
+      {
+        ruleId: "VAL-ASSIGN-002",
+        field: "targetId",
+        severity: "blocking_error",
+        message: "Target already has an assignment for this source."
+      }
+    ]);
   }
 
   const assignment: Assignment = {

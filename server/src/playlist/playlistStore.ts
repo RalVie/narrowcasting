@@ -6,6 +6,12 @@ import {
   type MediaItem
 } from "../media/mediaStore.js";
 import { staticSchedule, type Schedule } from "../schedule/staticSchedule.js";
+import {
+  assertValid,
+  isPlainObject,
+  isValidClockTime,
+  type DomainValidationIssue
+} from "../validation/domainValidation.js";
 
 export interface PlaylistItem {
   id: string;
@@ -149,6 +155,120 @@ function normalizePlaylistItems(
     .filter((item): item is PlaylistItem => item !== null);
 }
 
+function validatePlaylistItemsInput(
+  items: unknown,
+  mediaItems: MediaItem[],
+  fieldPrefix = "items"
+): DomainValidationIssue[] {
+  if (items === undefined) {
+    return [];
+  }
+
+  if (!Array.isArray(items)) {
+    return [
+      {
+        ruleId: "VAL-PLAYLIST-001",
+        field: fieldPrefix,
+        severity: "blocking_error",
+        message: "Playlist items must be an array."
+      }
+    ];
+  }
+
+  const issues: DomainValidationIssue[] = [];
+
+  items.forEach((item, index) => {
+    const field = `${fieldPrefix}[${index}]`;
+
+    if (!isPlainObject(item)) {
+      issues.push({
+        ruleId: "VAL-PLAYLIST-002",
+        field,
+        severity: "blocking_error",
+        message: "Playlist item must be an object."
+      });
+      return;
+    }
+
+    const referencedMedia =
+      resolveMediaReferenceFromList(mediaItems, typeof item.mediaId === "string" ? item.mediaId : undefined) ??
+      resolveMediaReferenceFromList(mediaItems, typeof item.file === "string" ? item.file : undefined);
+
+    if (!referencedMedia) {
+      issues.push({
+        ruleId: "VAL-PLAYLIST-003",
+        field: `${field}.mediaId`,
+        severity: "blocking_error",
+        message: "Playlist item must reference existing media."
+      });
+    }
+
+    if (item.type !== undefined && item.type !== "image" && item.type !== "video") {
+      issues.push({
+        ruleId: "VAL-ITEM-002",
+        field: `${field}.type`,
+        severity: "blocking_error",
+        message: "Playlist item type must be image or video."
+      });
+    }
+
+    if (referencedMedia && item.type && item.type !== referencedMedia.type) {
+      issues.push({
+        ruleId: "VAL-ITEM-002",
+        field: `${field}.type`,
+        severity: "blocking_error",
+        message: "Playlist item type must match the referenced media type."
+      });
+    }
+
+    if (item.duration !== undefined && (!Number.isFinite(Number(item.duration)) || Number(item.duration) <= 0)) {
+      issues.push({
+        ruleId: "VAL-PLAYLIST-004",
+        field: `${field}.duration`,
+        severity: "blocking_error",
+        message: "Playlist item duration must be a positive number."
+      });
+    }
+
+    if (item.durationMode !== undefined && item.durationMode !== "auto" && item.durationMode !== "clip") {
+      issues.push({
+        ruleId: "VAL-ITEM-004",
+        field: `${field}.durationMode`,
+        severity: "blocking_error",
+        message: "Video duration mode must be auto or clip."
+      });
+    }
+
+    if (typeof item.startTime === "string" && !isValidClockTime(item.startTime)) {
+      issues.push({
+        ruleId: "VAL-ASSIGN-004",
+        field: `${field}.startTime`,
+        severity: "blocking_error",
+        message: "Start time must use HH:mm format."
+      });
+    }
+
+    if (typeof item.endTime === "string" && !isValidClockTime(item.endTime)) {
+      issues.push({
+        ruleId: "VAL-ASSIGN-004",
+        field: `${field}.endTime`,
+        severity: "blocking_error",
+        message: "End time must use HH:mm format."
+      });
+    }
+  });
+
+  return issues;
+}
+
+async function validatePlaylistWrite(value: unknown) {
+  const body = isPlainObject(value) ? value : {};
+  const mediaItems = await listMedia();
+
+  assertValid(validatePlaylistItemsInput(body.items, mediaItems));
+  return mediaItems;
+}
+
 export async function readPlaylist(): Promise<Playlist | null> {
   try {
     const content = await readFile(playlistPath, "utf8");
@@ -263,6 +383,7 @@ export async function savePlaylist(value: unknown): Promise<Playlist> {
   const playlists = await listPlaylists();
   const existingPlaylist = playlists.find((playlist) => playlist.id === defaultPlaylistId);
   const incoming = value as Partial<Playlist>;
+  const mediaItems = await validatePlaylistWrite(value);
   const playlist: PlaylistRecord = {
     id: defaultPlaylistId,
     name:
@@ -271,7 +392,7 @@ export async function savePlaylist(value: unknown): Promise<Playlist> {
         : existingPlaylist?.name ?? "Default Playlist",
     version: (existingPlaylist?.version ?? 0) + 1,
     updatedAt: new Date().toISOString(),
-    items: normalizePlaylistItems(incoming.items, existingPlaylist?.items, await listMedia())
+    items: normalizePlaylistItems(incoming.items, existingPlaylist?.items, mediaItems)
   };
 
   const otherPlaylists = playlists.filter((item) => item.id !== defaultPlaylistId);
@@ -312,6 +433,7 @@ export async function getPlaylistOrDefault(): Promise<Playlist> {
 export async function createPlaylist(value: unknown): Promise<PlaylistRecord> {
   const playlists = await listPlaylists();
   const incoming = value as Partial<PlaylistRecord>;
+  const mediaItems = await validatePlaylistWrite(value);
   const name = typeof incoming.name === "string" && incoming.name.trim() ? incoming.name.trim() : "New Playlist";
   const baseId = toPlaylistId(typeof incoming.id === "string" ? incoming.id : name);
   const existingIds = new Set(playlists.map((playlist) => playlist.id));
@@ -328,7 +450,7 @@ export async function createPlaylist(value: unknown): Promise<PlaylistRecord> {
     name,
     version: 1,
     updatedAt: new Date().toISOString(),
-    items: normalizePlaylistItems(incoming.items, [], await listMedia())
+    items: normalizePlaylistItems(incoming.items, [], mediaItems)
   };
 
   await writePlaylists([...playlists, playlist]);
@@ -344,6 +466,7 @@ export async function savePlaylistRecord(id: string, value: unknown): Promise<Pl
   }
 
   const incoming = value as Partial<PlaylistRecord>;
+  const mediaItems = await validatePlaylistWrite(value);
   const playlist: PlaylistRecord = {
     id: existingPlaylist.id,
     name:
@@ -352,7 +475,7 @@ export async function savePlaylistRecord(id: string, value: unknown): Promise<Pl
         : existingPlaylist.name,
     version: existingPlaylist.version + 1,
     updatedAt: new Date().toISOString(),
-    items: normalizePlaylistItems(incoming.items, existingPlaylist.items, await listMedia())
+    items: normalizePlaylistItems(incoming.items, existingPlaylist.items, mediaItems)
   };
 
   await writePlaylists(playlists.map((item) => (item.id === id ? playlist : item)));

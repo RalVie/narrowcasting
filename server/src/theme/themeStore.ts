@@ -14,6 +14,7 @@ import type {
   ThemeRegionType,
   ThemeTextAlign
 } from "../../../shared/runtime.js";
+import { assertValid, isPlainObject, type DomainValidationIssue } from "../validation/domainValidation.js";
 
 export type {
   Theme,
@@ -205,6 +206,164 @@ function normalizeTheme(value: unknown, fallbackIndex: number, mediaItems: Media
   };
 }
 
+function validateThemeMediaReference(
+  mediaItems: MediaItem[],
+  reference: unknown,
+  field: string,
+  required: boolean
+): DomainValidationIssue[] {
+  if (reference === undefined || reference === null || reference === "") {
+    return required
+      ? [
+          {
+            ruleId: "VAL-THEME-005",
+            field,
+            severity: "blocking_error",
+            message: "Theme media region must reference existing image media."
+          }
+        ]
+      : [];
+  }
+
+  if (typeof reference !== "string" || !reference.trim()) {
+    return [
+      {
+        ruleId: "VAL-THEME-005",
+        field,
+        severity: "blocking_error",
+        message: "Theme media reference must be a valid media ID."
+      }
+    ];
+  }
+
+  const media = resolveMediaReferenceFromList(mediaItems, reference);
+
+  if (!media) {
+    return [
+      {
+        ruleId: "VAL-THEME-005",
+        field,
+        severity: "blocking_error",
+        message: "Theme media reference must exist."
+      }
+    ];
+  }
+
+  return media.type === "image"
+    ? []
+    : [
+        {
+          ruleId: "VAL-THEME-005",
+          field,
+          severity: "blocking_error",
+          message: "Logo, image, and background theme references must use image media."
+        }
+      ];
+}
+
+function validateThemeWrite(value: unknown, mediaItems: MediaItem[]) {
+  const body = isPlainObject(value) ? value : {};
+  const issues: DomainValidationIssue[] = [];
+
+  if ("name" in body && (typeof body.name !== "string" || !body.name.trim())) {
+    issues.push({
+      ruleId: "VAL-THEME-001",
+      field: "name",
+      severity: "blocking_error",
+      message: "Theme name is required."
+    });
+  }
+
+  if ("canvasWidth" in body && (!Number.isFinite(Number(body.canvasWidth)) || Number(body.canvasWidth) <= 0)) {
+    issues.push({
+      ruleId: "VAL-THEME-002",
+      field: "canvasWidth",
+      severity: "blocking_error",
+      message: "Theme canvas width must be positive."
+    });
+  }
+
+  if ("canvasHeight" in body && (!Number.isFinite(Number(body.canvasHeight)) || Number(body.canvasHeight) <= 0)) {
+    issues.push({
+      ruleId: "VAL-THEME-002",
+      field: "canvasHeight",
+      severity: "blocking_error",
+      message: "Theme canvas height must be positive."
+    });
+  }
+
+  issues.push(...validateThemeMediaReference(mediaItems, body.backgroundMediaId, "backgroundMediaId", false));
+
+  if (body.regions !== undefined && !Array.isArray(body.regions)) {
+    issues.push({
+      ruleId: "VAL-THEME-003",
+      field: "regions",
+      severity: "blocking_error",
+      message: "Theme regions must be an array."
+    });
+  }
+
+  if (Array.isArray(body.regions)) {
+    body.regions.forEach((region, index) => {
+      const field = `regions[${index}]`;
+
+      if (!isPlainObject(region)) {
+        issues.push({
+          ruleId: "VAL-THEME-003",
+          field,
+          severity: "blocking_error",
+          message: "Theme region must be an object."
+        });
+        return;
+      }
+
+      const type = allowedRegionTypes.has(region.type as ThemeRegionType)
+        ? (region.type as ThemeRegionType)
+        : undefined;
+
+      if (!type) {
+        issues.push({
+          ruleId: "VAL-THEME-003",
+          field: `${field}.type`,
+          severity: "blocking_error",
+          message: "Theme region type is not supported."
+        });
+      }
+
+      if ("width" in region && (!Number.isFinite(Number(region.width)) || Number(region.width) <= 0)) {
+        issues.push({
+          ruleId: "VAL-THEME-004",
+          field: `${field}.width`,
+          severity: "blocking_error",
+          message: "Theme region width must be positive."
+        });
+      }
+
+      if ("height" in region && (!Number.isFinite(Number(region.height)) || Number(region.height) <= 0)) {
+        issues.push({
+          ruleId: "VAL-THEME-004",
+          field: `${field}.height`,
+          severity: "blocking_error",
+          message: "Theme region height must be positive."
+        });
+      }
+
+      if (type === "logo" || type === "image") {
+        issues.push(
+          ...validateThemeMediaReference(
+            mediaItems,
+            typeof region.mediaId === "string" ? region.mediaId : region.file,
+            `${field}.mediaId`,
+            true
+          )
+        );
+      }
+    });
+  }
+
+  assertValid(issues);
+}
+
 async function writeThemes(themes: Theme[]) {
   await mkdir(resolve(process.cwd(), "data"), { recursive: true });
   await writeFile(themesPath, `${JSON.stringify(themes, null, 2)}\n`, "utf8");
@@ -241,6 +400,7 @@ export async function getThemeOrDefault(themeId?: string): Promise<Theme> {
 export async function createTheme(value: unknown): Promise<Theme> {
   const themes = await listThemes();
   const mediaItems = await listMedia();
+  validateThemeWrite(value, mediaItems);
   const incoming = value as Partial<Theme>;
   const name = typeof incoming.name === "string" && incoming.name.trim() ? incoming.name.trim() : "New Theme";
   const baseId = toThemeId(typeof incoming.id === "string" ? incoming.id : name);
@@ -271,6 +431,8 @@ export async function saveTheme(id: string, value: unknown): Promise<Theme | nul
   if (!existingTheme) {
     return null;
   }
+
+  validateThemeWrite(value, mediaItems);
 
   const theme = normalizeTheme({ ...existingTheme, ...(value as Partial<Theme>), id: existingTheme.id }, 0, mediaItems);
 

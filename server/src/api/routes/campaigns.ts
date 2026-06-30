@@ -5,6 +5,7 @@ import {
   listCampaigns,
   updateCampaign
 } from "../../campaigns/campaignStore.js";
+import { DomainValidationError, validationErrorResponse } from "../../validation/domainValidation.js";
 import { validateCampaignDelete } from "../../validation/referenceIntegrity.js";
 
 export const campaignRoutes: FastifyPluginAsync = async (app) => {
@@ -15,6 +16,10 @@ export const campaignRoutes: FastifyPluginAsync = async (app) => {
       const campaign = await createCampaign(request.body ?? {});
       return reply.code(201).send(campaign);
     } catch (error) {
+      if (error instanceof DomainValidationError) {
+        return reply.code(400).send(validationErrorResponse(error));
+      }
+
       return reply.code(400).send({
         error: error instanceof Error ? error.message : "campaign could not be created"
       });
@@ -31,6 +36,10 @@ export const campaignRoutes: FastifyPluginAsync = async (app) => {
 
       return reply.send(campaign);
     } catch (error) {
+      if (error instanceof DomainValidationError) {
+        return reply.code(400).send(validationErrorResponse(error));
+      }
+
       return reply.code(400).send({
         error: error instanceof Error ? error.message : "campaign could not be updated"
       });

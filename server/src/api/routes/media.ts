@@ -9,6 +9,7 @@ import {
   getMediaPath,
   listMedia
 } from "../../media/mediaStore.js";
+import { DomainValidationError, validationErrorResponse } from "../../validation/domainValidation.js";
 import { validateMediaDelete } from "../../validation/referenceIntegrity.js";
 
 const imageUploadLimitBytes = 20 * 1024 * 1024;
@@ -62,6 +63,10 @@ export const mediaRoutes: FastifyPluginAsync = async (app) => {
     } catch (error) {
       if (isMultipartSizeLimitError(error)) {
         return reply.code(413).send({ error: videoTooLargeMessage });
+      }
+
+      if (error instanceof DomainValidationError) {
+        return reply.code(400).send(validationErrorResponse(error));
       }
 
       return reply.code(400).send({
