@@ -95,6 +95,10 @@ export function CampaignsPage() {
   async function readCampaignMutationError(response: Response) {
     const body: unknown = await response.json().catch(() => null);
 
+    return campaignMutationErrorMessage(body, response.status);
+  }
+
+  function campaignMutationErrorMessage(body: unknown, statusCode: number) {
     if (
       body &&
       typeof body === "object" &&
@@ -114,7 +118,32 @@ export function CampaignsPage() {
       }
     }
 
-    return `HTTP ${response.status}`;
+    return `HTTP ${statusCode}`;
+  }
+
+  function isRevisionExpiredResponse(body: unknown) {
+    if (!body || typeof body !== "object" || !("code" in body)) {
+      return false;
+    }
+
+    const code = (body as { code?: unknown }).code;
+
+    return code === "PUBLISH_REVISION_OUTDATED" || code === "PUBLISH_REVISION_REQUIRED";
+  }
+
+  async function readCampaignMutationBody(response: Response) {
+    const body: unknown = await response.json().catch(() => null);
+
+    if (
+      body &&
+      typeof body === "object" &&
+      "report" in body &&
+      isPublishValidationReport((body as { report?: unknown }).report)
+    ) {
+      setPublishReport((body as { report: PublishValidationReport }).report);
+    }
+
+    return body;
   }
 
   async function runPublishPreflight(endpoint: string, payload: unknown) {
@@ -245,43 +274,61 @@ export function CampaignsPage() {
 
     try {
       const payload = campaignPayload(newDraft, "New Campaign");
-      const report = await runPublishPreflight("/api/campaigns/validate", payload);
+      let report = await runPublishPreflight("/api/campaigns/validate", payload);
 
       if (!report) {
         return;
       }
 
-      const confirmWarnings = report.summary.warnings > 0;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const confirmWarnings = report.summary.warnings > 0;
 
-      if (confirmWarnings && !confirmPublishWarnings(report)) {
-        setStatus("Publish cancelled. Warnings were not confirmed.");
-        return;
+        if (confirmWarnings && !confirmPublishWarnings(report)) {
+          setStatus("Publish cancelled. Warnings were not confirmed.");
+          return;
+        }
+
+        setStatus(confirmWarnings ? "Warnings confirmed. Publishing campaign..." : "Validation passed. Publishing campaign...");
+
+        const response = await fetch(apiUrl("/api/campaigns"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ ...payload, confirmWarnings, publishRevision: report.revision })
+        });
+
+        if (response.ok) {
+          setNewDraft({
+            name: "",
+            description: "",
+            enabled: true,
+            programId: programs[0]?.id ?? "",
+            targetType: "SCREEN",
+            targetIds: []
+          });
+          setStatus("Campaign published.");
+          await loadCampaigns();
+          return;
+        }
+
+        const body = await readCampaignMutationBody(response);
+
+        if (isRevisionExpiredResponse(body) && attempt === 0) {
+          setStatus("Publish revision expired. Running preflight again...");
+          report = await runPublishPreflight("/api/campaigns/validate", payload);
+
+          if (!report) {
+            return;
+          }
+
+          continue;
+        }
+
+        throw new Error(campaignMutationErrorMessage(body, response.status));
       }
 
-      setStatus(confirmWarnings ? "Warnings confirmed. Publishing campaign..." : "Validation passed. Publishing campaign...");
-
-      const response = await fetch(apiUrl("/api/campaigns"), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ ...payload, confirmWarnings })
-      });
-
-      if (!response.ok) {
-        throw new Error(await readCampaignMutationError(response));
-      }
-
-      setNewDraft({
-        name: "",
-        description: "",
-        enabled: true,
-        programId: programs[0]?.id ?? "",
-        targetType: "SCREEN",
-        targetIds: []
-      });
-      setStatus("Campaign published.");
-      await loadCampaigns();
+      throw new Error("Publish revision could not be confirmed.");
     } catch (error) {
       setStatus(error instanceof Error ? `Publish failed: ${error.message}` : "Publish failed.");
     } finally {
@@ -301,35 +348,53 @@ export function CampaignsPage() {
 
     try {
       const payload = campaignPayload(draft, "Untitled Campaign");
-      const report = await runPublishPreflight(`/api/campaigns/${encodeURIComponent(campaign.id)}/validate`, payload);
+      let report = await runPublishPreflight(`/api/campaigns/${encodeURIComponent(campaign.id)}/validate`, payload);
 
       if (!report) {
         return;
       }
 
-      const confirmWarnings = report.summary.warnings > 0;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const confirmWarnings = report.summary.warnings > 0;
 
-      if (confirmWarnings && !confirmPublishWarnings(report)) {
-        setStatus("Update cancelled. Warnings were not confirmed.");
-        return;
+        if (confirmWarnings && !confirmPublishWarnings(report)) {
+          setStatus("Update cancelled. Warnings were not confirmed.");
+          return;
+        }
+
+        setStatus(confirmWarnings ? "Warnings confirmed. Updating campaign..." : "Validation passed. Updating campaign...");
+
+        const response = await fetch(apiUrl(`/api/campaigns/${encodeURIComponent(campaign.id)}/update`), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ ...payload, confirmWarnings, publishRevision: report.revision })
+        });
+
+        if (response.ok) {
+          setStatus("Campaign updated.");
+          await loadCampaigns();
+          return;
+        }
+
+        const body = await readCampaignMutationBody(response);
+
+        if (isRevisionExpiredResponse(body) && attempt === 0) {
+          setStatus("Publish revision expired. Running preflight again...");
+          report = await runPublishPreflight(`/api/campaigns/${encodeURIComponent(campaign.id)}/validate`, payload);
+
+          if (!report) {
+            return;
+          }
+
+          continue;
+        }
+
+        throw new Error(campaignMutationErrorMessage(body, response.status));
       }
 
-      setStatus(confirmWarnings ? "Warnings confirmed. Updating campaign..." : "Validation passed. Updating campaign...");
-
-      const response = await fetch(apiUrl(`/api/campaigns/${encodeURIComponent(campaign.id)}/update`), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ ...payload, confirmWarnings })
-      });
-
-      if (!response.ok) {
-        throw new Error(await readCampaignMutationError(response));
-      }
-
-      setStatus("Campaign updated.");
-      await loadCampaigns();
+      throw new Error("Publish revision could not be confirmed.");
     } catch (error) {
       setStatus(error instanceof Error ? `Update failed: ${error.message}` : "Update failed.");
     } finally {
@@ -580,6 +645,7 @@ export function CampaignsPage() {
           <span>{publishReport.summary.warnings} warnings</span>
           <span>{publishReport.summary.information} info</span>
         </div>
+        <p className="publish-revision">Revision {publishReport.revision.slice(0, 12)}</p>
         {renderPublishImpact(publishReport)}
         {renderReportMessages("Blocking Errors", publishReport.blockingErrors)}
         {renderReportMessages("Warnings", publishReport.warnings)}

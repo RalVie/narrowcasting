@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { listMedia, resolveMediaReferenceFromList } from "../media/mediaStore.js";
 import { listPlaylists } from "../playlist/playlistStore.js";
 import { getProgramsOrDefault } from "../program/programStore.js";
@@ -35,6 +36,7 @@ export interface PublishValidationMessage {
 }
 
 export interface PublishValidationReport {
+  revision: string;
   status: "ready" | "warnings" | "blocked";
   summary: {
     blockingErrors: number;
@@ -105,6 +107,38 @@ export class PublishWarningConfirmationError extends Error {
   }
 }
 
+export class PublishRevisionError extends Error {
+  constructor(
+    public report: PublishValidationReport,
+    public expectedRevision: string | null
+  ) {
+    super("Publishing requires a current publish revision.");
+  }
+}
+
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => canonicalize(item));
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([, item]) => item !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, canonicalize(item)])
+    );
+  }
+
+  return value;
+}
+
+function stableHash(value: unknown) {
+  return createHash("sha256")
+    .update(JSON.stringify(canonicalize(value)))
+    .digest("hex");
+}
+
 function message(input: Omit<PublishValidationMessage, "id">): PublishValidationMessage {
   return {
     ...input,
@@ -170,6 +204,7 @@ function buildReport(
   );
 
   return {
+    revision: "",
     status: blockingErrors.length > 0 ? "blocked" : warnings.length > 0 ? "warnings" : "ready",
     summary: {
       blockingErrors: blockingErrors.length,
@@ -183,6 +218,53 @@ function buildReport(
     suggestedFixes,
     impact,
     generatedAt: new Date().toISOString()
+  };
+}
+
+function compactMessageForRevision(message: PublishValidationMessage) {
+  return {
+    id: message.id,
+    severity: message.severity,
+    category: message.category,
+    ruleId: message.ruleId,
+    affectedObject: message.affectedObject ?? null
+  };
+}
+
+function compactImpactForRevision(impact: PublishImpactReport) {
+  return {
+    summary: impact.summary,
+    screens: impact.screens.map((screen) => ({
+      screenId: screen.screenId,
+      targetSource: screen.targetSource,
+      result: screen.result,
+      winningAssignmentId: screen.winningAssignmentId ?? null,
+      winningAssignmentSourceType: screen.winningAssignmentSourceType ?? null,
+      winningProgramId: screen.winningProgramId ?? null,
+      severity: screen.severity
+    }))
+  };
+}
+
+function attachPublishRevision(
+  intent: PublishValidationIntent,
+  report: PublishValidationReport
+): PublishValidationReport {
+  const revision = stableHash({
+    intent,
+    status: report.status,
+    summary: report.summary,
+    blockingErrors: report.blockingErrors.map(compactMessageForRevision),
+    warnings: report.warnings.map(compactMessageForRevision),
+    information: report.information.map(compactMessageForRevision),
+    affectedObjects: report.affectedObjects,
+    suggestedFixes: report.suggestedFixes,
+    impact: compactImpactForRevision(report.impact)
+  });
+
+  return {
+    ...report,
+    revision
   };
 }
 
@@ -200,6 +282,19 @@ export function publishWarningConfirmationResponse(error: PublishWarningConfirma
     error: "confirmation_required",
     code: "PUBLISH_WARNINGS_REQUIRE_CONFIRMATION",
     message: "Publishing has warnings and requires explicit confirmation.",
+    report: error.report
+  };
+}
+
+export function publishRevisionErrorResponse(error: PublishRevisionError) {
+  return {
+    error: "conflict",
+    code: error.expectedRevision ? "PUBLISH_REVISION_OUTDATED" : "PUBLISH_REVISION_REQUIRED",
+    message: error.expectedRevision
+      ? "Publish revision is outdated. Run publish preflight again."
+      : "Publish revision is required. Run publish preflight before publishing.",
+    expectedRevision: error.report.revision,
+    providedRevision: error.expectedRevision,
     report: error.report
   };
 }
@@ -746,15 +841,19 @@ export async function validatePublishIntent(intent: PublishValidationIntent): Pr
 
   messages.push(...publishImpact.messages);
 
-  return buildReport(messages, publishImpact.impact);
+  return attachPublishRevision(intent, buildReport(messages, publishImpact.impact));
 }
 
 export function assertPublishable(
   report: PublishValidationReport,
-  options: { confirmWarnings?: boolean } = {}
+  options: { confirmWarnings?: boolean; revision?: string | null } = {}
 ) {
   if (report.summary.blockingErrors > 0) {
     throw new PublishValidationError(report);
+  }
+
+  if (!options.revision || options.revision !== report.revision) {
+    throw new PublishRevisionError(report, options.revision ?? null);
   }
 
   if (report.summary.warnings > 0 && !options.confirmWarnings) {

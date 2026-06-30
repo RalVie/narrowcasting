@@ -39,6 +39,12 @@ export interface Campaign {
 
 export interface PublishMutationOptions {
   confirmWarnings?: boolean;
+  revision?: string | null;
+}
+
+export interface CampaignPublishResult {
+  campaign: Campaign;
+  report: PublishValidationReport;
 }
 
 const campaignsPath = resolve(process.cwd(), "data", "campaigns.json");
@@ -266,14 +272,15 @@ export async function listCampaigns(): Promise<Campaign[]> {
 export async function createCampaign(
   input: unknown,
   options: PublishMutationOptions = {}
-): Promise<Campaign> {
+): Promise<CampaignPublishResult> {
   const campaignInput = readCampaignInput(input);
-  assertPublishable(
-    await validatePublishIntent({
-      ...campaignInput
-    }),
-    { confirmWarnings: options.confirmWarnings }
-  );
+  const report = await validatePublishIntent({
+    ...campaignInput
+  });
+  assertPublishable(report, {
+    confirmWarnings: options.confirmWarnings,
+    revision: options.revision
+  });
   await validateCampaignInput(campaignInput);
 
   const campaigns = await listCampaigns();
@@ -301,14 +308,14 @@ export async function createCampaign(
 
   await writeCampaigns([...campaigns, campaign]);
   await syncCampaign(campaign);
-  return campaign;
+  return { campaign, report };
 }
 
 export async function updateCampaign(
   id: string,
   input: unknown,
   options: PublishMutationOptions = {}
-): Promise<Campaign | null> {
+): Promise<CampaignPublishResult | null> {
   const campaigns = await listCampaigns();
   const existing = campaigns.find((campaign) => campaign.id === id);
 
@@ -317,13 +324,14 @@ export async function updateCampaign(
   }
 
   const campaignInput = readCampaignInput(input, existing);
-  assertPublishable(
-    await validatePublishIntent({
-      campaignId: existing.id,
-      ...campaignInput
-    }),
-    { confirmWarnings: options.confirmWarnings }
-  );
+  const report = await validatePublishIntent({
+    campaignId: existing.id,
+    ...campaignInput
+  });
+  assertPublishable(report, {
+    confirmWarnings: options.confirmWarnings,
+    revision: options.revision
+  });
   await validateCampaignInput(campaignInput);
 
   const campaign: Campaign = {
@@ -339,7 +347,7 @@ export async function updateCampaign(
 
   await writeCampaigns(campaigns.map((item) => (item.id === id ? campaign : item)));
   await syncCampaign(campaign);
-  return campaign;
+  return { campaign, report };
 }
 
 export async function deleteCampaign(id: string): Promise<boolean> {

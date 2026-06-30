@@ -45,6 +45,7 @@ export interface PublishImpactReport {
 }
 
 export interface PublishValidationReport {
+  revision: string;
   status: "ready" | "warnings" | "blocked";
   summary: {
     blockingErrors: number;

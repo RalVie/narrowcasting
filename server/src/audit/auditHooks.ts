@@ -61,7 +61,7 @@ function extractAdminKey(request: FastifyRequest) {
   return null;
 }
 
-function actorFromRequest(request: FastifyRequest, statusCode: number): {
+export function actorFromRequest(request: FastifyRequest, statusCode: number): {
   actorType: AuditActorType;
   actorId: string | null;
   source: string;
@@ -239,4 +239,3 @@ export function registerAuditHooks(app: FastifyInstance) {
     }
   });
 }
-
