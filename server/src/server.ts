@@ -6,6 +6,14 @@ import { healthRoutes } from "./api/routes/health.js";
 import { mediaRoutes } from "./api/routes/media.js";
 import { registerDashboardStatic } from "./dashboard/dashboardStatic.js";
 import { createDatabaseContext } from "./db/context.js";
+import { registerAdminAuth } from "./security/adminAuth.js";
+
+function getAllowedCorsOrigins() {
+  return (process.env.NARROWCASTING_CORS_ORIGIN ?? process.env.CORS_ORIGIN ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
 
 export function buildServer() {
   const app = Fastify({
@@ -31,9 +39,28 @@ export function buildServer() {
     request.log.error({ error }, "unhandled api error");
     return internalError(reply);
   });
+  const allowedCorsOrigins = getAllowedCorsOrigins();
+
   app.register(cors, {
-    origin: true
+    origin(origin, callback) {
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      if (allowedCorsOrigins.length > 0) {
+        callback(null, allowedCorsOrigins.includes(origin));
+        return;
+      }
+
+      // Development keeps broad CORS so Vite dashboard dev servers can call the Pi/server.
+      // Production without NARROWCASTING_CORS_ORIGIN only allows same-origin/no-Origin requests.
+      callback(null, process.env.NODE_ENV !== "production");
+    },
+    allowedHeaders: ["Content-Type", "Authorization", "X-Narrowcasting-Admin-Key"],
+    methods: ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"]
   });
+  registerAdminAuth(app);
   app.register(healthRoutes);
   app.register(mediaRoutes);
   app.register(registerApi, { prefix: "/api" });
