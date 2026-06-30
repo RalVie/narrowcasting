@@ -233,6 +233,7 @@ async function savePlayerRegistration(body) {
     screenId: typeof body?.screenId === "string" ? body.screenId : null,
     playerId: typeof body?.playerId === "string" ? body.playerId : null,
     serverUrl: normalizeServerUrl(body?.serverUrl) ?? null,
+    deviceSecret: typeof body?.deviceSecret === "string" ? body.deviceSecret : null,
     updatedAt: new Date().toISOString()
   };
 

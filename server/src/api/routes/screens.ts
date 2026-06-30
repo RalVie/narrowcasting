@@ -8,14 +8,23 @@ import {
   updateScreenHeartbeat
 } from "../../screens/screenStore.js";
 import { badRequest, notFound } from "../apiErrors.js";
+import { authenticateScreenDevice } from "../../security/deviceAuth.js";
+
+function toScreenResponse(screen: Awaited<ReturnType<typeof registerScreen>>, includeDeviceSecret = false) {
+  const { deviceSecret, ...publicScreen } = screen;
+
+  return includeDeviceSecret ? { ...publicScreen, deviceSecret } : publicScreen;
+}
 
 export const screensRoutes: FastifyPluginAsync = async (app) => {
-  app.get("/screens", async () => listScreens());
+  app.get("/screens", async () => (await listScreens()).map((screen) => toScreenResponse(screen)));
 
   app.post("/screens/register", async (request, reply) => {
     try {
       const screen = await registerScreen(request.body ?? {});
-      return reply.code(screen.status === "pending" ? 202 : 200).send(screen);
+      return reply
+        .code(screen.status === "pending" ? 202 : 200)
+        .send(toScreenResponse(screen, screen.status === "approved"));
     } catch (error) {
       return badRequest(reply, error instanceof Error ? error.message : "invalid screen registration");
     }
@@ -28,7 +37,7 @@ export const screensRoutes: FastifyPluginAsync = async (app) => {
       return notFound(reply, "screen not found", "SCREEN_NOT_FOUND");
     }
 
-    return reply.send(screen);
+    return reply.send(toScreenResponse(screen));
   });
 
   app.post<{ Params: { id: string } }>("/screens/:id/rename", async (request, reply) => {
@@ -39,17 +48,23 @@ export const screensRoutes: FastifyPluginAsync = async (app) => {
       return notFound(reply, "screen not found", "SCREEN_NOT_FOUND");
     }
 
-    return reply.send(screen);
+    return reply.send(toScreenResponse(screen));
   });
 
   app.post<{ Params: { id: string } }>("/screens/:id/heartbeat", async (request, reply) => {
+    const authenticatedScreen = await authenticateScreenDevice(request, reply, request.params.id);
+
+    if (!authenticatedScreen) {
+      return reply;
+    }
+
     const screen = await updateScreenHeartbeat(request.params.id, request.body ?? {});
 
     if (!screen) {
       return notFound(reply, "screen not found or heartbeat rejected", "SCREEN_NOT_FOUND");
     }
 
-    return reply.send(screen);
+    return reply.send(toScreenResponse(screen));
   });
 
   app.get<{ Params: { id: string } }>("/screens/:id/assignment", async (request, reply) => {

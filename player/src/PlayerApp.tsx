@@ -8,6 +8,7 @@ const appliedScheduleSignatureKey = "narrowcasting:last-applied-schedule-signatu
 const scheduleReloadCountKey = "narrowcasting:schedule-reload-count";
 const playerIdKey = "narrowcasting:player-id";
 const screenIdKey = "narrowcasting:screen-id";
+const deviceSecretKey = "narrowcasting:device-secret";
 const serverUrlKey = "narrowcasting:server-url";
 const playerVersion = "phase-1";
 const heartbeatIntervalMs = 10_000;
@@ -15,6 +16,7 @@ const heartbeatIntervalMs = 10_000;
 interface RegistrationState {
   playerId: string;
   screenId: string | null;
+  deviceSecret: string | null;
   serverUrl: string | null;
   status: "approved" | "discovering" | "pending" | "offline" | "error";
   message: string;
@@ -367,7 +369,12 @@ function reloadPlayerForSchedule(signature: string, debugEnabled: boolean) {
   window.location.href = `/player?reload=${Date.now()}${debugEnabled ? "&debug=1" : ""}`;
 }
 
-async function persistPlayerRegistration(screenId: string, playerId: string, serverUrl: string) {
+async function persistPlayerRegistration(
+  screenId: string,
+  playerId: string,
+  serverUrl: string,
+  deviceSecret: string | null
+) {
   try {
     await fetch("/api/player-registration", {
       method: "POST",
@@ -377,7 +384,8 @@ async function persistPlayerRegistration(screenId: string, playerId: string, ser
       body: JSON.stringify({
         screenId,
         playerId,
-        serverUrl
+        serverUrl,
+        deviceSecret
       })
     });
   } catch {
@@ -714,13 +722,18 @@ export function PlayerApp() {
   const [clockNow, setClockNow] = useState(() => new Date());
   const [registration, setRegistration] = useState<RegistrationState>(() => {
     const screenId = readLocalStorage(screenIdKey);
+    const deviceSecret = readLocalStorage(deviceSecretKey);
 
     return {
       playerId: getOrCreatePlayerId(),
       screenId,
+      deviceSecret,
       serverUrl: readLocalStorage(serverUrlKey),
-      status: screenId ? "approved" : "discovering",
-      message: screenId ? "Screen already registered." : "Discovering server...",
+      status: screenId && deviceSecret ? "approved" : "discovering",
+      message:
+        screenId && deviceSecret
+          ? "Screen already registered."
+          : "Discovering server...",
       hostname: window.location.hostname || "unknown"
     };
   });
@@ -769,7 +782,7 @@ export function PlayerApp() {
   }, []);
 
   useEffect(() => {
-    if (registration.screenId) {
+    if (registration.screenId && registration.deviceSecret) {
       return;
     }
 
@@ -831,12 +844,23 @@ export function PlayerApp() {
           return;
         }
 
-        if (body?.status === "approved" && typeof body.screenId === "string") {
+        if (
+          body?.status === "approved" &&
+          typeof body.screenId === "string" &&
+          typeof body.deviceSecret === "string"
+        ) {
           writeLocalStorage(screenIdKey, body.screenId);
-          void persistPlayerRegistration(body.screenId, registration.playerId, serverUrl);
+          writeLocalStorage(deviceSecretKey, body.deviceSecret);
+          void persistPlayerRegistration(
+            body.screenId,
+            registration.playerId,
+            serverUrl,
+            body.deviceSecret
+          );
           setRegistration((state) => ({
             ...state,
             screenId: body.screenId,
+            deviceSecret: body.deviceSecret,
             serverUrl,
             status: "approved",
             message: "Screen approved. Starting playback."
@@ -848,7 +872,10 @@ export function PlayerApp() {
           ...state,
           serverUrl,
           status: "pending",
-          message: "Waiting for approval..."
+          message:
+            body?.status === "approved"
+              ? "Waiting for device credentials..."
+              : "Waiting for approval..."
         }));
       } catch (error) {
         setRegistration((state) => ({
@@ -872,28 +899,30 @@ export function PlayerApp() {
         window.clearInterval(registerTimer);
       }
     };
-  }, [registration.playerId, registration.screenId]);
+  }, [registration.deviceSecret, registration.playerId, registration.screenId]);
 
   useEffect(() => {
-    if (!registration.screenId || !registration.serverUrl) {
+    if (!registration.screenId || !registration.serverUrl || !registration.deviceSecret) {
       return;
     }
 
     void persistPlayerRegistration(
       registration.screenId,
       registration.playerId,
-      registration.serverUrl
+      registration.serverUrl,
+      registration.deviceSecret
     );
-  }, [registration.playerId, registration.screenId, registration.serverUrl]);
+  }, [registration.deviceSecret, registration.playerId, registration.screenId, registration.serverUrl]);
 
   useEffect(() => {
-    if (!registration.screenId || !registration.serverUrl) {
+    if (!registration.screenId || !registration.serverUrl || !registration.deviceSecret) {
       return;
     }
 
     let cancelled = false;
     const screenId = registration.screenId;
     const serverUrl = registration.serverUrl;
+    const deviceSecret = registration.deviceSecret;
 
     async function sendHeartbeat() {
       const active = activeItemRef.current;
@@ -944,7 +973,8 @@ export function PlayerApp() {
           {
             method: "POST",
             headers: {
-              "Content-Type": "application/json"
+              "Content-Type": "application/json",
+              "X-Narrowcasting-Device-Secret": deviceSecret
             },
             body: JSON.stringify(payload)
           },
@@ -966,7 +996,7 @@ export function PlayerApp() {
       cancelled = true;
       window.clearInterval(heartbeatTimer);
     };
-  }, [registration.playerId, registration.screenId, registration.serverUrl]);
+  }, [registration.deviceSecret, registration.playerId, registration.screenId, registration.serverUrl]);
 
   useEffect(() => {
     let cancelled = false;

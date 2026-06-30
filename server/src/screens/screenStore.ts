@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 
 export interface ScreenRecord {
@@ -17,6 +17,7 @@ export interface ScreenRecord {
   resolution: string;
   orientation: "landscape" | "portrait" | "unknown";
   userAgent: string;
+  deviceSecret?: string | null;
   heartbeat?: ScreenHeartbeat;
   connectionStatus?: "online" | "offline";
   healthStatus?: "healthy" | "warning" | "offline";
@@ -74,6 +75,10 @@ function sanitizeNumber(value: unknown): number | null {
 
 function sanitizeNullableText(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim().slice(0, 500) : null;
+}
+
+function generateDeviceSecret() {
+  return randomBytes(32).toString("base64url");
 }
 
 function normalizeHeartbeat(value: unknown): ScreenHeartbeat | undefined {
@@ -161,6 +166,7 @@ function normalizeScreen(value: unknown): ScreenRecord | null {
     resolution: sanitizeText(candidate.resolution, "unknown"),
     orientation: normalizeOrientation(candidate.orientation),
     userAgent: sanitizeText(candidate.userAgent, "unknown"),
+    deviceSecret: sanitizeNullableText(candidate.deviceSecret),
     heartbeat: normalizeHeartbeat(candidate.heartbeat)
   };
 }
@@ -176,10 +182,20 @@ export async function listScreens(): Promise<ScreenRecord[]> {
     const value: unknown = JSON.parse(content);
 
     if (Array.isArray(value)) {
-      return value
+      const screens = value
         .map((screen) => normalizeScreen(screen))
-        .filter((screen): screen is ScreenRecord => screen !== null)
-        .map(withDerivedStatus);
+        .filter((screen): screen is ScreenRecord => screen !== null);
+      const migratedScreens = screens.map((screen) =>
+        screen.status === "approved" && !screen.deviceSecret
+          ? { ...screen, deviceSecret: generateDeviceSecret() }
+          : screen
+      );
+
+      if (migratedScreens.some((screen, index) => screen.deviceSecret !== screens[index]?.deviceSecret)) {
+        await writeScreens(migratedScreens);
+      }
+
+      return migratedScreens.map(withDerivedStatus);
     }
   } catch {
     return [];
@@ -213,6 +229,9 @@ export async function registerScreen(input: ScreenRegistrationInput): Promise<Sc
     resolution: sanitizeText(input.resolution, existingScreen?.resolution ?? "unknown"),
     orientation: normalizeOrientation(input.orientation ?? existingScreen?.orientation),
     userAgent: sanitizeText(input.userAgent, existingScreen?.userAgent ?? "unknown"),
+    deviceSecret:
+      existingScreen?.deviceSecret ??
+      (existingScreen?.status === "approved" ? generateDeviceSecret() : null),
     heartbeat: existingScreen?.heartbeat
   };
 
@@ -235,7 +254,8 @@ export async function approveScreen(screenId: string): Promise<ScreenRecord | nu
 
   const approvedScreen: ScreenRecord = {
     ...screen,
-    status: "approved"
+    status: "approved",
+    deviceSecret: screen.deviceSecret ?? generateDeviceSecret()
   };
 
   await writeScreens(screens.map((item) => (item.screenId === screenId ? approvedScreen : item)));

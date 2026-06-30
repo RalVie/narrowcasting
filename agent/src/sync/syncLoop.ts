@@ -17,14 +17,22 @@ function isSchedule(value: unknown): value is Schedule {
 }
 
 async function fetchSchedule(config: AgentConfig): Promise<Schedule> {
-  const screenId = await readScreenId(config);
+  const deviceIdentity = await readDeviceIdentity(config);
 
-  if (!screenId) {
+  if (!deviceIdentity.screenId) {
     throw new Error("screenId is required for schedule sync; keeping existing local schedule");
   }
 
-  const scheduleUrl = `${config.serverUrl}/api/schedule?screenId=${encodeURIComponent(screenId)}`;
-  const response = await fetch(scheduleUrl);
+  if (!deviceIdentity.deviceSecret) {
+    throw new Error("deviceSecret is required for authenticated schedule sync; keeping existing local schedule");
+  }
+
+  const scheduleUrl = `${config.serverUrl}/api/schedule?screenId=${encodeURIComponent(deviceIdentity.screenId)}`;
+  const response = await fetch(scheduleUrl, {
+    headers: {
+      "X-Narrowcasting-Device-Secret": deviceIdentity.deviceSecret
+    }
+  });
 
   if (!response.ok) {
     throw new Error(`schedule request failed with HTTP ${response.status}`);
@@ -39,23 +47,39 @@ async function fetchSchedule(config: AgentConfig): Promise<Schedule> {
   return body;
 }
 
-async function readScreenId(config: AgentConfig): Promise<string | null> {
+async function readDeviceIdentity(config: AgentConfig): Promise<{
+  screenId: string | null;
+  deviceSecret: string | null;
+}> {
+  let screenId = config.screenId;
+  let deviceSecret = config.deviceSecret;
+
   if (config.screenId) {
-    return config.screenId;
+    screenId = config.screenId;
   }
 
   try {
     const content = await readFile(config.registrationPath, "utf8");
-    const value = JSON.parse(content) as { screenId?: unknown };
+    const value = JSON.parse(content) as { screenId?: unknown; deviceSecret?: unknown };
 
-    if (typeof value.screenId === "string" && value.screenId.trim()) {
-      return value.screenId.trim();
+    if (!screenId && typeof value.screenId === "string" && value.screenId.trim()) {
+      screenId = value.screenId.trim();
+    }
+
+    if (!deviceSecret && typeof value.deviceSecret === "string" && value.deviceSecret.trim()) {
+      deviceSecret = value.deviceSecret.trim();
     }
   } catch {
-    return null;
+    return {
+      screenId,
+      deviceSecret
+    };
   }
 
-  return null;
+  return {
+    screenId,
+    deviceSecret
+  };
 }
 
 async function saveSchedule(config: AgentConfig, schedule: Schedule) {
