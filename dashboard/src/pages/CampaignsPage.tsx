@@ -27,6 +27,15 @@ function targetTypeLabel(value: AssignmentTargetType) {
   return value === "SCREEN" ? "Screens" : "Screen Groups";
 }
 
+function scheduleSummary(campaign: Campaign) {
+  const parts = [
+    campaign.startDate || campaign.endDate ? `${campaign.startDate ?? "Any date"} - ${campaign.endDate ?? "Any date"}` : null,
+    campaign.daysOfWeek && campaign.daysOfWeek.length > 0 ? campaign.daysOfWeek.join(", ") : null
+  ].filter(Boolean);
+
+  return parts.length > 0 ? parts.join(" / ") : "Always active";
+}
+
 function toDraft(campaign: Campaign): CampaignDraft {
   return {
     name: campaign.name,
@@ -447,6 +456,17 @@ export function CampaignsPage() {
       : groupMap.get(targetId)?.name ?? "Missing group";
   }
 
+  function deploymentSummary(campaign: Campaign) {
+    const targets = campaign.targetIds.map((targetId) => getTargetName(campaign.targetType, targetId));
+    const targetLabel = targetTypeLabel(campaign.targetType).toLowerCase();
+
+    return targets.length > 0 ? `${targets.length} ${targetLabel}: ${targets.join(", ")}` : `No ${targetLabel} selected`;
+  }
+
+  function playlistCountForProgram(programId: string) {
+    return programMap.get(programId)?.playlistIds.length ?? 0;
+  }
+
   function toggleTarget(draft: CampaignDraft, targetId: string): CampaignDraft {
     return {
       ...draft,
@@ -481,64 +501,114 @@ export function CampaignsPage() {
     );
   }
 
-  function renderCampaignForm(draft: CampaignDraft, onChange: (draft: CampaignDraft) => void) {
+  function renderCampaignForm(draft: CampaignDraft, onChange: (draft: CampaignDraft) => void, mode: "create" | "edit") {
+    const selectedProgram = programMap.get(draft.programId);
+
     return (
-      <div className="campaign-form-grid">
-        <label>
-          Campaign name
-          <input
-            onChange={(event) => onChange({ ...draft, name: event.target.value })}
-            placeholder="Lunch menu"
-            value={draft.name}
-          />
-        </label>
-        <label>
-          Description
-          <input
-            onChange={(event) => onChange({ ...draft, description: event.target.value })}
-            placeholder="Optional"
-            value={draft.description}
-          />
-        </label>
-        <label>
-          Program
-          <select onChange={(event) => onChange({ ...draft, programId: event.target.value })} value={draft.programId}>
-            <option value="">Choose program</option>
-            {programs.map((program) => (
-              <option key={program.id} value={program.id}>
-                {program.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Target type
-          <select
-            onChange={(event) =>
-              onChange({
-                ...draft,
-                targetType: event.target.value as AssignmentTargetType,
-                targetIds: []
-              })
-            }
-            value={draft.targetType}
-          >
-            <option value="SCREEN">Screens</option>
-            <option value="SCREEN_GROUP">Screen Groups</option>
-          </select>
-        </label>
-        <label className="campaign-enabled-toggle">
-          Enabled
-          <input
-            checked={draft.enabled}
-            onChange={(event) => onChange({ ...draft, enabled: event.target.checked })}
-            type="checkbox"
-          />
-        </label>
-        <div className="campaign-targets-field">
-          <span>{targetTypeLabel(draft.targetType)}</span>
-          {renderTargetPicker(draft, onChange)}
-        </div>
+      <div className="campaign-editor-sections">
+        <section className="campaign-editor-section">
+          <div>
+            <h4>General</h4>
+            <p>Name the campaign and decide whether it is active.</p>
+          </div>
+          <div className="campaign-form-grid">
+            <label>
+              Campaign name
+              <input
+                onChange={(event) => onChange({ ...draft, name: event.target.value })}
+                placeholder="Lunch menu"
+                value={draft.name}
+              />
+            </label>
+            <label>
+              Description
+              <input
+                onChange={(event) => onChange({ ...draft, description: event.target.value })}
+                placeholder="Optional"
+                value={draft.description}
+              />
+            </label>
+            <label className="campaign-enabled-toggle">
+              Enabled
+              <input
+                checked={draft.enabled}
+                onChange={(event) => onChange({ ...draft, enabled: event.target.checked })}
+                type="checkbox"
+              />
+            </label>
+          </div>
+        </section>
+
+        <section className="campaign-editor-section">
+          <div>
+            <h4>Content</h4>
+            <p>Choose the program this campaign publishes.</p>
+          </div>
+          <div className="campaign-form-grid">
+            <label>
+              Program
+              <select onChange={(event) => onChange({ ...draft, programId: event.target.value })} value={draft.programId}>
+                <option value="">Choose program</option>
+                {programs.map((program) => (
+                  <option key={program.id} value={program.id}>
+                    {program.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="campaign-readonly-summary">
+              <span>Playlists</span>
+              <strong>{selectedProgram ? selectedProgram.playlistIds.length : 0}</strong>
+            </div>
+          </div>
+        </section>
+
+        <section className="campaign-editor-section">
+          <div>
+            <h4>Scheduling</h4>
+            <p>Campaign time rules are preserved by the existing publishing workflow.</p>
+          </div>
+          <div className="campaign-readonly-row">
+            <span>{mode === "create" ? "Always active by default" : "Existing schedule configuration is preserved."}</span>
+          </div>
+        </section>
+
+        <section className="campaign-editor-section">
+          <div>
+            <h4>Deployment</h4>
+            <p>Select where this campaign should run.</p>
+          </div>
+          <div className="campaign-form-grid">
+            <label>
+              Target type
+              <select
+                onChange={(event) =>
+                  onChange({
+                    ...draft,
+                    targetType: event.target.value as AssignmentTargetType,
+                    targetIds: []
+                  })
+                }
+                value={draft.targetType}
+              >
+                <option value="SCREEN">Screens</option>
+                <option value="SCREEN_GROUP">Screen Groups</option>
+              </select>
+            </label>
+            <div className="campaign-targets-field">
+              <span>{targetTypeLabel(draft.targetType)}</span>
+              {renderTargetPicker(draft, onChange)}
+            </div>
+          </div>
+        </section>
+
+        <section className="campaign-editor-section campaign-priority-placeholder">
+          <div>
+            <h4>Priority</h4>
+            <p>Campaign Priority (Coming in next phase)</p>
+          </div>
+          <strong>Priority: Normal</strong>
+        </section>
       </div>
     );
   }
@@ -661,20 +731,26 @@ export function CampaignsPage() {
           <h2>Campaigns</h2>
           <p>Publish programs to screens and screen groups.</p>
         </div>
-        <button disabled={isBusy} onClick={() => void loadCampaigns()} type="button">
-          Refresh
-        </button>
+        <div className="campaign-toolbar">
+          <a href="#new-campaign">+ New Campaign</a>
+          <button disabled={isBusy} onClick={() => void createCampaign()} type="button">
+            Publish
+          </button>
+          <button disabled={isBusy} onClick={() => void loadCampaigns()} type="button">
+            Refresh
+          </button>
+        </div>
       </div>
 
       <p className="status-text">{status}</p>
       {renderPublishReport()}
 
-      <section className="operator-panel campaign-create-panel">
+      <section className="operator-panel campaign-create-panel" id="new-campaign">
         <div className="operator-panel-header">
           <h3>Create Campaign</h3>
           <span>Business workflow</span>
         </div>
-        {renderCampaignForm(newDraft, setNewDraft)}
+        {renderCampaignForm(newDraft, setNewDraft, "create")}
         <button disabled={isBusy} onClick={() => void createCampaign()} type="button">
           Publish Campaign
         </button>
@@ -686,11 +762,18 @@ export function CampaignsPage() {
           <span>{campaigns.length}</span>
         </div>
 
-        {campaigns.length === 0 ? <p className="operator-empty">No campaigns yet.</p> : null}
+        {campaigns.length === 0 ? (
+          <div className="campaign-empty-state">
+            <strong>No campaigns yet</strong>
+            <p>Create your first campaign to start scheduling content.</p>
+            <a href="#new-campaign">+ New Campaign</a>
+          </div>
+        ) : null}
         {campaigns.length > 0 ? (
           <div className="campaign-list">
             {campaigns.map((campaign) => {
               const draft = drafts[campaign.id] ?? toDraft(campaign);
+              const playlistCount = playlistCountForProgram(campaign.programId);
 
               return (
                 <article className="campaign-card" key={campaign.id}>
@@ -699,28 +782,34 @@ export function CampaignsPage() {
                       <strong>{campaign.name}</strong>
                       <span>{programMap.get(campaign.programId)?.name ?? "Missing program"}</span>
                     </div>
-                    <div>
-                      <span>{campaign.enabled ? "Enabled" : "Disabled"}</span>
-                      <small>
-                        {campaign.targetIds.map((targetId) => getTargetName(campaign.targetType, targetId)).join(", ") || "No targets"}
-                      </small>
+                    <div className="campaign-card-metrics">
+                      <span className={campaign.enabled ? "campaign-status enabled" : "campaign-status disabled"}>
+                        {campaign.enabled ? "Enabled" : "Disabled"}
+                      </span>
+                      <span>{scheduleSummary(campaign)}</span>
+                      <span>{deploymentSummary(campaign)}</span>
+                      <span>{playlistCount} playlist{playlistCount === 1 ? "" : "s"}</span>
+                      <span>Publish state: Published</span>
+                      <span>Priority: Normal</span>
                     </div>
-                    <div>
-                      <small>Created {formatDateTime(campaign.createdAt)}</small>
+                    <div className="campaign-card-meta">
                       <small>Updated {formatDateTime(campaign.updatedAt)}</small>
                     </div>
                   </div>
 
-                  {renderCampaignForm(draft, (nextDraft) =>
-                    setDrafts((currentDrafts) => ({
-                      ...currentDrafts,
-                      [campaign.id]: nextDraft
-                    }))
+                  {renderCampaignForm(
+                    draft,
+                    (nextDraft) =>
+                      setDrafts((currentDrafts) => ({
+                        ...currentDrafts,
+                        [campaign.id]: nextDraft
+                      })),
+                    "edit"
                   )}
 
                   <div className="campaign-actions">
                     <button disabled={isBusy} onClick={() => void updateCampaign(campaign)} type="button">
-                      Save Campaign
+                      Publish
                     </button>
                     <button disabled={isBusy} onClick={() => void deleteCampaign(campaign)} type="button">
                       Delete Campaign
