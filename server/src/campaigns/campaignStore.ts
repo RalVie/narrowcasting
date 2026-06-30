@@ -37,6 +37,10 @@ export interface Campaign {
   campaignType?: string | null;
 }
 
+export interface PublishMutationOptions {
+  confirmWarnings?: boolean;
+}
+
 const campaignsPath = resolve(process.cwd(), "data", "campaigns.json");
 
 function sanitizeText(value: unknown, fallback = "") {
@@ -259,12 +263,16 @@ export async function listCampaigns(): Promise<Campaign[]> {
   return [];
 }
 
-export async function createCampaign(input: unknown): Promise<Campaign> {
+export async function createCampaign(
+  input: unknown,
+  options: PublishMutationOptions = {}
+): Promise<Campaign> {
   const campaignInput = readCampaignInput(input);
   assertPublishable(
     await validatePublishIntent({
       ...campaignInput
-    })
+    }),
+    { confirmWarnings: options.confirmWarnings }
   );
   await validateCampaignInput(campaignInput);
 
@@ -296,7 +304,11 @@ export async function createCampaign(input: unknown): Promise<Campaign> {
   return campaign;
 }
 
-export async function updateCampaign(id: string, input: unknown): Promise<Campaign | null> {
+export async function updateCampaign(
+  id: string,
+  input: unknown,
+  options: PublishMutationOptions = {}
+): Promise<Campaign | null> {
   const campaigns = await listCampaigns();
   const existing = campaigns.find((campaign) => campaign.id === id);
 
@@ -309,7 +321,8 @@ export async function updateCampaign(id: string, input: unknown): Promise<Campai
     await validatePublishIntent({
       campaignId: existing.id,
       ...campaignInput
-    })
+    }),
+    { confirmWarnings: options.confirmWarnings }
   );
   await validateCampaignInput(campaignInput);
 

@@ -141,6 +141,56 @@ export function CampaignsPage() {
     return report;
   }
 
+  function buildWarningConfirmationText(report: PublishValidationReport) {
+    const warningLines = report.warnings.slice(0, 6).map((warning) => `- ${warning.message}`);
+    const impactLines =
+      report.impact?.screens.slice(0, 6).map((screen) => {
+        const result = impactResultLabel(screen.result);
+        return `- ${screen.screenName}: ${result}. ${screen.reason}`;
+      }) ?? [];
+    const fixLines = report.suggestedFixes.slice(0, 5).map((fix) => `- ${fix}`);
+    const remainingWarnings =
+      report.warnings.length > warningLines.length
+        ? `...and ${report.warnings.length - warningLines.length} more warning(s).`
+        : "";
+    const remainingImpact =
+      report.impact && report.impact.screens.length > impactLines.length
+        ? `...and ${report.impact.screens.length - impactLines.length} more affected screen(s).`
+        : "";
+
+    return [
+      "This campaign can be published, but there are warnings.",
+      "",
+      "Summary:",
+      `${report.summary.blockingErrors} blocking error(s)`,
+      `${report.summary.warnings} warning(s)`,
+      `${report.summary.information} informational message(s)`,
+      "",
+      "Warnings:",
+      warningLines.length > 0 ? warningLines.join("\n") : "- None",
+      remainingWarnings,
+      "",
+      "Runtime Impact Preview:",
+      impactLines.length > 0 ? impactLines.join("\n") : "- No affected screens",
+      remainingImpact,
+      "",
+      "Suggested Fixes:",
+      fixLines.length > 0 ? fixLines.join("\n") : "- None",
+      "",
+      "Do you want to publish anyway?"
+    ]
+      .filter((line) => line !== "")
+      .join("\n");
+  }
+
+  function confirmPublishWarnings(report: PublishValidationReport) {
+    if (report.summary.warnings === 0) {
+      return true;
+    }
+
+    return window.confirm(buildWarningConfirmationText(report));
+  }
+
   async function loadCampaigns() {
     try {
       const [campaignResponse, programResponse, screenResponse, groupResponse] = await Promise.all([
@@ -201,14 +251,21 @@ export function CampaignsPage() {
         return;
       }
 
-      setStatus(report.summary.warnings > 0 ? "Validation passed with warnings. Publishing campaign..." : "Validation passed. Publishing campaign...");
+      const confirmWarnings = report.summary.warnings > 0;
+
+      if (confirmWarnings && !confirmPublishWarnings(report)) {
+        setStatus("Publish cancelled. Warnings were not confirmed.");
+        return;
+      }
+
+      setStatus(confirmWarnings ? "Warnings confirmed. Publishing campaign..." : "Validation passed. Publishing campaign...");
 
       const response = await fetch(apiUrl("/api/campaigns"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ ...payload, confirmWarnings })
       });
 
       if (!response.ok) {
@@ -250,14 +307,21 @@ export function CampaignsPage() {
         return;
       }
 
-      setStatus(report.summary.warnings > 0 ? "Validation passed with warnings. Updating campaign..." : "Validation passed. Updating campaign...");
+      const confirmWarnings = report.summary.warnings > 0;
+
+      if (confirmWarnings && !confirmPublishWarnings(report)) {
+        setStatus("Update cancelled. Warnings were not confirmed.");
+        return;
+      }
+
+      setStatus(confirmWarnings ? "Warnings confirmed. Updating campaign..." : "Validation passed. Updating campaign...");
 
       const response = await fetch(apiUrl(`/api/campaigns/${encodeURIComponent(campaign.id)}/update`), {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ ...payload, confirmWarnings })
       });
 
       if (!response.ok) {
@@ -488,7 +552,7 @@ export function CampaignsPage() {
                 <strong>{screen.screenName}</strong>
                 <small>
                   Target: {screen.targetSource.name ?? screen.targetSource.id}
-                  {screen.winningProgramName ? ` · Program: ${screen.winningProgramName}` : ""}
+                  {screen.winningProgramName ? ` - Program: ${screen.winningProgramName}` : ""}
                 </small>
               </div>
               <span>{impactResultLabel(screen.result)}</span>

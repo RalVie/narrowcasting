@@ -99,6 +99,12 @@ export class PublishValidationError extends Error {
   }
 }
 
+export class PublishWarningConfirmationError extends Error {
+  constructor(public report: PublishValidationReport) {
+    super("Publishing requires warning confirmation.");
+  }
+}
+
 function message(input: Omit<PublishValidationMessage, "id">): PublishValidationMessage {
   return {
     ...input,
@@ -185,6 +191,15 @@ export function publishValidationErrorResponse(error: PublishValidationError) {
     error: "validation_error",
     code: "VALIDATION_FAILED",
     message: "Publishing blocked by validation.",
+    report: error.report
+  };
+}
+
+export function publishWarningConfirmationResponse(error: PublishWarningConfirmationError) {
+  return {
+    error: "confirmation_required",
+    code: "PUBLISH_WARNINGS_REQUIRE_CONFIRMATION",
+    message: "Publishing has warnings and requires explicit confirmation.",
     report: error.report
   };
 }
@@ -734,8 +749,15 @@ export async function validatePublishIntent(intent: PublishValidationIntent): Pr
   return buildReport(messages, publishImpact.impact);
 }
 
-export function assertPublishable(report: PublishValidationReport) {
+export function assertPublishable(
+  report: PublishValidationReport,
+  options: { confirmWarnings?: boolean } = {}
+) {
   if (report.summary.blockingErrors > 0) {
     throw new PublishValidationError(report);
+  }
+
+  if (report.summary.warnings > 0 && !options.confirmWarnings) {
+    throw new PublishWarningConfirmationError(report);
   }
 }
