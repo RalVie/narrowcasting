@@ -35,6 +35,16 @@ function isDashboardApiRequest(url: string) {
   }
 }
 
+function isProtectedDashboardRead(url: string) {
+  try {
+    const targetUrl = new URL(url, window.location.origin);
+
+    return targetUrl.pathname === "/api/audit" || targetUrl.pathname.startsWith("/api/audit/");
+  } catch {
+    return false;
+  }
+}
+
 function readStoredAdminKey() {
   const envKey = import.meta.env.VITE_ADMIN_KEY;
 
@@ -78,7 +88,7 @@ function installAdminFetchBoundary() {
     const url = input instanceof Request ? input.url : String(input);
     const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
 
-    if (isMutationMethod(method) && isDashboardApiRequest(url)) {
+    if (isDashboardApiRequest(url) && (isMutationMethod(method) || isProtectedDashboardRead(url))) {
       const adminKey = getAdminKeyForMutation();
       const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
 

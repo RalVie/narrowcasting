@@ -1,4 +1,5 @@
 import { AssignmentsPage } from "./pages/AssignmentsPage";
+import { AuditPage } from "./pages/AuditPage";
 import { CampaignsPage } from "./pages/CampaignsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { MediaLibraryPage } from "./pages/MediaLibraryPage";
@@ -38,6 +39,7 @@ const pageGroups = [
       { label: "Schedule Preview", component: SchedulePreviewPage },
       { label: "Scheduler", component: SchedulerPage },
       { label: "Scheduler Diagnostics", component: SchedulerDiagnosticsPage },
+      { label: "Audit", component: AuditPage },
       { label: "Advanced Assignments", component: AssignmentsPage },
       { label: "General", component: SettingsPage }
     ]

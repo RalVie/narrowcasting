@@ -1265,6 +1265,55 @@ button:disabled {
   font-size: 12px;
 }
 
+.audit-event-list {
+  display: grid;
+  gap: 8px;
+}
+
+.audit-event-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  gap: 4px 12px;
+  border-left: 3px solid #b9c8bd;
+  border-radius: 6px;
+  padding: 10px;
+  background: #f8faf7;
+}
+
+.audit-event-row.success {
+  border-left-color: #7fb58b;
+}
+
+.audit-event-row.failure {
+  border-left-color: #c65f5f;
+}
+
+.audit-event-row div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.audit-event-row strong,
+.audit-event-row span,
+.audit-event-row small,
+.audit-event-row p {
+  overflow-wrap: anywhere;
+}
+
+.audit-event-row span,
+.audit-event-row small,
+.audit-event-row p {
+  margin: 0;
+  color: #647064;
+  font-size: 12px;
+}
+
+.audit-event-row p,
+.audit-event-row > small {
+  grid-column: 1 / -1;
+}
+
 .diagnostics-control-panel {
   margin-top: 14px;
 }

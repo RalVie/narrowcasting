@@ -16,6 +16,12 @@ function isReadMethod(method: string) {
   return method === "GET" || method === "HEAD" || method === "OPTIONS";
 }
 
+function isAdminProtectedRead(request: FastifyRequest) {
+  const path = request.url.split("?")[0];
+
+  return path === "/api/audit" || path.startsWith("/api/audit/");
+}
+
 function isDeviceRuntimeMutation(request: FastifyRequest) {
   const path = request.url.split("?")[0];
 
@@ -83,7 +89,11 @@ function authNotConfigured(reply: FastifyReply) {
 
 export function registerAdminAuth(app: FastifyInstance) {
   app.addHook("onRequest", async (request, reply) => {
-    if (isReadMethod(request.method) || !isProtectedApiPath(request) || isDeviceRuntimeMutation(request)) {
+    if (
+      (isReadMethod(request.method) && !isAdminProtectedRead(request)) ||
+      !isProtectedApiPath(request) ||
+      isDeviceRuntimeMutation(request)
+    ) {
       return;
     }
 
@@ -111,4 +121,3 @@ export function registerAdminAuth(app: FastifyInstance) {
     }
   });
 }
-

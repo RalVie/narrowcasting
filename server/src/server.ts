@@ -3,6 +3,7 @@ import cors from "@fastify/cors";
 import { registerApi } from "./api/index.js";
 import { badRequest, internalError, payloadTooLarge } from "./api/apiErrors.js";
 import { healthRoutes } from "./api/routes/health.js";
+import { registerAuditHooks } from "./audit/auditHooks.js";
 import { mediaRoutes } from "./api/routes/media.js";
 import { registerDashboardStatic } from "./dashboard/dashboardStatic.js";
 import { createDatabaseContext } from "./db/context.js";
@@ -61,6 +62,7 @@ export function buildServer() {
     methods: ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"]
   });
   registerAdminAuth(app);
+  registerAuditHooks(app);
   app.register(healthRoutes);
   app.register(mediaRoutes);
   app.register(registerApi, { prefix: "/api" });

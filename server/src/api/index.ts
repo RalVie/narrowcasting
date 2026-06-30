@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { assignmentRoutes } from "./routes/assignments.js";
+import { auditRoutes } from "./routes/audit.js";
 import { campaignRoutes } from "./routes/campaigns.js";
 import { playlistRoutes } from "./routes/playlist.js";
 import { programRoutes } from "./routes/program.js";
@@ -17,6 +18,7 @@ export const registerApi: FastifyPluginAsync = async (app) => {
   }));
 
   app.register(assignmentRoutes);
+  app.register(auditRoutes);
   app.register(campaignRoutes);
   app.register(playlistRoutes);
   app.register(programRoutes);
