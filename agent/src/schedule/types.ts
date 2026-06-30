@@ -1,58 +1,20 @@
-export interface TextScheduleItem {
-  id: string;
-  type: "text";
-  title: string;
-  duration: number;
-}
+import type {
+  ImageScheduleItem,
+  ResolvedSchedule,
+  ScheduleItem,
+  TextScheduleItem,
+  Theme,
+  ThemeRegion,
+  VideoScheduleItem
+} from "../../../shared/runtime.js";
 
-export interface ImageScheduleItem {
-  id: string;
-  mediaId?: string;
-  type: "image";
-  file: string;
-  duration: number;
-}
+export type {
+  ImageScheduleItem,
+  ScheduleItem,
+  TextScheduleItem,
+  Theme,
+  ThemeRegion,
+  VideoScheduleItem
+};
 
-export interface VideoScheduleItem {
-  id: string;
-  mediaId?: string;
-  type: "video";
-  file: string;
-  duration?: number;
-  durationMode?: "auto" | "clip";
-}
-
-export type ScheduleItem = TextScheduleItem | ImageScheduleItem | VideoScheduleItem;
-
-export interface ThemeRegion {
-  id: string;
-  name: string;
-  type: "program" | "logo" | "image" | "text" | "clock";
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  mediaId?: string;
-  file?: string;
-}
-
-export interface Theme {
-  id: string;
-  name: string;
-  orientation: "landscape" | "portrait";
-  canvasWidth: number;
-  canvasHeight: number;
-  backgroundColor: string;
-  backgroundMediaId?: string;
-  regions: ThemeRegion[];
-}
-
-export interface Schedule {
-  version: number;
-  updatedAt: string;
-  assignmentStatus?: "assigned" | "unassigned";
-  assignedProgramId?: string | null;
-  assignedProgramName?: string | null;
-  theme?: Theme;
-  items: ScheduleItem[];
-}
+export type Schedule = ResolvedSchedule;
