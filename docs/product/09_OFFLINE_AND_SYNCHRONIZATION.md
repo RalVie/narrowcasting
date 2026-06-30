@@ -244,7 +244,23 @@ Activates new schedule.
 
 Logs synchronization.
 
-## 12. Failed Synchronization
+## 12. Player Device Identity Recovery
+
+If a player discovers that its registered screen identity no longer exists, it resets only its Narrowcasting device credentials.
+
+If its device secret is invalid or expired, it also resets only its device credentials.
+
+The player preserves:
+
+- media cache
+- schedule cache
+- stable player id
+
+After reset, the player automatically rediscovers the server and registers again as Pending Approval.
+
+Temporary network failures, server outages, or unreachable endpoints must not reset identity.
+
+## 13. Failed Synchronization
 
 Failures include:
 
@@ -262,7 +278,7 @@ Network interruption
 
 Player remains operational using previous schedule whenever possible.
 
-## 13. Synchronization Dashboard
+## 14. Synchronization Dashboard
 
 Operators should immediately see:
 
@@ -278,7 +294,7 @@ Cache Warnings
 
 Storage Warnings
 
-## 14. Player Status
+## 15. Player Status
 
 Each player exposes:
 
@@ -298,7 +314,7 @@ Software Version
 
 Last Successful Sync
 
-## 15. Storage Behaviour
+## 16. Storage Behaviour
 
 Warnings:
 
@@ -322,7 +338,7 @@ Media pruning
 
 Future automatic cleanup.
 
-## 16. Cache Cleanup
+## 17. Cache Cleanup
 
 Media cleanup must never remove media referenced by:
 
@@ -334,7 +350,7 @@ Validation process
 
 Cleanup is validation-aware.
 
-## 17. Conflict Handling
+## 18. Conflict Handling
 
 If synchronization fails:
 
@@ -348,7 +364,7 @@ Activity logged.
 
 Operator notified.
 
-## 18. Requirements
+## 19. Requirements
 
 **REQ-OFF-001**
 
@@ -382,7 +398,7 @@ Player state SHALL always be explainable.
 
 Synchronization SHALL never bypass the Scheduler Resolver.
 
-## 19. Enterprise Scale
+## 20. Enterprise Scale
 
 Synchronization shall support:
 
@@ -414,7 +430,7 @@ Delta synchronization
 
 Prioritized deployments
 
-## 20. Future Extensions
+## 21. Future Extensions
 
 Reserved:
 
@@ -434,7 +450,7 @@ Bandwidth scheduling
 
 Package compression
 
-## 21. Definition of Done
+## 22. Definition of Done
 
 Offline & Synchronization is complete when:
 
