@@ -97,6 +97,10 @@ export interface SchedulerResolutionResult extends SchedulerResolution {
   schedule: Schedule;
 }
 
+interface ResolutionOptions {
+  assignments?: Assignment[];
+}
+
 function assignmentToCandidate(
   assignment: Assignment,
   scheduleEvaluation: ScheduleEvaluation,
@@ -459,11 +463,14 @@ function buildTrace(input: {
   };
 }
 
-async function loadResolution(screenId: string): Promise<SchedulerResolution> {
+async function loadResolution(
+  screenId: string,
+  options: ResolutionOptions = {}
+): Promise<SchedulerResolution> {
   const [screen, groups, assignments, programs] = await Promise.all([
     getScreenById(screenId),
     listScreenGroups(),
-    listAssignments(),
+    options.assignments ? Promise.resolve(options.assignments) : listAssignments(),
     getProgramsOrDefault()
   ]);
   const matchingGroups = groups.filter((group) => group.screenIds.includes(screenId));
@@ -610,6 +617,19 @@ async function buildSchedule(resolution: SchedulerResolution): Promise<Schedule>
 
 export async function resolveScheduleForScreen(screenId: string): Promise<SchedulerResolutionResult> {
   const resolution = await loadResolution(screenId);
+  const schedule = await buildSchedule(resolution);
+
+  return {
+    ...resolution,
+    schedule
+  };
+}
+
+export async function resolveScheduleForScreenWithAssignments(
+  screenId: string,
+  assignments: Assignment[]
+): Promise<SchedulerResolutionResult> {
+  const resolution = await loadResolution(screenId, { assignments });
   const schedule = await buildSchedule(resolution);
 
   return {

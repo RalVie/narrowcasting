@@ -1176,6 +1176,74 @@ button:disabled {
   font-size: 12px;
 }
 
+.publish-impact {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.publish-impact-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.publish-impact-summary span {
+  border: 1px solid #d9dfd4;
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: #17201a;
+  background: #ffffff;
+  font-size: 12px;
+}
+
+.publish-impact-list {
+  display: grid;
+  gap: 8px;
+}
+
+.publish-impact-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto;
+  gap: 4px 10px;
+  border-left: 3px solid #b9c8bd;
+  padding: 8px 10px;
+  background: #f8faf7;
+}
+
+.publish-impact-row.wins {
+  border-left-color: #7fb58b;
+}
+
+.publish-impact-row.loses,
+.publish-impact-row.no_assignment,
+.publish-impact-row.unknown {
+  border-left-color: #d6a742;
+}
+
+.publish-impact-row p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #647064;
+  font-size: 12px;
+}
+
+.publish-impact-row small {
+  display: block;
+  color: #647064;
+  font-size: 12px;
+}
+
+.publish-impact-row > span {
+  align-self: start;
+  border: 1px solid #d9dfd4;
+  border-radius: 999px;
+  padding: 4px 7px;
+  color: #17201a;
+  background: #ffffff;
+  font-size: 12px;
+}
+
 .publish-report-group {
   display: grid;
   gap: 6px;

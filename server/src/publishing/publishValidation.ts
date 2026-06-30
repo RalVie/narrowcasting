@@ -4,7 +4,12 @@ import { getProgramsOrDefault } from "../program/programStore.js";
 import { listScreenGroups } from "../screens/screenGroupStore.js";
 import { listScreens } from "../screens/screenStore.js";
 import { getThemeOrDefault } from "../theme/themeStore.js";
-import type { AssignmentTargetType } from "../assignments/assignmentStore.js";
+import {
+  listAssignments,
+  type Assignment,
+  type AssignmentTargetType
+} from "../assignments/assignmentStore.js";
+import { resolveScheduleForScreenWithAssignments } from "../scheduler/schedulerResolver.js";
 
 export type PublishValidationSeverity = "blocking_error" | "warning" | "info";
 
@@ -45,7 +50,38 @@ export interface PublishValidationReport {
     name?: string;
   }>;
   suggestedFixes: string[];
+  impact: PublishImpactReport;
   generatedAt: string;
+}
+
+export type PublishImpactResult = "wins" | "loses" | "no_assignment" | "unknown";
+
+export interface PublishImpactScreen {
+  screenId: string;
+  screenName: string;
+  targetSource: {
+    type: AssignmentTargetType;
+    id: string;
+    name?: string;
+  };
+  result: PublishImpactResult;
+  winningAssignmentId?: string | null;
+  winningAssignmentSourceType?: Assignment["sourceType"] | null;
+  winningProgramId?: string | null;
+  winningProgramName?: string | null;
+  reason: string;
+  severity: PublishValidationSeverity;
+}
+
+export interface PublishImpactReport {
+  summary: {
+    affectedScreens: number;
+    wins: number;
+    loses: number;
+    noAssignment: number;
+    unknown: number;
+  };
+  screens: PublishImpactScreen[];
 }
 
 export interface PublishValidationIntent {
@@ -84,7 +120,36 @@ function uniqueByKey<T>(items: T[], getKey: (item: T) => string) {
   });
 }
 
-function buildReport(messages: PublishValidationMessage[]): PublishValidationReport {
+function emptyImpactReport(): PublishImpactReport {
+  return {
+    summary: {
+      affectedScreens: 0,
+      wins: 0,
+      loses: 0,
+      noAssignment: 0,
+      unknown: 0
+    },
+    screens: []
+  };
+}
+
+function buildImpactReport(screens: PublishImpactScreen[]): PublishImpactReport {
+  return {
+    summary: {
+      affectedScreens: screens.length,
+      wins: screens.filter((screen) => screen.result === "wins").length,
+      loses: screens.filter((screen) => screen.result === "loses").length,
+      noAssignment: screens.filter((screen) => screen.result === "no_assignment").length,
+      unknown: screens.filter((screen) => screen.result === "unknown").length
+    },
+    screens
+  };
+}
+
+function buildReport(
+  messages: PublishValidationMessage[],
+  impact: PublishImpactReport = emptyImpactReport()
+): PublishValidationReport {
   const blockingErrors = messages.filter((item) => item.severity === "blocking_error");
   const warnings = messages.filter((item) => item.severity === "warning");
   const information = messages.filter((item) => item.severity === "info");
@@ -110,6 +175,7 @@ function buildReport(messages: PublishValidationMessage[]): PublishValidationRep
     information,
     affectedObjects,
     suggestedFixes,
+    impact,
     generatedAt: new Date().toISOString()
   };
 }
@@ -120,6 +186,235 @@ export function publishValidationErrorResponse(error: PublishValidationError) {
     code: "VALIDATION_FAILED",
     message: "Publishing blocked by validation.",
     report: error.report
+  };
+}
+
+function simulatedCampaignId(intent: PublishValidationIntent) {
+  return intent.campaignId ?? "preview-campaign";
+}
+
+function isCampaignPreviewWinner(candidate: { id: string; metadata: { assignmentSourceId?: string } } | null, campaignId: string) {
+  if (!candidate) {
+    return false;
+  }
+
+  return (
+    candidate.metadata.assignmentSourceId === campaignId ||
+    candidate.id.startsWith(`campaign:${campaignId}:`)
+  );
+}
+
+async function buildPublishImpact(input: {
+  intent: PublishValidationIntent;
+  screens: Awaited<ReturnType<typeof listScreens>>;
+  screenGroups: Awaited<ReturnType<typeof listScreenGroups>>;
+}): Promise<{ impact: PublishImpactReport; messages: PublishValidationMessage[] }> {
+  const campaignId = simulatedCampaignId(input.intent);
+  const now = new Date().toISOString();
+  const existingAssignments = await listAssignments();
+  const campaignPrefix = `campaign:${campaignId}:`;
+  const retainedAssignments = existingAssignments.filter(
+    (assignment) =>
+      !(
+        assignment.sourceType === "campaign" &&
+        (assignment.sourceId === campaignId || assignment.id.startsWith(campaignPrefix))
+      )
+  );
+  const simulatedCampaignAssignments: Assignment[] = input.intent.enabled
+    ? input.intent.targetIds.map((targetId) => ({
+        id: `${campaignPrefix}${input.intent.targetType}:${targetId}`,
+        targetType: input.intent.targetType,
+        targetId,
+        programId: input.intent.programId,
+        enabled: true,
+        source: "campaign",
+        sourceType: "campaign",
+        sourceId: campaignId,
+        sourceName: input.intent.name,
+        generatedAt: now,
+        schedule: undefined,
+        createdAt: now,
+        updatedAt: now
+      }))
+    : [];
+  const simulatedAssignments = [...retainedAssignments, ...simulatedCampaignAssignments];
+  const approvedScreenById = new Map(
+    input.screens
+      .filter((screen) => screen.status === "approved")
+      .map((screen) => [screen.screenId, screen])
+  );
+  const impactTargets = uniqueByKey(
+    input.intent.targetIds.flatMap((targetId) => {
+      if (input.intent.targetType === "SCREEN") {
+        const screen = approvedScreenById.get(targetId);
+
+        return screen
+          ? [
+              {
+                screen,
+                targetSource: {
+                  type: input.intent.targetType,
+                  id: targetId,
+                  name: screen.name
+                }
+              }
+            ]
+          : [];
+      }
+
+      const group = input.screenGroups.find((item) => item.groupId === targetId);
+
+      if (!group) {
+        return [];
+      }
+
+      return group.screenIds
+        .map((screenId) => approvedScreenById.get(screenId))
+        .filter((screen): screen is NonNullable<typeof screen> => Boolean(screen))
+        .map((screen) => ({
+          screen,
+          targetSource: {
+            type: input.intent.targetType,
+            id: targetId,
+            name: group.name
+          }
+        }));
+    }),
+    (item) => item.screen.screenId
+  );
+  const messages: PublishValidationMessage[] = [];
+  const impacts: PublishImpactScreen[] = [];
+
+  if (!input.intent.enabled) {
+    return {
+      impact: buildImpactReport(
+        impactTargets.map((target) => ({
+          screenId: target.screen.screenId,
+          screenName: target.screen.name,
+          targetSource: target.targetSource,
+          result: "no_assignment",
+          winningAssignmentId: null,
+          winningAssignmentSourceType: null,
+          winningProgramId: null,
+          winningProgramName: null,
+          reason: "Campaign is disabled and will not create an active runtime assignment for this screen.",
+          severity: "info"
+        }))
+      ),
+      messages
+    };
+  }
+
+  for (const target of impactTargets) {
+    try {
+      const resolution = await resolveScheduleForScreenWithAssignments(
+        target.screen.screenId,
+        simulatedAssignments
+      );
+      const winner = resolution.winningCandidate;
+      const campaignWins = isCampaignPreviewWinner(winner, campaignId);
+      const winningProgramName = resolution.resolvedProgram?.name ?? resolution.schedule.assignedProgramName ?? null;
+
+      if (campaignWins) {
+        impacts.push({
+          screenId: target.screen.screenId,
+          screenName: target.screen.name,
+          targetSource: target.targetSource,
+          result: "wins",
+          winningAssignmentId: winner?.metadata.assignmentId ?? null,
+          winningAssignmentSourceType: winner?.metadata.assignmentSourceType ?? null,
+          winningProgramId: resolution.resolvedProgram?.id ?? resolution.schedule.assignedProgramId ?? null,
+          winningProgramName,
+          reason: "Campaign assignment is expected to win for this screen.",
+          severity: "info"
+        });
+        continue;
+      }
+
+      if (!winner) {
+        impacts.push({
+          screenId: target.screen.screenId,
+          screenName: target.screen.name,
+          targetSource: target.targetSource,
+          result: "no_assignment",
+          winningAssignmentId: null,
+          winningAssignmentSourceType: null,
+          winningProgramId: null,
+          winningProgramName: null,
+          reason: "No assignment is expected to win for this screen.",
+          severity: "warning"
+        });
+        continue;
+      }
+
+      const reason = `Campaign is valid, but ${winner.metadata.assignmentSourceType} assignment "${winner.metadata.assignmentSourceName ?? winner.metadata.assignmentId}" is expected to win. ${winner.metadata.selectionReason ?? resolution.reason}`;
+
+      impacts.push({
+        screenId: target.screen.screenId,
+        screenName: target.screen.name,
+        targetSource: target.targetSource,
+        result: "loses",
+        winningAssignmentId: winner.metadata.assignmentId,
+        winningAssignmentSourceType: winner.metadata.assignmentSourceType,
+        winningProgramId: resolution.resolvedProgram?.id ?? resolution.schedule.assignedProgramId ?? null,
+        winningProgramName,
+        reason,
+        severity: "warning"
+      });
+      messages.push(
+        message({
+          severity: "warning",
+          category: "assignment",
+          ruleId: "VAL-PUBLISH-IMPACT",
+          message: reason,
+          affectedObject: { type: "Screen", id: target.screen.screenId, name: target.screen.name },
+          suggestedFix:
+            "Review competing assignments in Scheduler Diagnostics if this campaign should be visible on this screen."
+        })
+      );
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Resolver impact preview failed.";
+
+      impacts.push({
+        screenId: target.screen.screenId,
+        screenName: target.screen.name,
+        targetSource: target.targetSource,
+        result: "unknown",
+        winningAssignmentId: null,
+        winningAssignmentSourceType: null,
+        winningProgramId: null,
+        winningProgramName: null,
+        reason,
+        severity: "warning"
+      });
+      messages.push(
+        message({
+          severity: "warning",
+          category: "assignment",
+          ruleId: "VAL-PUBLISH-IMPACT",
+          message: `Unable to preview publish impact for screen "${target.screen.name}".`,
+          affectedObject: { type: "Screen", id: target.screen.screenId, name: target.screen.name },
+          suggestedFix: "Use Scheduler Diagnostics to inspect this screen before publishing."
+        })
+      );
+    }
+  }
+
+  if (input.intent.enabled && impactTargets.length === 0) {
+    messages.push(
+      message({
+        severity: "warning",
+        category: "deployment",
+        ruleId: "VAL-PUBLISH-IMPACT",
+        message: "Publish impact cannot be calculated because no approved screens are targeted.",
+        suggestedFix: "Approve screens or target a group with approved screens."
+      })
+    );
+  }
+
+  return {
+    impact: buildImpactReport(impacts),
+    messages
   };
 }
 
@@ -432,7 +727,11 @@ export async function validatePublishIntent(intent: PublishValidationIntent): Pr
     })
   );
 
-  return buildReport(messages);
+  const publishImpact = await buildPublishImpact({ intent, screens, screenGroups });
+
+  messages.push(...publishImpact.messages);
+
+  return buildReport(messages, publishImpact.impact);
 }
 
 export function assertPublishable(report: PublishValidationReport) {

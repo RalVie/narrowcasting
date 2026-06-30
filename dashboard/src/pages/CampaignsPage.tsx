@@ -450,6 +450,56 @@ export function CampaignsPage() {
     );
   }
 
+  function impactResultLabel(result: string) {
+    if (result === "wins") {
+      return "Wins";
+    }
+
+    if (result === "loses") {
+      return "Loses";
+    }
+
+    if (result === "no_assignment") {
+      return "No assignment";
+    }
+
+    return "Unknown";
+  }
+
+  function renderPublishImpact(report: PublishValidationReport) {
+    if (!report.impact || report.impact.screens.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="publish-impact">
+        <strong>Runtime Impact Preview</strong>
+        <div className="publish-impact-summary">
+          <span>{report.impact.summary.affectedScreens} screens</span>
+          <span>{report.impact.summary.wins} wins</span>
+          <span>{report.impact.summary.loses} loses</span>
+          <span>{report.impact.summary.noAssignment} no assignment</span>
+          <span>{report.impact.summary.unknown} unknown</span>
+        </div>
+        <div className="publish-impact-list">
+          {report.impact.screens.map((screen) => (
+            <article className={`publish-impact-row ${screen.result}`} key={screen.screenId}>
+              <div>
+                <strong>{screen.screenName}</strong>
+                <small>
+                  Target: {screen.targetSource.name ?? screen.targetSource.id}
+                  {screen.winningProgramName ? ` · Program: ${screen.winningProgramName}` : ""}
+                </small>
+              </div>
+              <span>{impactResultLabel(screen.result)}</span>
+              <p>{screen.reason}</p>
+            </article>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   function renderPublishReport() {
     if (!publishReport) {
       return null;
@@ -466,6 +516,7 @@ export function CampaignsPage() {
           <span>{publishReport.summary.warnings} warnings</span>
           <span>{publishReport.summary.information} info</span>
         </div>
+        {renderPublishImpact(publishReport)}
         {renderReportMessages("Blocking Errors", publishReport.blockingErrors)}
         {renderReportMessages("Warnings", publishReport.warnings)}
         {renderReportMessages("Information", publishReport.information)}

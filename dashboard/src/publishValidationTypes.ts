@@ -14,6 +14,36 @@ export interface PublishValidationMessage {
   suggestedFix?: string;
 }
 
+export type PublishImpactResult = "wins" | "loses" | "no_assignment" | "unknown";
+
+export interface PublishImpactScreen {
+  screenId: string;
+  screenName: string;
+  targetSource: {
+    type: "SCREEN" | "SCREEN_GROUP";
+    id: string;
+    name?: string;
+  };
+  result: PublishImpactResult;
+  winningAssignmentId?: string | null;
+  winningAssignmentSourceType?: "manual" | "campaign" | null;
+  winningProgramId?: string | null;
+  winningProgramName?: string | null;
+  reason: string;
+  severity: PublishValidationSeverity;
+}
+
+export interface PublishImpactReport {
+  summary: {
+    affectedScreens: number;
+    wins: number;
+    loses: number;
+    noAssignment: number;
+    unknown: number;
+  };
+  screens: PublishImpactScreen[];
+}
+
 export interface PublishValidationReport {
   status: "ready" | "warnings" | "blocked";
   summary: {
@@ -30,5 +60,6 @@ export interface PublishValidationReport {
     name?: string;
   }>;
   suggestedFixes: string[];
+  impact?: PublishImpactReport;
   generatedAt: string;
 }
