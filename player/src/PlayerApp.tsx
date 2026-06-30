@@ -12,6 +12,7 @@ const deviceSecretKey = "narrowcasting:device-secret";
 const serverUrlKey = "narrowcasting:server-url";
 const playerVersion = "phase-1";
 const heartbeatIntervalMs = 10_000;
+const heartbeatFailureBackoffMs = 60_000;
 
 interface RegistrationState {
   playerId: string;
@@ -758,6 +759,7 @@ export function PlayerApp() {
   const lastScheduleSyncRef = useRef<string | null>(null);
   const missingItemMessageRef = useRef<string | null>(null);
   const heartbeatFailureCountRef = useRef(0);
+  const heartbeatBackoffUntilRef = useRef(0);
 
   function clearFailureTimer() {
     if (failureTimerRef.current !== null) {
@@ -982,6 +984,10 @@ export function PlayerApp() {
     const deviceSecret = registration.deviceSecret;
 
     async function sendHeartbeat() {
+      if (Date.now() < heartbeatBackoffUntilRef.current) {
+        return;
+      }
+
       const active = activeItemRef.current;
       const currentSchedule = scheduleRef.current;
       const now = new Date().toISOString();
@@ -1043,6 +1049,7 @@ export function PlayerApp() {
         }
 
         heartbeatFailureCountRef.current = 0;
+        heartbeatBackoffUntilRef.current = 0;
         setRegistration((state) =>
           state.status === "approved"
             ? state
@@ -1058,6 +1065,7 @@ export function PlayerApp() {
           heartbeatFailureCountRef.current += 1;
 
           if (heartbeatFailureCountRef.current >= 3) {
+            heartbeatBackoffUntilRef.current = Date.now() + heartbeatFailureBackoffMs;
             setRegistration((state) =>
               state.screenId === screenId && state.serverUrl === serverUrl
                 ? {

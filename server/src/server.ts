@@ -58,7 +58,12 @@ export function buildServer() {
       // Production without NARROWCASTING_CORS_ORIGIN only allows same-origin/no-Origin requests.
       callback(null, process.env.NODE_ENV !== "production");
     },
-    allowedHeaders: ["Content-Type", "Authorization", "X-Narrowcasting-Admin-Key"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Narrowcasting-Admin-Key",
+      "X-Narrowcasting-Device-Secret"
+    ],
     methods: ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"]
   });
   registerAdminAuth(app);
