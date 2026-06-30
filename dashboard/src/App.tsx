@@ -20,12 +20,14 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { SystemStatusPage } from "./pages/SystemStatusPage";
 import { ThemesPage } from "./pages/ThemesPage";
 
+type ComponentNavigationPage = {
+  label: string;
+  component: () => JSX.Element;
+  id?: string;
+};
+
 type NavigationPage =
-  | {
-      label: string;
-      component: () => JSX.Element;
-      id?: string;
-    }
+  | ComponentNavigationPage
   | {
       label: string;
       href: string;
@@ -95,7 +97,7 @@ const pageGroups = [
 ] satisfies NavigationGroup[];
 
 const pages = pageGroups.flatMap((group) =>
-  group.pages.filter((page): page is { label: string; component: () => JSX.Element } => "component" in page)
+  group.pages.filter((page): page is ComponentNavigationPage => "component" in page)
 );
 
 function toSectionId(label: string) {
@@ -146,12 +148,40 @@ function pageHref(page: NavigationPage) {
   return `#${page.id ?? toSectionId(page.label)}`;
 }
 
-function NavigationGroupSection({ group }: { group: NavigationGroup }) {
+function pageId(page: ComponentNavigationPage) {
+  return page.id ?? toSectionId(page.label);
+}
+
+function currentHashPageId() {
+  if (typeof window === "undefined") {
+    return "dashboard";
+  }
+
+  return window.location.hash.replace(/^#/, "") || "dashboard";
+}
+
+function resolveActivePageId(hashPageId: string) {
+  return pages.some((page) => pageId(page) === hashPageId) ? hashPageId : "dashboard";
+}
+
+function NavigationGroupSection({
+  activePageId,
+  group
+}: {
+  activePageId: string;
+  group: NavigationGroup;
+}) {
+  const groupContainsActivePage = group.pages.some((page) => pageHref(page) === `#${activePageId}`);
   const content = (
     <>
       <p className="sidebar-nav-description">{group.description}</p>
       {group.pages.map((page) => (
-        <a href={pageHref(page)} key={page.label}>
+        <a
+          aria-current={pageHref(page) === `#${activePageId}` ? "page" : undefined}
+          className={pageHref(page) === `#${activePageId}` ? "active" : undefined}
+          href={pageHref(page)}
+          key={page.label}
+        >
           {page.label}
         </a>
       ))}
@@ -161,7 +191,7 @@ function NavigationGroupSection({ group }: { group: NavigationGroup }) {
 
   if (group.collapsed) {
     return (
-      <details className="sidebar-nav-group sidebar-nav-details">
+      <details className="sidebar-nav-group sidebar-nav-details" open={groupContainsActivePage || undefined}>
         <summary>
           <h2>{group.label}</h2>
         </summary>
@@ -179,6 +209,21 @@ function NavigationGroupSection({ group }: { group: NavigationGroup }) {
 }
 
 export function App() {
+  const [activePageId, setActivePageId] = useState(() => resolveActivePageId(currentHashPageId()));
+  const activePage = pages.find((page) => pageId(page) === activePageId) ?? pages[0];
+  const ActivePage = activePage.component;
+
+  useEffect(() => {
+    function handleHashChange() {
+      setActivePageId(resolveActivePageId(currentHashPageId()));
+    }
+
+    handleHashChange();
+    window.addEventListener("hashchange", handleHashChange);
+
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -188,14 +233,12 @@ export function App() {
         </div>
         <nav aria-label="Dashboard sections">
           {pageGroups.map((group) => (
-            <NavigationGroupSection group={group} key={group.label} />
+            <NavigationGroupSection activePageId={activePageId} group={group} key={group.label} />
           ))}
         </nav>
       </aside>
       <section className="content">
-        {pages.map(({ label, component: Page }) => (
-          <Page key={label} />
-        ))}
+        <ActivePage key={activePageId} />
       </section>
     </main>
   );

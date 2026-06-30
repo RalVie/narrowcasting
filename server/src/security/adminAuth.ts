@@ -74,6 +74,10 @@ function extractAdminKey(request: FastifyRequest) {
   return null;
 }
 
+export function hasAdminAuthorization(request: FastifyRequest) {
+  return extractAdminKey(request) !== null;
+}
+
 function keysMatch(provided: string, expected: string) {
   const providedBuffer = Buffer.from(provided);
   const expectedBuffer = Buffer.from(expected);
@@ -103,6 +107,35 @@ function authNotConfigured(reply: FastifyReply) {
   });
 }
 
+export function authenticateAdminRequest(request: FastifyRequest, reply: FastifyReply) {
+  const configuredAdminKey = getConfiguredAdminKey();
+
+  if (!configuredAdminKey) {
+    if (isProduction()) {
+      authNotConfigured(reply);
+      return false;
+    }
+
+    if (!warnedAboutDevBypass) {
+      request.log.warn(
+        "admin API management routes are unprotected because NARROWCASTING_ADMIN_KEY is not configured outside production"
+      );
+      warnedAboutDevBypass = true;
+    }
+
+    return true;
+  }
+
+  const providedAdminKey = extractAdminKey(request);
+
+  if (!providedAdminKey || !keysMatch(providedAdminKey, configuredAdminKey)) {
+    unauthorized(reply);
+    return false;
+  }
+
+  return true;
+}
+
 export function registerAdminAuth(app: FastifyInstance) {
   app.addHook("onRequest", async (request, reply) => {
     if (
@@ -114,27 +147,10 @@ export function registerAdminAuth(app: FastifyInstance) {
       return;
     }
 
-    const configuredAdminKey = getConfiguredAdminKey();
-
-    if (!configuredAdminKey) {
-      if (isProduction()) {
-        return authNotConfigured(reply);
-      }
-
-      if (!warnedAboutDevBypass) {
-        request.log.warn(
-          "admin API management routes are unprotected because NARROWCASTING_ADMIN_KEY is not configured outside production"
-        );
-        warnedAboutDevBypass = true;
-      }
-
+    if (authenticateAdminRequest(request, reply)) {
       return;
     }
 
-    const providedAdminKey = extractAdminKey(request);
-
-    if (!providedAdminKey || !keysMatch(providedAdminKey, configuredAdminKey)) {
-      return unauthorized(reply);
-    }
+    return reply;
   });
 }

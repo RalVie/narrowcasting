@@ -137,6 +137,12 @@ a {
   background: rgb(255 255 255 / 8%);
 }
 
+.sidebar a.active,
+.sidebar a[aria-current="page"] {
+  color: #17201a;
+  background: #f8fbf6;
+}
+
 .content {
   display: grid;
   align-content: start;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { apiUrl } from "../api/apiBase";
+import { apiUrl, promptForDashboardAdminKey, readDashboardAdminKey } from "../api/apiBase";
 import type { Schedule } from "../scheduleTypes";
 import type { ScreenRecord } from "../screenTypes";
 
@@ -42,7 +42,16 @@ export function SchedulePreviewPage() {
     }
 
     try {
-      const response = await fetch(apiUrl(`/api/schedule?screenId=${encodeURIComponent(screenId)}`));
+      const adminKey = readDashboardAdminKey() ?? promptForDashboardAdminKey();
+      const headers = new Headers();
+
+      if (adminKey) {
+        headers.set("X-Narrowcasting-Admin-Key", adminKey);
+      }
+
+      const response = await fetch(apiUrl(`/api/schedule?screenId=${encodeURIComponent(screenId)}`), {
+        headers
+      });
 
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as { error?: string } | null;

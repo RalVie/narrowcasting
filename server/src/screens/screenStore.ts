@@ -59,7 +59,7 @@ export interface ScreenHeartbeat {
 }
 
 const screensPath = resolve(process.cwd(), "data", "screens.json");
-const offlineThresholdMs = 30_000;
+const offlineThresholdMs = 60_000;
 
 function sanitizeText(value: unknown, fallback = "") {
   return typeof value === "string" && value.trim() ? value.trim().slice(0, 240) : fallback;
