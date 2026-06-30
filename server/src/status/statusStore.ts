@@ -15,6 +15,14 @@ export interface AgentStatus {
   lastSync: string | null;
   currentScheduleVersion: number | null;
   cachedFiles: number;
+  syncStatus?: string | null;
+  readinessState?: string | null;
+  pendingScheduleVersion?: number | null;
+  failedMedia?: Array<{
+    file: string;
+    error?: string;
+  }>;
+  lastError?: string | null;
 }
 
 const playerMediaDir = resolve(process.cwd(), "..", "player", "public", "media");
@@ -76,13 +84,31 @@ export async function readAgentStatus(): Promise<AgentStatus> {
       lastSync: typeof value.lastSync === "string" ? value.lastSync : null,
       currentScheduleVersion:
         typeof value.currentScheduleVersion === "number" ? value.currentScheduleVersion : null,
-      cachedFiles: typeof value.cachedFiles === "number" ? value.cachedFiles : 0
+      cachedFiles: typeof value.cachedFiles === "number" ? value.cachedFiles : 0,
+      syncStatus: typeof value.syncStatus === "string" ? value.syncStatus : null,
+      readinessState: typeof value.readinessState === "string" ? value.readinessState : null,
+      pendingScheduleVersion:
+        typeof value.pendingScheduleVersion === "number" ? value.pendingScheduleVersion : null,
+      failedMedia: Array.isArray(value.failedMedia)
+        ? value.failedMedia
+            .filter((item) => item && typeof item === "object" && typeof item.file === "string")
+            .map((item) => ({
+              file: item.file,
+              error: typeof item.error === "string" ? item.error : undefined
+            }))
+        : [],
+      lastError: typeof value.lastError === "string" ? value.lastError : null
     };
   } catch {
     return {
       lastSync: null,
       currentScheduleVersion: null,
-      cachedFiles: 0
+      cachedFiles: 0,
+      syncStatus: null,
+      readinessState: null,
+      pendingScheduleVersion: null,
+      failedMedia: [],
+      lastError: null
     };
   }
 }

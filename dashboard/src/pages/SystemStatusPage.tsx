@@ -82,8 +82,24 @@ export function SystemStatusPage() {
           <strong>{agentStatus?.currentScheduleVersion ?? "-"}</strong>
         </article>
         <article>
+          <span>Agent readiness</span>
+          <strong>{agentStatus?.readinessState ?? agentStatus?.syncStatus ?? "-"}</strong>
+        </article>
+        <article>
+          <span>Pending schedule</span>
+          <strong>{agentStatus?.pendingScheduleVersion ?? "-"}</strong>
+        </article>
+        <article>
           <span>Agent cached files</span>
           <strong>{agentStatus?.cachedFiles ?? "-"}</strong>
+        </article>
+        <article>
+          <span>Failed media</span>
+          <strong>
+            {agentStatus?.failedMedia && agentStatus.failedMedia.length > 0
+              ? agentStatus.failedMedia.map((item) => item.file).join(", ")
+              : agentStatus?.lastError ?? "-"}
+          </strong>
         </article>
         <article>
           <span>Player cache</span>

@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import type { AgentConfig } from "../config/loadAgentConfig.js";
 import type { Schedule } from "../schedule/types.js";
@@ -60,23 +60,103 @@ async function readScreenId(config: AgentConfig): Promise<string | null> {
 
 async function saveSchedule(config: AgentConfig, schedule: Schedule) {
   await mkdir(dirname(config.schedulePath), { recursive: true });
-  await writeFile(config.schedulePath, `${JSON.stringify(schedule, null, 2)}\n`, "utf8");
+  const pendingPath = `${config.schedulePath}.tmp`;
+
+  await writeFile(pendingPath, `${JSON.stringify(schedule, null, 2)}\n`, "utf8");
+  await rename(pendingPath, config.schedulePath);
 }
 
-async function syncMediaFile(config: AgentConfig, file: string) {
+interface MediaSyncResult {
+  file: string;
+  localPath?: string;
+  ready: boolean;
+  status: "already_present" | "downloaded" | "failed";
+  size?: number;
+  expectedSize?: number | null;
+  error?: string;
+}
+
+async function verifyCachedMediaFile(localPath: string, expectedSize?: number | null) {
+  try {
+    const fileStat = await stat(localPath);
+
+    if (!fileStat.isFile()) {
+      return { ready: false, size: fileStat.size, error: "cached path is not a file" };
+    }
+
+    if (expectedSize !== undefined && expectedSize !== null && fileStat.size !== expectedSize) {
+      return {
+        ready: false,
+        size: fileStat.size,
+        error: `cached file size ${fileStat.size} did not match expected size ${expectedSize}`
+      };
+    }
+
+    return { ready: true, size: fileStat.size };
+  } catch (error) {
+    return {
+      ready: false,
+      size: undefined,
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+function readContentLength(response: Response) {
+  const header = response.headers.get("content-length");
+
+  if (!header) {
+    return null;
+  }
+
+  const size = Number(header);
+
+  return Number.isFinite(size) && size >= 0 ? size : null;
+}
+
+async function syncMediaFile(config: AgentConfig, file: string): Promise<MediaSyncResult> {
   const safeFile = basename(file);
 
   if (safeFile !== file) {
     console.error("media failed", { file, error: "invalid media filename" });
-    return;
+    return {
+      file,
+      ready: false,
+      status: "failed",
+      error: "invalid media filename"
+    };
   }
 
   const localPath = resolve(config.mediaDir, safeFile);
 
   try {
     await access(localPath);
-    console.log("media already present", { file: safeFile, localPath });
-    return;
+    const verification = await verifyCachedMediaFile(localPath);
+
+    if (verification.ready) {
+      console.log("media already present", { file: safeFile, localPath });
+      return {
+        file: safeFile,
+        localPath,
+        ready: true,
+        status: "already_present",
+        size: verification.size
+      };
+    }
+
+    console.error("media failed", {
+      file: safeFile,
+      localPath,
+      error: verification.error ?? "cached media verification failed"
+    });
+    return {
+      file: safeFile,
+      localPath,
+      ready: false,
+      status: "failed",
+      size: verification.size,
+      error: verification.error ?? "cached media verification failed"
+    };
   } catch {
     // Missing locally; download from server below.
   }
@@ -88,19 +168,54 @@ async function syncMediaFile(config: AgentConfig, file: string) {
       throw new Error(`media request failed with HTTP ${response.status}`);
     }
 
+    const expectedSize = readContentLength(response);
     const content = Buffer.from(await response.arrayBuffer());
+    const pendingPath = `${localPath}.tmp`;
+
+    if (expectedSize !== null && content.length !== expectedSize) {
+      throw new Error(`downloaded size ${content.length} did not match expected size ${expectedSize}`);
+    }
+
     await mkdir(config.mediaDir, { recursive: true });
-    await writeFile(localPath, content);
+    await writeFile(pendingPath, content);
+    await rename(pendingPath, localPath);
+
+    const verification = await verifyCachedMediaFile(localPath, expectedSize);
+
+    if (!verification.ready) {
+      throw new Error(verification.error ?? "downloaded media verification failed");
+    }
+
     console.log("media downloaded", { file: safeFile, localPath });
+    return {
+      file: safeFile,
+      localPath,
+      ready: true,
+      status: "downloaded",
+      size: verification.size,
+      expectedSize
+    };
   } catch (error) {
+    const existingVerification = await verifyCachedMediaFile(localPath);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
     console.error("media failed: keeping existing local file if present", {
       file: safeFile,
-      error: error instanceof Error ? error.message : String(error)
+      error: errorMessage
     });
+
+    return {
+      file: safeFile,
+      localPath,
+      ready: existingVerification.ready,
+      status: existingVerification.ready ? "already_present" : "failed",
+      size: existingVerification.size,
+      error: existingVerification.ready ? undefined : errorMessage
+    };
   }
 }
 
-async function syncMediaFiles(config: AgentConfig, schedule: Schedule) {
+function getRequiredMediaFiles(schedule: Schedule) {
   const files = new Set<string>();
 
   for (const item of schedule.items) {
@@ -115,9 +230,23 @@ async function syncMediaFiles(config: AgentConfig, schedule: Schedule) {
     }
   }
 
+  return Array.from(files);
+}
+
+async function syncMediaFiles(config: AgentConfig, schedule: Schedule) {
+  const files = getRequiredMediaFiles(schedule);
+  const results: MediaSyncResult[] = [];
+
   for (const file of files) {
-    await syncMediaFile(config, file);
+    results.push(await syncMediaFile(config, file));
   }
+
+  return {
+    requiredFiles: files,
+    results,
+    ready: results.every((result) => result.ready),
+    failed: results.filter((result) => !result.ready)
+  };
 }
 
 async function readLocalScheduleVersion(config: AgentConfig): Promise<number | null> {
@@ -154,7 +283,11 @@ async function writeAgentStatus(config: AgentConfig, currentScheduleVersion: num
   await writeAgentStatusFile(config, {
     lastSync: new Date().toISOString(),
     currentScheduleVersion,
-    cachedFiles: await countCachedFiles(config)
+    cachedFiles: await countCachedFiles(config),
+    syncStatus: "ready",
+    readinessState: "ready",
+    pendingScheduleVersion: null,
+    failedMedia: []
   });
 }
 
@@ -177,13 +310,25 @@ async function readExistingAgentStatus(config: AgentConfig): Promise<{
 
 async function writeAgentFailureStatus(
   config: AgentConfig,
-  currentScheduleVersion: number | null
+  currentScheduleVersion: number | null,
+  details: {
+    syncStatus?: string;
+    readinessState?: string;
+    pendingScheduleVersion?: number | null;
+    failedMedia?: Array<{ file: string; error?: string }>;
+    lastError?: string;
+  } = {}
 ) {
   const existingStatus = await readExistingAgentStatus(config);
   await writeAgentStatusFile(config, {
     lastSync: existingStatus.lastSync,
     currentScheduleVersion,
-    cachedFiles: await countCachedFiles(config)
+    cachedFiles: await countCachedFiles(config),
+    syncStatus: details.syncStatus ?? "error",
+    readinessState: details.readinessState ?? "sync_failed",
+    pendingScheduleVersion: details.pendingScheduleVersion ?? null,
+    failedMedia: details.failedMedia ?? [],
+    lastError: details.lastError
   });
 }
 
@@ -193,6 +338,11 @@ async function writeAgentStatusFile(
     lastSync: string | null;
     currentScheduleVersion: number | null;
     cachedFiles: number;
+    syncStatus?: string;
+    readinessState?: string;
+    pendingScheduleVersion?: number | null;
+    failedMedia?: Array<{ file: string; error?: string }>;
+    lastError?: string;
   }
 ) {
   await mkdir(dirname(config.statusPath), { recursive: true });
@@ -217,16 +367,50 @@ export function startSyncLoop(config: AgentConfig) {
   const syncOnce = async () => {
     try {
       const schedule = await fetchSchedule(config);
-      await syncMediaFiles(config, schedule);
+      await writeAgentFailureStatus(config, await readLocalScheduleVersion(config), {
+        syncStatus: "waiting_for_media",
+        readinessState: "schedule_pending_activation",
+        pendingScheduleVersion: schedule.version
+      });
+      const mediaReadiness = await syncMediaFiles(config, schedule);
+
+      if (!mediaReadiness.ready) {
+        const currentScheduleVersion = await readLocalScheduleVersion(config);
+
+        await writeAgentFailureStatus(config, currentScheduleVersion, {
+          syncStatus: "media_download_failed",
+          readinessState: "waiting_for_media",
+          pendingScheduleVersion: schedule.version,
+          failedMedia: mediaReadiness.failed.map((result) => ({
+            file: result.file,
+            error: result.error
+          })),
+          lastError: `required media not ready: ${mediaReadiness.failed
+            .map((result) => result.file)
+            .join(", ")}`
+        });
+        console.error("sync failure: keeping existing local schedule", {
+          error: `required media not ready for schedule ${schedule.version}`,
+          failedMedia: mediaReadiness.failed.map((result) => result.file),
+          currentScheduleVersion,
+          pendingScheduleVersion: schedule.version,
+          schedulePath: config.schedulePath
+        });
+        return;
+      }
+
       await saveSchedule(config, schedule);
       await writeAgentStatus(config, schedule.version);
       console.log("sync success", {
         scheduleVersion: schedule.version,
+        requiredMedia: mediaReadiness.requiredFiles.length,
         schedulePath: config.schedulePath
       });
     } catch (error) {
       const currentScheduleVersion = await readLocalScheduleVersion(config);
-      await writeAgentFailureStatus(config, currentScheduleVersion);
+      await writeAgentFailureStatus(config, currentScheduleVersion, {
+        lastError: error instanceof Error ? error.message : String(error)
+      });
       console.error("sync failure: keeping existing local schedule", {
         error: error instanceof Error ? error.message : String(error),
         currentScheduleVersion,
