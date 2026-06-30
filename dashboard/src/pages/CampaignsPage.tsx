@@ -8,6 +8,8 @@ import type { PublishValidationMessage, PublishValidationReport } from "../publi
 import type { ScreenGroup, ScreenRecord } from "../screenTypes";
 
 const refreshIntervalMs = 10_000;
+const dayOptions = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] as const;
+type CampaignDay = (typeof dayOptions)[number];
 
 interface CampaignDraft {
   name: string;
@@ -16,6 +18,13 @@ interface CampaignDraft {
   programId: string;
   targetType: AssignmentTargetType;
   targetIds: string[];
+  alwaysActive: boolean;
+  startDate: string;
+  endDate: string;
+  daysOfWeek: CampaignDay[];
+  startTime: string;
+  endTime: string;
+  priority: number;
 }
 
 function formatDateTime(value: string) {
@@ -28,12 +37,21 @@ function targetTypeLabel(value: AssignmentTargetType) {
 }
 
 function scheduleSummary(campaign: Campaign) {
+  if (campaign.alwaysActive !== false) {
+    return "Always active";
+  }
+
   const parts = [
     campaign.startDate || campaign.endDate ? `${campaign.startDate ?? "Any date"} - ${campaign.endDate ?? "Any date"}` : null,
-    campaign.daysOfWeek && campaign.daysOfWeek.length > 0 ? campaign.daysOfWeek.join(", ") : null
+    campaign.daysOfWeek && campaign.daysOfWeek.length > 0 ? campaign.daysOfWeek.join(", ") : null,
+    campaign.startTime || campaign.endTime ? `${campaign.startTime ?? "00:00"}-${campaign.endTime ?? "23:59"}` : null
   ].filter(Boolean);
 
   return parts.length > 0 ? parts.join(" / ") : "Always active";
+}
+
+function normalizeDraftPriority(value: number) {
+  return Math.min(1000, Math.max(0, Math.round(value)));
 }
 
 function toDraft(campaign: Campaign): CampaignDraft {
@@ -43,7 +61,16 @@ function toDraft(campaign: Campaign): CampaignDraft {
     enabled: campaign.enabled,
     programId: campaign.programId,
     targetType: campaign.targetType,
-    targetIds: campaign.targetIds
+    targetIds: campaign.targetIds,
+    alwaysActive: campaign.alwaysActive !== false,
+    startDate: campaign.startDate ?? "",
+    endDate: campaign.endDate ?? "",
+    daysOfWeek: campaign.daysOfWeek?.filter((day): day is CampaignDay =>
+      dayOptions.includes(day as CampaignDay)
+    ) ?? [...dayOptions],
+    startTime: campaign.startTime ?? "",
+    endTime: campaign.endTime ?? "",
+    priority: normalizeDraftPriority(campaign.priority ?? 100)
   };
 }
 
@@ -61,7 +88,14 @@ export function CampaignsPage() {
     enabled: true,
     programId: "",
     targetType: "SCREEN",
-    targetIds: []
+    targetIds: [],
+    alwaysActive: true,
+    startDate: "",
+    endDate: "",
+    daysOfWeek: [...dayOptions],
+    startTime: "",
+    endTime: "",
+    priority: 100
   });
   const [drafts, setDrafts] = useState<Record<string, CampaignDraft>>({});
 
@@ -86,8 +120,42 @@ export function CampaignsPage() {
     return {
       ...draft,
       name: draft.name.trim() || fallbackName,
-      description: draft.description.trim() || null
+      description: draft.description.trim() || null,
+      startDate: draft.alwaysActive ? null : draft.startDate.trim() || null,
+      endDate: draft.alwaysActive ? null : draft.endDate.trim() || null,
+      daysOfWeek: draft.alwaysActive ? [] : draft.daysOfWeek,
+      startTime: draft.alwaysActive ? null : draft.startTime.trim() || null,
+      endTime: draft.alwaysActive ? null : draft.endTime.trim() || null,
+      priority: normalizeDraftPriority(draft.priority)
     };
+  }
+
+  function validateCampaignDraft(draft: CampaignDraft) {
+    if (draft.priority < 0 || draft.priority > 1000 || !Number.isInteger(draft.priority)) {
+      return "Priority must be an integer from 0 to 1000.";
+    }
+
+    if (!draft.alwaysActive) {
+      if (draft.startDate && draft.endDate && Date.parse(draft.startDate) > Date.parse(draft.endDate)) {
+        return "Date Until must not be before Date From.";
+      }
+
+      if (draft.daysOfWeek.length === 0) {
+        return "Select at least one day, or enable Always Active.";
+      }
+
+      const timePattern = /^\d{2}:\d{2}$/;
+
+      if (draft.startTime && !timePattern.test(draft.startTime)) {
+        return "Time From must use HH:mm.";
+      }
+
+      if (draft.endTime && !timePattern.test(draft.endTime)) {
+        return "Time Until must use HH:mm.";
+      }
+    }
+
+    return null;
   }
 
   function isPublishValidationReport(value: unknown): value is PublishValidationReport {
@@ -282,6 +350,13 @@ export function CampaignsPage() {
     setStatus("Running publish validation...");
 
     try {
+      const draftError = validateCampaignDraft(newDraft);
+
+      if (draftError) {
+        setStatus(draftError);
+        return;
+      }
+
       const payload = campaignPayload(newDraft, "New Campaign");
       let report = await runPublishPreflight("/api/campaigns/validate", payload);
 
@@ -314,7 +389,14 @@ export function CampaignsPage() {
             enabled: true,
             programId: programs[0]?.id ?? "",
             targetType: "SCREEN",
-            targetIds: []
+            targetIds: [],
+            alwaysActive: true,
+            startDate: "",
+            endDate: "",
+            daysOfWeek: [...dayOptions],
+            startTime: "",
+            endTime: "",
+            priority: 100
           });
           setStatus("Campaign published.");
           await loadCampaigns();
@@ -356,6 +438,13 @@ export function CampaignsPage() {
     setStatus("Running publish validation...");
 
     try {
+      const draftError = validateCampaignDraft(draft);
+
+      if (draftError) {
+        setStatus(draftError);
+        return;
+      }
+
       const payload = campaignPayload(draft, "Untitled Campaign");
       let report = await runPublishPreflight(`/api/campaigns/${encodeURIComponent(campaign.id)}/validate`, payload);
 
@@ -501,6 +590,15 @@ export function CampaignsPage() {
     );
   }
 
+  function toggleCampaignDay(draft: CampaignDraft, day: CampaignDay): CampaignDraft {
+    return {
+      ...draft,
+      daysOfWeek: draft.daysOfWeek.includes(day)
+        ? draft.daysOfWeek.filter((item) => item !== day)
+        : [...draft.daysOfWeek, day]
+    };
+  }
+
   function renderCampaignForm(draft: CampaignDraft, onChange: (draft: CampaignDraft) => void, mode: "create" | "edit") {
     const selectedProgram = programMap.get(draft.programId);
 
@@ -566,10 +664,69 @@ export function CampaignsPage() {
         <section className="campaign-editor-section">
           <div>
             <h4>Scheduling</h4>
-            <p>Campaign time rules are preserved by the existing publishing workflow.</p>
+            <p>Control when this campaign is active.</p>
           </div>
-          <div className="campaign-readonly-row">
-            <span>{mode === "create" ? "Always active by default" : "Existing schedule configuration is preserved."}</span>
+          <div className="campaign-schedule-editor">
+            <label className="campaign-inline-toggle">
+              <input
+                checked={draft.alwaysActive}
+                onChange={(event) => onChange({ ...draft, alwaysActive: event.target.checked })}
+                type="checkbox"
+              />
+              Always Active
+            </label>
+
+            {!draft.alwaysActive ? (
+              <>
+                <div className="campaign-form-grid">
+                  <label>
+                    Date From
+                    <input
+                      onChange={(event) => onChange({ ...draft, startDate: event.target.value })}
+                      type="date"
+                      value={draft.startDate}
+                    />
+                  </label>
+                  <label>
+                    Date Until
+                    <input
+                      onChange={(event) => onChange({ ...draft, endDate: event.target.value })}
+                      type="date"
+                      value={draft.endDate}
+                    />
+                  </label>
+                  <label>
+                    Time From
+                    <input
+                      onChange={(event) => onChange({ ...draft, startTime: event.target.value })}
+                      type="time"
+                      value={draft.startTime}
+                    />
+                  </label>
+                  <label>
+                    Time Until
+                    <input
+                      onChange={(event) => onChange({ ...draft, endTime: event.target.value })}
+                      type="time"
+                      value={draft.endTime}
+                    />
+                  </label>
+                </div>
+
+                <div className="campaign-days-picker">
+                  {dayOptions.map((day) => (
+                    <label key={day}>
+                      <input
+                        checked={draft.daysOfWeek.includes(day)}
+                        onChange={() => onChange(toggleCampaignDay(draft, day))}
+                        type="checkbox"
+                      />
+                      {day.slice(0, 3)}
+                    </label>
+                  ))}
+                </div>
+              </>
+            ) : null}
           </div>
         </section>
 
@@ -602,12 +759,27 @@ export function CampaignsPage() {
           </div>
         </section>
 
-        <section className="campaign-editor-section campaign-priority-placeholder">
+        <section className="campaign-editor-section campaign-priority-editor">
           <div>
             <h4>Priority</h4>
-            <p>Campaign Priority (Coming in next phase)</p>
+            <p>Higher priority overrides lower priority campaigns when multiple campaigns are active.</p>
           </div>
-          <strong>Priority: Normal</strong>
+          <div className="campaign-priority-control">
+            <input
+              max={1000}
+              min={0}
+              onChange={(event) => onChange({ ...draft, priority: normalizeDraftPriority(Number(event.target.value)) })}
+              type="range"
+              value={draft.priority}
+            />
+            <input
+              max={1000}
+              min={0}
+              onChange={(event) => onChange({ ...draft, priority: normalizeDraftPriority(Number(event.target.value)) })}
+              type="number"
+              value={draft.priority}
+            />
+          </div>
         </section>
       </div>
     );
@@ -790,7 +962,7 @@ export function CampaignsPage() {
                       <span>{deploymentSummary(campaign)}</span>
                       <span>{playlistCount} playlist{playlistCount === 1 ? "" : "s"}</span>
                       <span>Publish state: Published</span>
-                      <span>Priority: Normal</span>
+                      <span>Priority: {campaign.priority ?? 100}</span>
                     </div>
                     <div className="campaign-card-meta">
                       <small>Updated {formatDateTime(campaign.updatedAt)}</small>

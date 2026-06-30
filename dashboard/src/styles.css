@@ -1321,18 +1321,69 @@ button:disabled {
   font-size: 16px;
 }
 
-.campaign-priority-placeholder {
-  grid-template-columns: minmax(0, 1fr) auto;
+.campaign-inline-toggle {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: #17201a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.campaign-inline-toggle input {
+  width: auto;
+}
+
+.campaign-schedule-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.campaign-days-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.campaign-days-picker label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  border: 1px solid #d9dfd4;
+  border-radius: 999px;
+  padding: 7px 9px;
+  color: #17201a;
+  background: #ffffff;
+  font-size: 12px;
+}
+
+.campaign-days-picker input {
+  width: auto;
+}
+
+.campaign-priority-editor {
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.7fr);
   align-items: center;
 }
 
-.campaign-priority-placeholder strong {
+.campaign-priority-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 86px;
+  gap: 8px;
+  align-items: center;
+}
+
+.campaign-priority-control input[type="range"] {
+  padding: 0;
+}
+
+.campaign-priority-control input[type="number"] {
   border: 1px solid #d9dfd4;
-  border-radius: 999px;
-  padding: 6px 9px;
-  color: #2b4938;
+  border-radius: 6px;
+  padding: 8px;
+  color: #17201a;
   background: #ffffff;
-  font-size: 12px;
+  font: inherit;
 }
 
 .campaign-empty-state {

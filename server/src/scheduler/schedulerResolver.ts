@@ -115,7 +115,7 @@ function assignmentToCandidate(
     targetId: assignment.targetId,
     programId: assignment.programId,
     enabled: assignment.enabled,
-    priority: targetType === "screen" ? 200 : 100,
+    priority: assignment.priority ?? (targetType === "screen" ? 200 : 100),
     metadata: {
       assignmentId: assignment.id,
       assignmentSource: assignment.source,

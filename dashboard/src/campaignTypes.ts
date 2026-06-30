@@ -10,11 +10,14 @@ export interface Campaign {
   targetIds: string[];
   createdAt: string;
   updatedAt: string;
+  alwaysActive: boolean;
   startDate?: string | null;
   endDate?: string | null;
   daysOfWeek?: string[];
+  startTime?: string | null;
+  endTime?: string | null;
   timeWindows?: unknown[];
-  priority?: number | null;
+  priority: number;
   overrideMode?: string | null;
   rotation?: string | null;
   weight?: number | null;

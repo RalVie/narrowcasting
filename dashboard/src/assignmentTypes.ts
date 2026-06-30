@@ -21,6 +21,7 @@ export interface Assignment {
   sourceName?: string;
   generatedAt?: string;
   schedule?: AssignmentSchedule;
+  priority?: number;
   createdAt: string;
   updatedAt: string;
 }

@@ -8,6 +8,7 @@ import { getThemeOrDefault } from "../theme/themeStore.js";
 import {
   listAssignments,
   type Assignment,
+  type AssignmentSchedule,
   type AssignmentTargetType
 } from "../assignments/assignmentStore.js";
 import { resolveScheduleForScreenWithAssignments } from "../scheduler/schedulerResolver.js";
@@ -93,6 +94,13 @@ export interface PublishValidationIntent {
   programId: string;
   targetType: AssignmentTargetType;
   targetIds: string[];
+  alwaysActive?: boolean;
+  startDate?: string | null;
+  endDate?: string | null;
+  daysOfWeek?: string[];
+  startTime?: string | null;
+  endTime?: string | null;
+  priority?: number;
 }
 
 export class PublishValidationError extends Error {
@@ -303,6 +311,70 @@ function simulatedCampaignId(intent: PublishValidationIntent) {
   return intent.campaignId ?? "preview-campaign";
 }
 
+const dayNameToNumber: Record<string, number> = {
+  Sunday: 0,
+  Monday: 1,
+  Tuesday: 2,
+  Wednesday: 3,
+  Thursday: 4,
+  Friday: 5,
+  Saturday: 6
+};
+
+function intentSchedule(intent: PublishValidationIntent): AssignmentSchedule | undefined {
+  if (intent.alwaysActive !== false) {
+    return undefined;
+  }
+
+  const daysOfWeek = Array.isArray(intent.daysOfWeek)
+    ? intent.daysOfWeek
+        .map((day) => dayNameToNumber[day])
+        .filter((day): day is number => Number.isInteger(day))
+    : [];
+  const schedule: AssignmentSchedule = {
+    enabled: true
+  };
+
+  if (intent.startDate) {
+    schedule.startDate = intent.startDate;
+  }
+
+  if (intent.endDate) {
+    schedule.endDate = intent.endDate;
+  }
+
+  if (daysOfWeek.length > 0) {
+    schedule.daysOfWeek = daysOfWeek;
+  }
+
+  if (intent.startTime) {
+    schedule.startTime = intent.startTime;
+  }
+
+  if (intent.endTime) {
+    schedule.endTime = intent.endTime;
+  }
+
+  return schedule;
+}
+
+function isValidDateBoundary(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d{3})?)?(?:Z|[+-]\d{2}:\d{2})?)?$/.test(value)) {
+    return false;
+  }
+
+  return Number.isFinite(Date.parse(value));
+}
+
+function isValidClockTime(value: string) {
+  if (!/^\d{2}:\d{2}$/.test(value)) {
+    return false;
+  }
+
+  const [hours, minutes] = value.split(":").map(Number);
+  return Number.isInteger(hours) && Number.isInteger(minutes) && hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
+}
+
 function isCampaignPreviewWinner(candidate: { id: string; metadata: { assignmentSourceId?: string } } | null, campaignId: string) {
   if (!candidate) {
     return false;
@@ -342,7 +414,8 @@ async function buildPublishImpact(input: {
         sourceId: campaignId,
         sourceName: input.intent.name,
         generatedAt: now,
-        schedule: undefined,
+        schedule: intentSchedule(input.intent),
+        priority: input.intent.priority ?? 100,
         createdAt: now,
         updatedAt: now
       }))
@@ -595,6 +668,119 @@ export async function validatePublishIntent(intent: PublishValidationIntent): Pr
           : undefined
       })
     );
+  }
+
+  if (typeof intent.priority === "number" && (!Number.isInteger(intent.priority) || intent.priority < 0 || intent.priority > 1000)) {
+    messages.push(
+      message({
+        severity: "blocking_error",
+        category: "campaign",
+        ruleId: "VAL-CAMPAIGN-005",
+        message: "Campaign priority must be an integer from 0 to 1000.",
+        affectedObject: intent.campaignId
+          ? { type: "Campaign", id: intent.campaignId, name: intent.name }
+          : undefined,
+        suggestedFix: "Choose a campaign priority between 0 and 1000."
+      })
+    );
+  }
+
+  if (intent.alwaysActive === false) {
+    if (intent.startDate && !isValidDateBoundary(intent.startDate)) {
+      messages.push(
+        message({
+          severity: "blocking_error",
+          category: "campaign",
+          ruleId: "VAL-CAMPAIGN-006",
+          message: "Campaign start date must be a valid ISO date.",
+          affectedObject: intent.campaignId
+            ? { type: "Campaign", id: intent.campaignId, name: intent.name }
+            : undefined,
+          suggestedFix: "Adjust the campaign start date."
+        })
+      );
+    }
+
+    if (intent.endDate && !isValidDateBoundary(intent.endDate)) {
+      messages.push(
+        message({
+          severity: "blocking_error",
+          category: "campaign",
+          ruleId: "VAL-CAMPAIGN-006",
+          message: "Campaign end date must be a valid ISO date.",
+          affectedObject: intent.campaignId
+            ? { type: "Campaign", id: intent.campaignId, name: intent.name }
+            : undefined,
+          suggestedFix: "Adjust the campaign end date."
+        })
+      );
+    }
+
+    if (
+      intent.startDate &&
+      intent.endDate &&
+      isValidDateBoundary(intent.startDate) &&
+      isValidDateBoundary(intent.endDate) &&
+      Date.parse(intent.startDate) > Date.parse(intent.endDate)
+    ) {
+      messages.push(
+        message({
+          severity: "blocking_error",
+          category: "campaign",
+          ruleId: "VAL-CAMPAIGN-006",
+          message: "Campaign end date must not be before the start date.",
+          affectedObject: intent.campaignId
+            ? { type: "Campaign", id: intent.campaignId, name: intent.name }
+            : undefined,
+          suggestedFix: "Adjust the campaign date range."
+        })
+      );
+    }
+
+    if (intent.startTime && !isValidClockTime(intent.startTime)) {
+      messages.push(
+        message({
+          severity: "blocking_error",
+          category: "campaign",
+          ruleId: "VAL-CAMPAIGN-008",
+          message: "Campaign start time must use HH:mm format.",
+          affectedObject: intent.campaignId
+            ? { type: "Campaign", id: intent.campaignId, name: intent.name }
+            : undefined,
+          suggestedFix: "Adjust the campaign start time."
+        })
+      );
+    }
+
+    if (intent.endTime && !isValidClockTime(intent.endTime)) {
+      messages.push(
+        message({
+          severity: "blocking_error",
+          category: "campaign",
+          ruleId: "VAL-CAMPAIGN-008",
+          message: "Campaign end time must use HH:mm format.",
+          affectedObject: intent.campaignId
+            ? { type: "Campaign", id: intent.campaignId, name: intent.name }
+            : undefined,
+          suggestedFix: "Adjust the campaign end time."
+        })
+      );
+    }
+
+    if (!intent.daysOfWeek || intent.daysOfWeek.length === 0) {
+      messages.push(
+        message({
+          severity: "blocking_error",
+          category: "campaign",
+          ruleId: "VAL-CAMPAIGN-007",
+          message: "Campaign must select at least one day unless Always Active is enabled.",
+          affectedObject: intent.campaignId
+            ? { type: "Campaign", id: intent.campaignId, name: intent.name }
+            : undefined,
+          suggestedFix: "Select at least one active day or enable Always Active."
+        })
+      );
+    }
   }
 
   const program = programs.find((item) => item.id === intent.programId);

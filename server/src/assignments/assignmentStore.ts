@@ -37,6 +37,7 @@ export interface Assignment {
   sourceName?: string;
   generatedAt?: string;
   schedule?: AssignmentSchedule;
+  priority?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -68,6 +69,10 @@ function normalizeSource(value: unknown): AssignmentSource {
 
 function normalizeSourceType(value: unknown, fallback: AssignmentSource): AssignmentSourceType {
   return value === "campaign" || value === "manual" ? value : fallback;
+}
+
+function normalizePriority(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 1000 ? value : undefined;
 }
 
 function campaignIdFromGeneratedAssignmentId(id: string) {
@@ -163,6 +168,7 @@ function normalizeAssignment(value: unknown): Assignment | null {
     sourceName: sanitizeText(candidate.sourceName) || undefined,
     generatedAt: sanitizeText(candidate.generatedAt) || undefined,
     schedule: normalizeSchedule(candidate.schedule),
+    priority: normalizePriority(candidate.priority),
     createdAt: sanitizeText(candidate.createdAt, now),
     updatedAt: sanitizeText(candidate.updatedAt, candidate.createdAt ?? now)
   };
@@ -207,6 +213,7 @@ async function migrateLegacyScreenAssignments(): Promise<Assignment[]> {
       source: "manual" as const,
       sourceType: "manual" as const,
       schedule: undefined,
+      priority: undefined,
       createdAt: screen.lastAssignment ?? now,
       updatedAt: screen.lastAssignment ?? now
     }));
@@ -478,6 +485,7 @@ export async function createAssignment(input: unknown): Promise<Assignment> {
     sourceName: undefined,
     generatedAt: undefined,
     schedule: next.schedule,
+    priority: undefined,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now
   };
@@ -555,6 +563,7 @@ export async function updateAssignment(id: string, input: unknown): Promise<Assi
     sourceName: existing.sourceName,
     generatedAt: existing.generatedAt,
     schedule,
+    priority: existing.priority,
     updatedAt: new Date().toISOString()
   };
 
@@ -585,6 +594,8 @@ export async function syncCampaignAssignments(input: {
   targetIds: string[];
   programId: string;
   campaignName: string;
+  schedule?: AssignmentSchedule;
+  priority?: number;
   createdAt: string;
   updatedAt: string;
 }): Promise<Assignment[]> {
@@ -618,7 +629,8 @@ export async function syncCampaignAssignments(input: {
           sourceId: input.campaignId,
           sourceName: input.campaignName,
           generatedAt: existing?.generatedAt ?? input.createdAt,
-          schedule: undefined,
+          schedule: input.schedule,
+          priority: input.priority,
           createdAt: existing?.createdAt ?? input.createdAt,
           updatedAt: input.updatedAt
         };

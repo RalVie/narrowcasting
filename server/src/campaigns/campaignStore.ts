@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import {
   deleteCampaignAssignments,
   syncCampaignAssignments,
+  type AssignmentSchedule,
   type AssignmentTargetType
 } from "../assignments/assignmentStore.js";
 import { getProgramsOrDefault } from "../program/programStore.js";
@@ -14,7 +15,12 @@ import {
 } from "../publishing/publishValidation.js";
 import { listScreenGroups } from "../screens/screenGroupStore.js";
 import { listScreens } from "../screens/screenStore.js";
-import { assertValid, type DomainValidationIssue } from "../validation/domainValidation.js";
+import {
+  assertValid,
+  isValidClockTime,
+  isValidDateBoundary,
+  type DomainValidationIssue
+} from "../validation/domainValidation.js";
 
 export interface Campaign {
   id: string;
@@ -26,11 +32,14 @@ export interface Campaign {
   targetIds: string[];
   createdAt: string;
   updatedAt: string;
+  alwaysActive: boolean;
   startDate?: string | null;
   endDate?: string | null;
   daysOfWeek?: string[];
+  startTime?: string | null;
+  endTime?: string | null;
   timeWindows?: unknown[];
-  priority?: number | null;
+  priority: number;
   overrideMode?: string | null;
   rotation?: string | null;
   weight?: number | null;
@@ -48,6 +57,18 @@ export interface CampaignPublishResult {
 }
 
 const campaignsPath = resolve(process.cwd(), "data", "campaigns.json");
+const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] as const;
+type CampaignDay = (typeof dayNames)[number];
+const dayNameSet = new Set<string>(dayNames);
+const dayNameToNumber: Record<CampaignDay, number> = {
+  Sunday: 0,
+  Monday: 1,
+  Tuesday: 2,
+  Wednesday: 3,
+  Thursday: 4,
+  Friday: 5,
+  Saturday: 6
+};
 
 function sanitizeText(value: unknown, fallback = "") {
   return typeof value === "string" && value.trim() ? value.trim().slice(0, 240) : fallback;
@@ -75,6 +96,62 @@ function normalizeTargetIds(value: unknown): string[] {
   );
 }
 
+function normalizeDaysOfWeek(value: unknown): CampaignDay[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      value.filter((day): day is CampaignDay => typeof day === "string" && dayNameSet.has(day))
+    )
+  );
+}
+
+function normalizePriority(value: unknown) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 1000 ? value : 100;
+}
+
+function campaignScheduleToAssignmentSchedule(input: {
+  alwaysActive: boolean;
+  startDate?: string | null;
+  endDate?: string | null;
+  daysOfWeek?: string[];
+  startTime?: string | null;
+  endTime?: string | null;
+}): AssignmentSchedule | undefined {
+  if (input.alwaysActive) {
+    return undefined;
+  }
+
+  const daysOfWeek = normalizeDaysOfWeek(input.daysOfWeek).map((day) => dayNameToNumber[day]);
+  const schedule: AssignmentSchedule = {
+    enabled: true
+  };
+
+  if (input.startDate) {
+    schedule.startDate = input.startDate;
+  }
+
+  if (input.endDate) {
+    schedule.endDate = input.endDate;
+  }
+
+  if (daysOfWeek.length > 0) {
+    schedule.daysOfWeek = daysOfWeek;
+  }
+
+  if (input.startTime) {
+    schedule.startTime = input.startTime;
+  }
+
+  if (input.endTime) {
+    schedule.endTime = input.endTime;
+  }
+
+  return schedule;
+}
+
 function normalizeCampaign(value: unknown): Campaign | null {
   if (!value || typeof value !== "object") {
     return null;
@@ -98,13 +175,14 @@ function normalizeCampaign(value: unknown): Campaign | null {
     targetIds: normalizeTargetIds(candidate.targetIds),
     createdAt: sanitizeText(candidate.createdAt, now),
     updatedAt: sanitizeText(candidate.updatedAt, candidate.createdAt ?? now),
+    alwaysActive: typeof candidate.alwaysActive === "boolean" ? candidate.alwaysActive : true,
     startDate: sanitizeNullableText(candidate.startDate),
     endDate: sanitizeNullableText(candidate.endDate),
-    daysOfWeek: Array.isArray(candidate.daysOfWeek)
-      ? candidate.daysOfWeek.filter((day): day is string => typeof day === "string")
-      : [],
+    daysOfWeek: normalizeDaysOfWeek(candidate.daysOfWeek),
+    startTime: sanitizeNullableText(candidate.startTime),
+    endTime: sanitizeNullableText(candidate.endTime),
     timeWindows: Array.isArray(candidate.timeWindows) ? candidate.timeWindows : [],
-    priority: typeof candidate.priority === "number" ? candidate.priority : null,
+    priority: normalizePriority(candidate.priority),
     overrideMode: sanitizeNullableText(candidate.overrideMode),
     rotation: sanitizeNullableText(candidate.rotation),
     weight: typeof candidate.weight === "number" ? candidate.weight : null,
@@ -121,6 +199,13 @@ async function validateCampaignInput(input: {
   programId: string;
   targetType: AssignmentTargetType;
   targetIds: string[];
+  alwaysActive: boolean;
+  startDate?: string | null;
+  endDate?: string | null;
+  daysOfWeek: CampaignDay[];
+  startTime?: string | null;
+  endTime?: string | null;
+  priority: number;
 }) {
   const issues: DomainValidationIssue[] = [];
   const programs = await getProgramsOrDefault();
@@ -142,6 +227,77 @@ async function validateCampaignInput(input: {
       severity: "blocking_error",
       message: "Campaign must target at least one screen or screen group."
     });
+  }
+
+  if (!Number.isInteger(input.priority) || input.priority < 0 || input.priority > 1000) {
+    issues.push({
+      ruleId: "VAL-CAMPAIGN-005",
+      field: "priority",
+      severity: "blocking_error",
+      message: "Campaign priority must be an integer from 0 to 1000."
+    });
+  }
+
+  if (!input.alwaysActive) {
+    if (input.startDate && !isValidDateBoundary(input.startDate)) {
+      issues.push({
+        ruleId: "VAL-CAMPAIGN-006",
+        field: "startDate",
+        severity: "blocking_error",
+        message: "Campaign start date must be a valid ISO date."
+      });
+    }
+
+    if (input.endDate && !isValidDateBoundary(input.endDate)) {
+      issues.push({
+        ruleId: "VAL-CAMPAIGN-006",
+        field: "endDate",
+        severity: "blocking_error",
+        message: "Campaign end date must be a valid ISO date."
+      });
+    }
+
+    if (
+      input.startDate &&
+      input.endDate &&
+      isValidDateBoundary(input.startDate) &&
+      isValidDateBoundary(input.endDate) &&
+      Date.parse(input.startDate) > Date.parse(input.endDate)
+    ) {
+      issues.push({
+        ruleId: "VAL-CAMPAIGN-006",
+        field: "endDate",
+        severity: "blocking_error",
+        message: "Campaign end date must not be before the start date."
+      });
+    }
+
+    if (input.daysOfWeek.length === 0) {
+      issues.push({
+        ruleId: "VAL-CAMPAIGN-007",
+        field: "daysOfWeek",
+        severity: "blocking_error",
+        message: "Campaign must select at least one day unless Always Active is enabled."
+      });
+    }
+
+    if (input.startTime && !isValidClockTime(input.startTime)) {
+      issues.push({
+        ruleId: "VAL-CAMPAIGN-008",
+        field: "startTime",
+        severity: "blocking_error",
+        message: "Campaign start time must use HH:mm format."
+      });
+    }
+
+    if (input.endTime && !isValidClockTime(input.endTime)) {
+      issues.push({
+        ruleId: "VAL-CAMPAIGN-008",
+        field: "endTime",
+        severity: "blocking_error",
+        message: "Campaign end time must use HH:mm format."
+      });
+    }
   }
 
   if (input.targetType === "SCREEN") {
@@ -202,6 +358,13 @@ function readCampaignInput(input: unknown, existing?: Campaign) {
   const targetType = normalizeTargetType(body.targetType ?? existing?.targetType);
   const targetIds = normalizeTargetIds(body.targetIds ?? existing?.targetIds);
   const programId = sanitizeText(body.programId, existing?.programId ?? "");
+  const alwaysActive = typeof body.alwaysActive === "boolean" ? body.alwaysActive : existing?.alwaysActive ?? true;
+  const startDate = sanitizeNullableText("startDate" in body ? body.startDate : existing?.startDate);
+  const endDate = sanitizeNullableText("endDate" in body ? body.endDate : existing?.endDate);
+  const daysOfWeek = normalizeDaysOfWeek(body.daysOfWeek ?? existing?.daysOfWeek);
+  const startTime = sanitizeNullableText("startTime" in body ? body.startTime : existing?.startTime);
+  const endTime = sanitizeNullableText("endTime" in body ? body.endTime : existing?.endTime);
+  const priority = normalizePriority(body.priority ?? existing?.priority);
 
   return {
     name: sanitizeText(body.name, existing?.name ?? "Untitled Campaign"),
@@ -209,7 +372,14 @@ function readCampaignInput(input: unknown, existing?: Campaign) {
     enabled: typeof body.enabled === "boolean" ? body.enabled : existing?.enabled ?? true,
     programId,
     targetType,
-    targetIds
+    targetIds,
+    alwaysActive,
+    startDate,
+    endDate,
+    daysOfWeek,
+    startTime,
+    endTime,
+    priority
   };
 }
 
@@ -247,6 +417,8 @@ async function syncCampaign(campaign: Campaign) {
     targetIds: campaign.targetIds,
     programId: campaign.programId,
     campaignName: campaign.name,
+    schedule: campaignScheduleToAssignmentSchedule(campaign),
+    priority: campaign.priority,
     createdAt: campaign.createdAt,
     updatedAt: campaign.updatedAt
   });
@@ -295,11 +467,14 @@ export async function createCampaign(
     targetIds: campaignInput.targetIds,
     createdAt: now,
     updatedAt: now,
-    startDate: null,
-    endDate: null,
-    daysOfWeek: [],
+    alwaysActive: campaignInput.alwaysActive,
+    startDate: campaignInput.startDate,
+    endDate: campaignInput.endDate,
+    daysOfWeek: campaignInput.daysOfWeek,
+    startTime: campaignInput.startTime,
+    endTime: campaignInput.endTime,
     timeWindows: [],
-    priority: null,
+    priority: campaignInput.priority,
     overrideMode: null,
     rotation: null,
     weight: null,
@@ -342,6 +517,13 @@ export async function updateCampaign(
     programId: campaignInput.programId,
     targetType: campaignInput.targetType,
     targetIds: campaignInput.targetIds,
+    alwaysActive: campaignInput.alwaysActive,
+    startDate: campaignInput.startDate,
+    endDate: campaignInput.endDate,
+    daysOfWeek: campaignInput.daysOfWeek,
+    startTime: campaignInput.startTime,
+    endTime: campaignInput.endTime,
+    priority: campaignInput.priority,
     updatedAt: new Date().toISOString()
   };
 
