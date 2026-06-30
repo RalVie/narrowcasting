@@ -183,6 +183,23 @@ export async function validateThemeDelete(themeId: string): Promise<ReferenceVal
   return resultForReferences("Theme", themeId, references);
 }
 
+export async function validateScreenDelete(screenId: string): Promise<ReferenceValidationResult> {
+  const assignments = await listAssignments();
+  const references = assignments
+    .filter((assignment) => assignment.targetType === "SCREEN" && assignment.targetId === screenId)
+    .map((assignment) => ({
+      objectType: "Assignment",
+      objectId: assignment.id,
+      objectName:
+        assignment.sourceType === "campaign" && assignment.sourceName
+          ? `Campaign: ${assignment.sourceName}`
+          : `${assignment.sourceType} assignment`,
+      field: "targetId"
+    }));
+
+  return resultForReferences("Screen", screenId, references);
+}
+
 export async function validateAssignmentDelete(assignmentId: string): Promise<ReferenceValidationResult> {
   const assignments = await listAssignments();
   const assignment = assignments.find((item) => item.id === assignmentId);

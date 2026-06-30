@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiUrl } from "../api/apiBase";
+import { readApiError } from "../api/readApiError";
 import type { ScreenGroup, ScreenRecord } from "../screenTypes";
 
 const refreshIntervalMs = 10_000;
@@ -93,7 +94,11 @@ export function ScreensPage() {
       const groupBody = (await groupResponse.json()) as ScreenGroup[];
       setScreens(screenBody);
       setScreenGroups(groupBody);
-      setSelectedScreenId((currentId) => currentId ?? screenBody[0]?.screenId ?? null);
+      setSelectedScreenId((currentId) =>
+        currentId && screenBody.some((screen) => screen.screenId === currentId)
+          ? currentId
+          : screenBody[0]?.screenId ?? null
+      );
       setScreenNames((names) => ({
         ...Object.fromEntries(screenBody.map((screen) => [screen.screenId, screen.name])),
         ...names
@@ -181,6 +186,37 @@ export function ScreensPage() {
       if (!keepBusy) {
         setIsBusy(false);
       }
+    }
+  }
+
+  async function deleteScreen(screen: ScreenRecord) {
+    if (
+      !window.confirm(
+        `Delete screen "${screen.name}"?\n\nThis removes the screen registration only. Assignments must be removed first.`
+      )
+    ) {
+      return;
+    }
+
+    setIsBusy(true);
+    setStatus("Deleting screen...");
+
+    try {
+      const response = await fetch(apiUrl(`/api/screens/${encodeURIComponent(screen.screenId)}/delete`), {
+        method: "POST"
+      });
+
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+
+      setSelectedScreenId((currentId) => (currentId === screen.screenId ? null : currentId));
+      setStatus("Screen deleted.");
+      await loadScreens();
+    } catch (error) {
+      setStatus(error instanceof Error ? `Delete screen failed: ${error.message}` : "Delete screen failed.");
+    } finally {
+      setIsBusy(false);
     }
   }
 
@@ -410,6 +446,9 @@ export function ScreensPage() {
         <td>
           <button onClick={() => setSelectedScreenId(screen.screenId)} type="button">
             Details
+          </button>
+          <button disabled={isBusy} onClick={() => void deleteScreen(screen)} type="button">
+            Delete
           </button>
         </td>
       </tr>

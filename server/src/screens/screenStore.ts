@@ -279,6 +279,18 @@ export async function renameScreen(screenId: string, name: unknown): Promise<Scr
   return renamedScreen;
 }
 
+export async function deleteScreen(screenId: string): Promise<boolean> {
+  const screens = await listScreens();
+  const screen = screens.find((item) => item.screenId === screenId);
+
+  if (!screen) {
+    return false;
+  }
+
+  await writeScreens(screens.filter((item) => item.screenId !== screenId));
+  return true;
+}
+
 export async function getScreenById(screenId: string): Promise<ScreenRecord | null> {
   const screens = await listScreens();
   return screens.find((screen) => screen.screenId === screenId) ?? null;

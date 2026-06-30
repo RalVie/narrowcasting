@@ -757,6 +757,7 @@ export function PlayerApp() {
   const scheduleSignatureRef = useRef<string | null>(null);
   const lastScheduleSyncRef = useRef<string | null>(null);
   const missingItemMessageRef = useRef<string | null>(null);
+  const heartbeatFailureCountRef = useRef(0);
 
   function clearFailureTimer() {
     if (failureTimerRef.current !== null) {
@@ -902,6 +903,62 @@ export function PlayerApp() {
   }, [registration.deviceSecret, registration.playerId, registration.screenId]);
 
   useEffect(() => {
+    if (!registration.screenId || !registration.deviceSecret || registration.serverUrl) {
+      return;
+    }
+
+    let cancelled = false;
+    let discoveryTimer: number | null = null;
+    const screenId = registration.screenId;
+    const playerId = registration.playerId;
+    const deviceSecret = registration.deviceSecret;
+
+    async function discoverApprovedServer() {
+      const serverUrl = await discoverServerUrl(readLocalStorage(serverUrlKey));
+
+      if (cancelled) {
+        return;
+      }
+
+      if (!serverUrl) {
+        setRegistration((state) => ({
+          ...state,
+          status: "offline",
+          message: "Screen is approved, but the Narrowcasting server was not found for heartbeat."
+        }));
+        return;
+      }
+
+      writeLocalStorage(serverUrlKey, serverUrl);
+      void persistPlayerRegistration(
+        screenId,
+        playerId,
+        serverUrl,
+        deviceSecret
+      );
+      setRegistration((state) => ({
+        ...state,
+        serverUrl,
+        status: "approved",
+        message: "Screen approved. Heartbeat connected."
+      }));
+    }
+
+    void discoverApprovedServer();
+    discoveryTimer = window.setInterval(() => {
+      void discoverApprovedServer();
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+
+      if (discoveryTimer !== null) {
+        window.clearInterval(discoveryTimer);
+      }
+    };
+  }, [registration.deviceSecret, registration.playerId, registration.screenId, registration.serverUrl]);
+
+  useEffect(() => {
     if (!registration.screenId || !registration.serverUrl || !registration.deviceSecret) {
       return;
     }
@@ -968,7 +1025,7 @@ export function PlayerApp() {
       };
 
       try {
-        await fetchWithTimeout(
+        const response = await fetchWithTimeout(
           `${serverUrl}/api/screens/${encodeURIComponent(screenId)}/heartbeat`,
           {
             method: "POST",
@@ -980,9 +1037,38 @@ export function PlayerApp() {
           },
           2500
         );
+
+        if (!response.ok) {
+          throw new Error(`heartbeat HTTP ${response.status}`);
+        }
+
+        heartbeatFailureCountRef.current = 0;
+        setRegistration((state) =>
+          state.status === "approved"
+            ? state
+            : {
+                ...state,
+                status: "approved",
+                message: "Heartbeat connected."
+              }
+        );
       } catch {
         if (!cancelled) {
           // Playback remains local; heartbeat failures are visible on the dashboard by age.
+          heartbeatFailureCountRef.current += 1;
+
+          if (heartbeatFailureCountRef.current >= 3) {
+            setRegistration((state) =>
+              state.screenId === screenId && state.serverUrl === serverUrl
+                ? {
+                    ...state,
+                    serverUrl: null,
+                    status: "error",
+                    message: "Heartbeat failed. Rediscovering server..."
+                  }
+                : state
+            );
+          }
         }
       }
     }

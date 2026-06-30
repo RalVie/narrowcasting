@@ -1,14 +1,16 @@
 import type { FastifyPluginAsync } from "fastify";
 import {
   approveScreen,
+  deleteScreen,
   getScreenById,
   listScreens,
   registerScreen,
   renameScreen,
   updateScreenHeartbeat
 } from "../../screens/screenStore.js";
-import { badRequest, notFound } from "../apiErrors.js";
+import { badRequest, conflict, notFound } from "../apiErrors.js";
 import { authenticateScreenDevice } from "../../security/deviceAuth.js";
+import { validateScreenDelete } from "../../validation/referenceIntegrity.js";
 
 function toScreenResponse(screen: Awaited<ReturnType<typeof registerScreen>>, includeDeviceSecret = false) {
   const { deviceSecret, ...publicScreen } = screen;
@@ -49,6 +51,22 @@ export const screensRoutes: FastifyPluginAsync = async (app) => {
     }
 
     return reply.send(toScreenResponse(screen));
+  });
+
+  app.post<{ Params: { id: string } }>("/screens/:id/delete", async (request, reply) => {
+    const validation = await validateScreenDelete(request.params.id);
+
+    if (!validation.ok) {
+      return conflict(reply, validation.error);
+    }
+
+    const deleted = await deleteScreen(request.params.id);
+
+    if (!deleted) {
+      return notFound(reply, "screen not found", "SCREEN_NOT_FOUND");
+    }
+
+    return reply.send({ ok: true });
   });
 
   app.post<{ Params: { id: string } }>("/screens/:id/heartbeat", async (request, reply) => {
