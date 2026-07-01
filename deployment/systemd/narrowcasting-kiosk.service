@@ -8,6 +8,7 @@ Type=simple
 User=pi
 WorkingDirectory=/opt/narrowcasting
 Environment=NARROWCASTING_ROOT=/opt/narrowcasting
+EnvironmentFile=-/etc/narrowcasting/kiosk.env
 Environment=KIOSK_URL=http://localhost:4174/player
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/home/pi/.Xauthority

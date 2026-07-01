@@ -7,6 +7,7 @@ Type=simple
 User=pi
 WorkingDirectory=/opt/narrowcasting
 Environment=NARROWCASTING_ROOT=/opt/narrowcasting
+EnvironmentFile=-/etc/narrowcasting/player.env
 Environment=PLAYER_HOST=0.0.0.0
 Environment=PLAYER_PORT=4174
 ExecStart=/opt/narrowcasting/scripts/start-player.sh

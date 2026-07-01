@@ -576,8 +576,8 @@ Typical mutable properties:
 - Program reference;
 - Theme reference;
 - target references;
-- schedule intent;
-- priority intent;
+- scheduling intent including Always Active, date range, days of week, and time window;
+- priority from 0 to 1000;
 - owner;
 - revision metadata;
 - archive state.
@@ -591,8 +591,8 @@ Campaign references:
 - Program;
 - Theme;
 - target intent such as Screens, Screen Groups, future Installations or Locations;
-- schedule intent such as date/time windows;
-- future priority, weight, approval, or campaign type metadata.
+- schedule intent such as date ranges, days of week, and time windows;
+- priority, future weight, approval, or campaign type metadata.
 
 Campaign may produce or inform Assignments during bridge phases, but it must not generate final schedules directly.
 
@@ -605,6 +605,7 @@ Campaign validation must confirm:
 - Theme exists where required;
 - targets exist;
 - schedule intent is valid;
+- priority is valid;
 - media dependencies are available;
 - critical conflicts are handled by policy.
 

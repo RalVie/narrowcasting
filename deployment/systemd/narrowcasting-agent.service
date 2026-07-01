@@ -8,6 +8,7 @@ Type=simple
 User=pi
 WorkingDirectory=/opt/narrowcasting
 Environment=NARROWCASTING_ROOT=/opt/narrowcasting
+EnvironmentFile=-/etc/narrowcasting/agent.env
 Environment=SERVER_URL=http://localhost:3000
 Environment=CACHE_DIR=../player/public/data
 Environment=MEDIA_DIR=../player/public/media

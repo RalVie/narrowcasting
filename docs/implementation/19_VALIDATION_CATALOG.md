@@ -610,6 +610,7 @@ Validation categories:
 - Theme reference;
 - target intent;
 - schedule intent;
+- priority;
 - publishing readiness;
 - revision safety.
 
@@ -622,6 +623,10 @@ Example rules:
 | VAL-CAMPAIGN-003 | Program Required For Publish | Domain | Blocking Error | Campaign cannot publish without valid Program. |
 | VAL-CAMPAIGN-004 | Targets Required For Publish | Domain | Blocking Error | Campaign cannot publish without valid target intent. |
 | VAL-CAMPAIGN-005 | Live Edit Requires Revision | Domain | Blocking Error | Live Campaign must not be mutated directly when revisioning is active. |
+| VAL-CAMPAIGN-006 | Schedule Date Range Valid | UI, API, Domain | Blocking Error | Campaign end date must not be before start date, and date boundaries must be valid. |
+| VAL-CAMPAIGN-007 | Active Days Required | UI, API, Domain | Blocking Error | Campaign must select at least one day unless Always Active is enabled. |
+| VAL-CAMPAIGN-008 | Time Window Valid | UI, API, Domain | Blocking Error | Campaign time window values must use valid `HH:mm` values. |
+| VAL-CAMPAIGN-009 | Priority Valid | UI, API, Domain, Runtime | Blocking Error | Campaign priority must be an integer from 0 to 1000. |
 
 ## 11.6 Screen
 

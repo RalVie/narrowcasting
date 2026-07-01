@@ -134,6 +134,8 @@ Missing theme
 
 Invalid schedule
 
+Invalid campaign priority
+
 Missing targets
 
 Invalid screen references
@@ -268,11 +270,13 @@ Publishing produces business intent.
 
 The Scheduler Resolver evaluates:
 
-Priority
-
 Time Windows
 
 Valid Candidates
+
+Campaign Priority
+
+Deterministic Tie-Breaking
 
 The Scheduler Resolver remains the only runtime authority.
 

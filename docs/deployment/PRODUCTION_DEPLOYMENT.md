@@ -16,6 +16,8 @@ If your Pi uses another user or path, edit the files in `deployment/systemd/` be
 
 ## Build Production Assets
 
+For scripted installation on Raspberry Pi/Linux, see [INSTALLATION.md](INSTALLATION.md).
+
 Run these on the Pi from the repository root:
 
 ```bash

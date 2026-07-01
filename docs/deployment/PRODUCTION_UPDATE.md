@@ -1,11 +1,19 @@
-# Production Update Script Plan
+# Production Update Script
 
-This document defines the planned production update script. It is a plan only; the script is not implemented yet.
+This document describes the production update script for Raspberry Pi/Linux deployments.
 
-## Planned Script
+## Script
 
 ```text
 scripts/update-production.sh
+```
+
+Example:
+
+```bash
+cd /opt/narrowcasting
+chmod +x scripts/update-production.sh
+scripts/update-production.sh --yes --start
 ```
 
 ## Update Flow

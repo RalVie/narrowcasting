@@ -1,13 +1,12 @@
-# Installation Script Plan
+# Installation Scripts
 
-This document defines the planned production installation scripts. It is a plan only; the scripts are not implemented yet.
+This document describes the production installation scripts for Raspberry Pi/Linux deployments.
 
-## Planned Scripts
+## Scripts
 
 ```text
 scripts/install-server.sh
 scripts/install-player.sh
-scripts/update-production.sh
 ```
 
 ## Server Install
@@ -29,6 +28,14 @@ Responsibilities:
 - Optionally install or update the agent systemd service.
 - Expose dashboard and API on port `3000`.
 - Expose the player on port `4174` when the same host also runs playback.
+
+Example:
+
+```bash
+cd /opt/narrowcasting
+chmod +x scripts/install-server.sh scripts/install-player.sh scripts/update-production.sh
+scripts/install-server.sh --yes --start
+```
 
 Safety requirements:
 
@@ -53,6 +60,14 @@ Responsibilities:
 - Preserve media cache and schedule cache.
 - Preserve player identity unless explicitly reset.
 - Allow normal reset and re-registration when the server rejects stale screen credentials.
+
+Example:
+
+```bash
+cd /opt/narrowcasting
+chmod +x scripts/install-player.sh
+scripts/install-player.sh --yes --start
+```
 
 Safety requirements:
 

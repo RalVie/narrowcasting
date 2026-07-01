@@ -8,6 +8,7 @@ Type=simple
 User=pi
 WorkingDirectory=/opt/narrowcasting
 Environment=NARROWCASTING_ROOT=/opt/narrowcasting
+EnvironmentFile=-/etc/narrowcasting/server.env
 Environment=HOST=0.0.0.0
 Environment=PORT=3000
 ExecStart=/opt/narrowcasting/scripts/start-server.sh

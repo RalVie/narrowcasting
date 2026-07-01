@@ -112,6 +112,8 @@ Targets exist
 
 Schedule valid
 
+Campaign priority valid
+
 Media valid
 
 Theme valid
@@ -292,7 +294,7 @@ Offline targets
 
 Cache warnings
 
-Priority conflicts (future)
+Priority conflicts
 
 Validation results are divided into:
 
@@ -378,7 +380,21 @@ Warnings
 
 This page reduces publishing mistakes.
 
-## 17. History
+## 17. Campaign Scheduling And Priority
+
+Campaigns may define:
+
+- Always Active
+- Date range
+- Days of week
+- Time window
+- Priority from 0 to 1000
+
+Existing campaigns default to Always Active with Priority 100.
+
+When multiple active campaigns target the same screen, the Scheduler Resolver evaluates schedule validity first, then campaign priority, then deterministic tie-breaking.
+
+## 18. History
 
 History records:
 
@@ -408,7 +424,7 @@ Time
 
 Reason
 
-## 18. Audit Requirements
+## 19. Audit Requirements
 
 Campaign history SHALL never be lost.
 
@@ -416,15 +432,13 @@ Deleting a campaign should be discouraged.
 
 Archive is preferred.
 
-## 19. Future Extensions
+## 20. Future Extensions
 
 Reserved:
 
 Approval workflows
 
 Multi-stage publishing
-
-Automatic publishing windows
 
 Templates
 
@@ -434,7 +448,7 @@ A/B testing
 
 AI recommendations
 
-## 20. Definition of Done
+## 21. Definition of Done
 
 Campaign Lifecycle is complete when:
 
