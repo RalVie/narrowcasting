@@ -1,7 +1,7 @@
 [Unit]
 Description=Narrowcasting Agent
-After=network-online.target narrowcasting-server.service
-Wants=network-online.target narrowcasting-server.service
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple

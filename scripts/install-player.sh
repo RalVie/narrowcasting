@@ -27,7 +27,8 @@ Options:
   --help, -h               Show this help.
 
 Environment:
-  NARROWCASTING_ROOT, NARROWCASTING_SERVICE_USER, PLAYER_PORT, KIOSK_URL.
+  NARROWCASTING_ROOT, NARROWCASTING_SERVICE_USER, SERVER_URL, PLAYER_PORT,
+  KIOSK_URL.
 USAGE
 }
 
@@ -56,6 +57,7 @@ create_player_directories() {
   log_step "Preparing player runtime directories"
   ensure_dir "$ROOT_DIR/player/public/data"
   ensure_dir "$ROOT_DIR/player/public/media"
+  ensure_dir "$ROOT_DIR/logs/agent"
   ensure_dir "$ROOT_DIR/logs/player"
   ensure_dir "$ROOT_DIR/logs/kiosk"
 }
@@ -64,12 +66,20 @@ create_player_config() {
   log_step "Creating player configuration if absent"
   install_env_file_if_absent "player.env" "PLAYER_HOST=0.0.0.0
 PLAYER_PORT=${PLAYER_PORT:-4174}"
+  install_env_file_if_absent "agent.env" "SERVER_URL=${SERVER_URL:-http://localhost:3000}
+CACHE_DIR=../player/public/data
+MEDIA_DIR=../player/public/media
+REGISTRATION_PATH=../player/public/data/player-registration.json
+STATUS_PATH=../player/public/data/agent-status.json
+SYNC_INTERVAL_MS=30000
+HEARTBEAT_INTERVAL_MS=15000"
   install_env_file_if_absent "kiosk.env" "KIOSK_URL=${KIOSK_URL:-http://localhost:4174/player}
 DISPLAY=${DISPLAY:-:0}"
 }
 
 install_player_services() {
-  log_step "Installing player systemd services"
+  log_step "Installing player and agent systemd services"
+  install_systemd_service narrowcasting-agent
   install_systemd_service narrowcasting-player
 
   if [ "$INSTALL_KIOSK" -eq 1 ]; then
@@ -80,10 +90,12 @@ install_player_services() {
 
   reload_systemd
 
+  enable_service narrowcasting-agent
   enable_service narrowcasting-player
   [ "$INSTALL_KIOSK" -eq 0 ] || enable_service narrowcasting-kiosk
 
   if [ "$START_SERVICES" -eq 1 ]; then
+    start_or_restart_service narrowcasting-agent
     start_or_restart_service narrowcasting-player
     [ "$INSTALL_KIOSK" -eq 0 ] || start_or_restart_service narrowcasting-kiosk
   fi
@@ -91,6 +103,7 @@ install_player_services() {
 
 verify_player_installation() {
   log_step "Verifying player installation"
+  verify_service narrowcasting-agent
   verify_service narrowcasting-player
   [ "$INSTALL_KIOSK" -eq 0 ] || verify_service narrowcasting-kiosk
   [ -d "$ROOT_DIR/player/public/media" ] || fatal "Player media cache directory is missing."
@@ -107,7 +120,9 @@ require_node_runtime
 require_systemd
 install_player_system_packages
 npm_install_part player
+npm_install_part agent
 build_part player
+build_part agent
 create_player_directories
 create_player_config
 install_player_services
@@ -115,4 +130,5 @@ verify_player_installation
 
 log_success "Narrowcasting player installation complete"
 log_info "Player URL: http://localhost:${PLAYER_PORT:-4174}/player"
-log_info "Existing player identity, media cache, and schedule cache were preserved."
+log_info "Agent sync service is installed and uses the player cache directories."
+log_info "Existing player identity, registration, media cache, and schedule cache were preserved."

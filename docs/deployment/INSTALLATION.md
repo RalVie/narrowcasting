@@ -53,8 +53,10 @@ Target:
 Responsibilities:
 
 - Install required system dependencies.
-- Build or fetch the player.
+- Build the player.
+- Build the agent.
 - Configure the player server URL.
+- Configure the agent sync service.
 - Configure Chromium kiosk startup.
 - Configure autostart after boot.
 - Preserve media cache and schedule cache.
@@ -73,6 +75,7 @@ Safety requirements:
 
 - Do not clear browser/device identity during installation unless explicitly requested.
 - Do not delete cached media or cached schedules.
+- Do not delete agent status, registration, or sync cache files.
 - Do not overwrite kiosk configuration without confirmation.
 
 ## Validation
