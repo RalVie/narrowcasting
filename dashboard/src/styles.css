@@ -325,6 +325,57 @@ button:disabled {
   gap: 8px;
 }
 
+.monitoring-filter-row,
+.monitoring-section,
+.monitoring-workspace-grid,
+.monitoring-recent-activity {
+  margin-top: 18px;
+}
+
+.monitoring-section {
+  display: grid;
+  gap: 12px;
+}
+
+.monitoring-workspace-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 14px;
+}
+
+.monitoring-list {
+  display: grid;
+  gap: 8px;
+}
+
+.monitoring-list-item {
+  display: grid;
+  gap: 3px;
+  border: 1px solid #d9dfd4;
+  border-left: 4px solid #7fb58b;
+  border-radius: 8px;
+  padding: 10px;
+  color: #17201a;
+  background: #ffffff;
+}
+
+.monitoring-list-item.warning {
+  border-left-color: #d89b3d;
+}
+
+.monitoring-list-item.attention {
+  border-left-color: #c65f5f;
+}
+
+.monitoring-list-item strong {
+  font-size: 14px;
+}
+
+.monitoring-list-item span {
+  color: #647064;
+  font-size: 12px;
+}
+
 .media-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
