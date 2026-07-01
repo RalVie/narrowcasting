@@ -376,6 +376,105 @@ button:disabled {
   font-size: 12px;
 }
 
+.support-overview-grid,
+.settings-section-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.support-overview-card {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  border: 1px solid #d9dfd4;
+  border-radius: 8px;
+  padding: 16px;
+  background: #f8faf6;
+}
+
+.support-overview-card h3,
+.admin-session-page-card h3 {
+  margin: 0;
+  font-size: 17px;
+  letter-spacing: 0;
+}
+
+.support-overview-card p,
+.admin-session-page-card p {
+  margin-top: 5px;
+  color: #647064;
+  font-size: 13px;
+}
+
+.support-overview-links {
+  display: grid;
+  gap: 8px;
+}
+
+.support-overview-links a {
+  border: 1px solid #b9c8bd;
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: #2b4938;
+  background: #ffffff;
+  font-weight: 700;
+}
+
+.admin-session-page-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  margin-top: 18px;
+}
+
+.admin-session-page-card > div:first-child > span {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.admin-session-page-card.unlocked > div:first-child > span {
+  color: #0e5f33;
+  background: #dff5e8;
+}
+
+.admin-session-page-card.locked > div:first-child > span {
+  color: #7a4f00;
+  background: #fff1c9;
+}
+
+.admin-session-page-actions,
+.audit-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+}
+
+.audit-toolbar {
+  margin-bottom: 10px;
+}
+
+.audit-toolbar label {
+  display: grid;
+  flex: 1 1 240px;
+  gap: 4px;
+  color: #647064;
+  font-size: 12px;
+}
+
+.audit-toolbar input {
+  min-width: 0;
+  border: 1px solid #b9c8bd;
+  border-radius: 6px;
+  padding: 8px;
+  color: #17201a;
+  font: inherit;
+}
+
 .media-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));

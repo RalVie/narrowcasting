@@ -1,10 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  clearDashboardAdminKey,
-  hasDashboardAdminKey,
-  promptForDashboardAdminKey,
-  subscribeDashboardAdminKeyChange
-} from "./api/apiBase";
+import { AdminSessionPage } from "./pages/AdminSessionPage";
 import { AssignmentsPage } from "./pages/AssignmentsPage";
 import { AuditPage } from "./pages/AuditPage";
 import { CampaignsPage } from "./pages/CampaignsPage";
@@ -17,6 +12,7 @@ import { SchedulerDiagnosticsPage } from "./pages/SchedulerDiagnosticsPage";
 import { SchedulerPage } from "./pages/SchedulerPage";
 import { ScreensPage } from "./pages/ScreensPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { SupportOverviewPage } from "./pages/SupportOverviewPage";
 import { SystemStatusPage } from "./pages/SystemStatusPage";
 import { ThemesPage } from "./pages/ThemesPage";
 
@@ -38,10 +34,9 @@ interface NavigationGroup {
   description: string;
   pages: NavigationPage[];
   collapsed?: boolean;
-  accessory?: "admin-session";
 }
 
-const pageGroups = [
+const pageGroups: NavigationGroup[] = [
   {
     label: "🏠 Home",
     description: "Start with what needs attention.",
@@ -79,65 +74,27 @@ const pageGroups = [
     description: "Diagnostics and troubleshooting.",
     collapsed: true,
     pages: [
+      { label: "Support Overview", component: SupportOverviewPage, id: "support" },
       { label: "Scheduler Diagnostics", component: SchedulerDiagnosticsPage },
-      { label: "Assignment Inspector", component: AssignmentsPage, id: "advanced-assignments" },
-      { label: "Legacy Scheduler", component: SchedulerPage, id: "scheduler" },
-      { label: "Schedule Preview", href: "#schedule-preview" }
-    ]
-  },
-  {
-    label: "Administration",
-    description: "Platform configuration and governance.",
-    pages: [
+      { label: "Schedule Preview", href: "#schedule-preview" },
+      { label: "Audit", component: AuditPage },
+      { label: "Server Status", href: "#system-status" },
       { label: "Settings", component: SettingsPage },
-      { label: "Audit", component: AuditPage }
-    ],
-    accessory: "admin-session"
+      { label: "Admin Session", component: AdminSessionPage },
+      { label: "Assignment Inspector", component: AssignmentsPage, id: "advanced-assignments" },
+      { label: "Legacy Scheduler", component: SchedulerPage, id: "scheduler" }
+    ]
   }
-] satisfies NavigationGroup[];
+];
 
-const pages = pageGroups.flatMap((group) =>
-  group.pages.filter((page): page is ComponentNavigationPage => "component" in page)
-);
+function isComponentPage(page: NavigationPage): page is ComponentNavigationPage {
+  return typeof (page as Partial<ComponentNavigationPage>).component === "function";
+}
+
+const pages = pageGroups.flatMap((group) => group.pages.filter(isComponentPage));
 
 function toSectionId(label: string) {
   return label.toLowerCase().replace(/\s+/g, "-");
-}
-
-function AdminSessionControl() {
-  const [isUnlocked, setIsUnlocked] = useState(() => hasDashboardAdminKey());
-
-  useEffect(() => subscribeDashboardAdminKeyChange(() => setIsUnlocked(hasDashboardAdminKey())), []);
-
-  function handleChangeKey() {
-    promptForDashboardAdminKey();
-    setIsUnlocked(hasDashboardAdminKey());
-  }
-
-  function handleClearKey() {
-    clearDashboardAdminKey();
-    setIsUnlocked(hasDashboardAdminKey());
-  }
-
-  return (
-    <section className={`admin-session ${isUnlocked ? "admin-session-unlocked" : "admin-session-locked"}`}>
-      <div>
-        <p className="admin-session-label">Admin session</p>
-        <strong>{isUnlocked ? "Admin unlocked" : "Admin locked"}</strong>
-      </div>
-      <div className="admin-session-actions">
-        <button type="button" onClick={handleChangeKey}>
-          {isUnlocked ? "Change key" : "Enter key"}
-        </button>
-        <button type="button" onClick={handleClearKey}>
-          Clear key
-        </button>
-        <button type="button" onClick={() => window.location.reload()}>
-          Retry
-        </button>
-      </div>
-    </section>
-  );
 }
 
 function pageHref(page: NavigationPage) {
@@ -185,7 +142,6 @@ function NavigationGroupSection({
           {page.label}
         </a>
       ))}
-      {group.accessory === "admin-session" ? <AdminSessionControl /> : null}
     </>
   );
 
