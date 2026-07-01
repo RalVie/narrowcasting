@@ -112,6 +112,14 @@ HEARTBEAT_INTERVAL_MS=15000"
 PLAYER_PORT=4174"
 }
 
+prepare_runtime_scripts() {
+  log_step "Preparing runtime start scripts"
+  ensure_executable "$ROOT_DIR/scripts/start-server.sh"
+  ensure_executable "$ROOT_DIR/scripts/start-agent.sh"
+  ensure_executable "$ROOT_DIR/scripts/start-player.sh"
+  ensure_executable "$ROOT_DIR/scripts/start-kiosk.sh"
+}
+
 install_services() {
   log_step "Installing systemd services"
   install_systemd_service narrowcasting-server
@@ -150,13 +158,15 @@ log_step "Installing Narrowcasting server appliance"
 require_linux
 warn_if_not_raspberry_pi
 require_repo_root
-require_node_runtime
 require_systemd
 install_system_packages
+install_node_runtime_if_needed
+require_node_runtime
 npm_install_all
 build_all
 create_runtime_directories
 create_default_config
+prepare_runtime_scripts
 install_services
 verify_installation
 

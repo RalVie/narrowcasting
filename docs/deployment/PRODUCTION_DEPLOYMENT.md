@@ -4,6 +4,8 @@ This guide turns a Raspberry Pi into a self-starting Narrowcasting appliance.
 
 Playback remains local. The player reads its cached schedule and media from the Pi, so cached content keeps playing when the server, network, or internet is unavailable.
 
+For current production installs, prefer the scripted installers in [INSTALLATION.md](INSTALLATION.md). They prepare executable runtime scripts, install Node.js/npm when needed, and configure kiosk startup safely for Raspberry Pi OS Desktop.
+
 ## Assumptions
 
 - Repository path on the Pi: `/opt/narrowcasting`
@@ -62,7 +64,6 @@ sudo systemctl daemon-reload
 sudo systemctl enable narrowcasting-server.service
 sudo systemctl enable narrowcasting-agent.service
 sudo systemctl enable narrowcasting-player.service
-sudo systemctl enable narrowcasting-kiosk.service
 ```
 
 Start immediately without rebooting:
@@ -71,13 +72,19 @@ Start immediately without rebooting:
 sudo systemctl start narrowcasting-server.service
 sudo systemctl start narrowcasting-agent.service
 sudo systemctl start narrowcasting-player.service
-sudo systemctl start narrowcasting-kiosk.service
 ```
+
+Chromium kiosk startup should be configured through desktop autostart on Raspberry Pi OS Desktop:
+
+```text
+/etc/xdg/autostart/narrowcasting-kiosk.desktop
+```
+
+Do not run Chromium kiosk as a normal system service on Raspberry Pi OS Desktop. It needs an active graphical login/session.
 
 ## Disable Appliance Mode
 
 ```bash
-sudo systemctl disable narrowcasting-kiosk.service
 sudo systemctl disable narrowcasting-player.service
 sudo systemctl disable narrowcasting-agent.service
 sudo systemctl disable narrowcasting-server.service
@@ -86,7 +93,6 @@ sudo systemctl disable narrowcasting-server.service
 Stop running services:
 
 ```bash
-sudo systemctl stop narrowcasting-kiosk.service
 sudo systemctl stop narrowcasting-player.service
 sudo systemctl stop narrowcasting-agent.service
 sudo systemctl stop narrowcasting-server.service
@@ -98,19 +104,17 @@ sudo systemctl stop narrowcasting-server.service
 systemctl status narrowcasting-server.service
 systemctl status narrowcasting-agent.service
 systemctl status narrowcasting-player.service
-systemctl status narrowcasting-kiosk.service
 ```
 
 ```bash
 journalctl -u narrowcasting-server.service -f
 journalctl -u narrowcasting-agent.service -f
 journalctl -u narrowcasting-player.service -f
-journalctl -u narrowcasting-kiosk.service -f
 ```
 
 ## Kiosk Configuration
 
-The kiosk service launches Chromium in fullscreen kiosk mode with no browser chrome, address bar, or tabs.
+The kiosk launcher opens Chromium in fullscreen kiosk mode with no browser chrome, address bar, or tabs.
 
 Default URL:
 
@@ -118,25 +122,19 @@ Default URL:
 http://localhost:4174/player
 ```
 
-Override the kiosk URL by editing `deployment/systemd/narrowcasting-kiosk.service` before installation:
+Override the kiosk URL by editing `/etc/narrowcasting/kiosk.env`:
 
-```ini
-Environment=KIOSK_URL=http://localhost:4174/player
+```bash
+KIOSK_URL=http://localhost:4174/player
 ```
 
 If Chromium is installed under a different command name, set:
 
-```ini
-Environment=CHROMIUM_BIN=/usr/bin/chromium-browser
+```bash
+CHROMIUM_BIN=/usr/bin/chromium-browser
 ```
 
-If the Pi uses a display user other than `pi`, update:
-
-```ini
-User=pi
-Environment=XAUTHORITY=/home/pi/.Xauthority
-Environment=XDG_RUNTIME_DIR=/run/user/1000
-```
+On Raspberry Pi OS Desktop, kiosk startup is installed as desktop autostart. It starts after graphical login/session availability. On OS Lite or systems without a graphical session, kiosk startup is skipped with a warning.
 
 ## Remote Dashboard Access
 
@@ -194,7 +192,7 @@ Expected sequence after power returns:
 2. `narrowcasting-server.service` starts the compiled server.
 3. `narrowcasting-agent.service` starts the compiled agent.
 4. `narrowcasting-player.service` starts the production player server.
-5. `narrowcasting-kiosk.service` launches Chromium fullscreen at `http://localhost:4174/player`.
+5. Desktop autostart launches Chromium fullscreen at `http://localhost:4174/player` after graphical login/session availability.
 6. The player reads `player/public/data/schedule.json`.
 7. The player renders cached media from `player/public/media/`.
 
@@ -220,8 +218,8 @@ ls -lah /opt/narrowcasting/player/public/media/
 If the fullscreen player does not appear:
 
 ```bash
-systemctl status narrowcasting-kiosk.service
-journalctl -u narrowcasting-kiosk.service -n 100
+cat /etc/xdg/autostart/narrowcasting-kiosk.desktop
+/opt/narrowcasting/scripts/start-kiosk.sh
 ```
 
 If playback appears but content is stale:

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Narrowcasting Kiosk
+Comment=Start the Narrowcasting player in Chromium kiosk mode
+Exec=/opt/narrowcasting/scripts/start-kiosk.sh
+Terminal=false
+X-GNOME-Autostart-enabled=true

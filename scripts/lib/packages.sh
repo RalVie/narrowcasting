@@ -20,6 +20,34 @@ install_system_packages() {
   sudo_cmd apt-get install -y ca-certificates curl git openssl
 }
 
+install_node_runtime_if_needed() {
+  local needs_node=0
+  local major
+
+  if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+    needs_node=1
+  else
+    major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
+    [ "$major" -ge 20 ] || needs_node=1
+  fi
+
+  [ "$needs_node" -eq 1 ] || return
+
+  if [ "$SKIP_SYSTEM_PACKAGES" -eq 1 ]; then
+    log_warning "Node.js/npm installation skipped by --skip-system-packages."
+    return
+  fi
+
+  if ! command -v apt-get >/dev/null 2>&1; then
+    log_warning "apt-get not found. Cannot install Node.js/npm automatically."
+    return
+  fi
+
+  log_step "Installing Node.js/npm with apt-get"
+  sudo_cmd apt-get update
+  sudo_cmd apt-get install -y nodejs npm
+}
+
 install_player_system_packages() {
   install_system_packages
 

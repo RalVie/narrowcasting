@@ -129,6 +129,12 @@ ensure_dir() {
   run_cmd mkdir -p "$path"
 }
 
+ensure_executable() {
+  local path="$1"
+  [ -f "$path" ] || fatal "Required executable file is missing: $path"
+  run_cmd chmod +x "$path"
+}
+
 write_file_if_absent() {
   local path="$1"
   local content="$2"

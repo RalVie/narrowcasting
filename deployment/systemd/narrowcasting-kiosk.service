@@ -1,5 +1,5 @@
 [Unit]
-Description=Narrowcasting Chromium Kiosk
+Description=Narrowcasting Chromium Kiosk (legacy system service)
 After=graphical.target narrowcasting-player.service
 Wants=graphical.target narrowcasting-player.service
 
@@ -10,12 +10,9 @@ WorkingDirectory=/opt/narrowcasting
 Environment=NARROWCASTING_ROOT=/opt/narrowcasting
 EnvironmentFile=-/etc/narrowcasting/kiosk.env
 Environment=KIOSK_URL=http://localhost:4174/player
-Environment=DISPLAY=:0
-Environment=XAUTHORITY=/home/pi/.Xauthority
-Environment=XDG_RUNTIME_DIR=/run/user/1000
 ExecStart=/opt/narrowcasting/scripts/start-kiosk.sh
-Restart=always
-RestartSec=5
+Restart=on-failure
+RestartSec=30
 
 [Install]
 WantedBy=graphical.target

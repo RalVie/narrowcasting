@@ -53,11 +53,12 @@ Target:
 Responsibilities:
 
 - Install required system dependencies.
+- Install Node.js/npm on Debian/Raspberry Pi OS when missing or too old and system package installation is enabled.
 - Build the player.
 - Build the agent.
 - Configure the player server URL.
 - Configure the agent sync service.
-- Configure Chromium kiosk startup.
+- Configure Chromium kiosk desktop autostart when a graphical session is available.
 - Configure autostart after boot.
 - Preserve media cache and schedule cache.
 - Preserve player identity unless explicitly reset.
@@ -68,7 +69,28 @@ Example:
 ```bash
 cd /opt/narrowcasting
 chmod +x scripts/install-player.sh
-scripts/install-player.sh --yes --start
+./scripts/install-player.sh --server-url http://SERVER-IP:3000 --start
+```
+
+For unattended installs, combine `--yes` with an explicit server URL:
+
+```bash
+./scripts/install-player.sh --yes --server-url http://SERVER-IP:3000 --start
+```
+
+If `--server-url` is omitted, the installer prompts for the server URL in interactive mode. In `--yes` mode it falls back to `http://localhost:3000` with a warning, which is usually only correct for combined server/player appliances.
+
+If `/etc/narrowcasting/agent.env` already exists, the installer preserves it and prints the currently configured `SERVER_URL`. To change the server URL later, edit the file:
+
+```bash
+sudo nano /etc/narrowcasting/agent.env
+```
+
+Or update only the server URL:
+
+```bash
+sudo sed -i 's#^SERVER_URL=.*#SERVER_URL=http://SERVER-IP:3000#' /etc/narrowcasting/agent.env
+sudo systemctl restart narrowcasting-agent.service
 ```
 
 Safety requirements:
@@ -77,6 +99,14 @@ Safety requirements:
 - Do not delete cached media or cached schedules.
 - Do not delete agent status, registration, or sync cache files.
 - Do not overwrite kiosk configuration without confirmation.
+- Do not run Chromium kiosk as a normal system service on Raspberry Pi OS Desktop.
+
+Kiosk startup:
+
+- `narrowcasting-agent.service` and `narrowcasting-player.service` are system services.
+- Chromium kiosk startup is installed through desktop autostart at `/etc/xdg/autostart/narrowcasting-kiosk.desktop`.
+- On Raspberry Pi OS Lite or systems without a graphical session, kiosk autostart is skipped with a warning.
+- The default kiosk URL is `http://localhost:4174/player`.
 
 ## Validation
 

@@ -1,8 +1,18 @@
 #!/usr/bin/env bash
 set -u
 
+if [ -f /etc/narrowcasting/kiosk.env ]; then
+  # shellcheck disable=SC1091
+  . /etc/narrowcasting/kiosk.env
+fi
+
 KIOSK_URL="${KIOSK_URL:-http://localhost:4174/player}"
-RESTART_DELAY_SECONDS="${RESTART_DELAY_SECONDS:-3}"
+RESTART_DELAY_SECONDS="${RESTART_DELAY_SECONDS:-10}"
+
+if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+  echo "No graphical session detected. Kiosk will start after desktop login/autostart." >&2
+  exit 0
+fi
 
 find_chromium() {
   command -v chromium-browser 2>/dev/null ||
