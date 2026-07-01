@@ -38,7 +38,7 @@ interface NavigationGroup {
 
 const pageGroups: NavigationGroup[] = [
   {
-    label: "🏠 Home",
+    label: "Home",
     description: "Start with what needs attention.",
     pages: [{ label: "Dashboard", component: DashboardPage }]
   },
@@ -66,7 +66,7 @@ const pageGroups: NavigationGroup[] = [
     pages: [
       { label: "Screens", component: ScreensPage },
       { label: "Screen Groups", href: "#screens" },
-      { label: "System Status", component: SystemStatusPage }
+      { label: "Monitoring", component: SystemStatusPage, id: "system-status" }
     ]
   },
   {

@@ -173,6 +173,7 @@ The Operator should start from the operational Dashboard and move into Screens o
 
 - Create campaign.
 - Select program and targets.
+- Configure campaign schedule and priority.
 - Run publish validation.
 - Confirm warnings if appropriate.
 - Review publish impact.
@@ -562,6 +563,18 @@ Maintenance is administrative. It should not be mixed into content creation or c
 
 The current Dashboard exposes many pages as top-level peers. This makes the interface reflect implementation maturity rather than daily use.
 
+Product 1.0 implements this principle with these operator-facing groups:
+
+```text
+Home
+Create
+Publish
+Operate
+Support
+```
+
+Administration controls that are technical or session-oriented are discoverable from Support rather than exposed as daily operator destinations.
+
 The recommended navigation groups are:
 
 ### 5.1 Home
@@ -890,21 +903,22 @@ It is not an implementation instruction. It defines product intent for future na
 
 | Current page | Primary workspace | Typical persona | Usage frequency | Top-level recommendation | Rationale |
 | --- | --- | --- | --- | --- | --- |
-| Dashboard | Home / Monitoring | Operator | Daily | Remain top-level | Primary operational entry point. |
+| Dashboard | Home / Monitoring | Operator | Daily | Home | Primary operational entry point with health, publishing, synchronization, media, and recent activity. |
 | Media Library | Content | Content Editor | Daily | Remain top-level within Content | First step in content creation. |
 | Playlists | Content | Content Editor | Daily | Remain top-level within Content | Core content organisation workflow. |
 | Programs | Content | Content Editor / Campaign Manager | Daily / Occasional | Remain top-level within Content | Program composition is a major reusable building block. |
 | Themes | Content | Content Editor / Brand Manager | Occasional | Remain top-level within Content or secondary Content item | Important, but not necessarily daily for every operator. |
-| Campaigns | Publishing | Campaign Manager | Daily / Occasional | Remain top-level within Publishing | Primary publishing workflow and safest place for business intent. |
-| Screens | Deployment / Monitoring | Installer / Operator | Daily / Occasional | Remain top-level within Deployment | Screens are the main operational deployment object. |
-| Screen Groups | Deployment | Installer / Administrator | Occasional | Move under Screens or Deployment secondary item | Groups are important, but usually managed through screen context. |
-| System Status | Monitoring | Operator / Support Engineer | Daily / Occasional | Remain top-level under Monitoring or linked from Dashboard | Health view should be easy to reach but not mixed with Settings. |
+| Campaigns | Publishing | Campaign Manager | Daily / Occasional | Publish | Primary campaign workspace with scheduling, priority, validation, and publishing actions. |
+| Screens | Deployment / Monitoring | Installer / Operator | Daily / Occasional | Operate | Screens are the main deployment object and now show health, sync, campaign target, groups, and actions as cards. |
+| Screen Groups | Deployment | Installer / Administrator | Occasional | Secondary item under Operate | Groups are managed through the Screens deployment workspace. |
+| Monitoring | Monitoring | Operator / Support Engineer | Daily / Occasional | Operate | Health view shows screens, publishing, synchronization, storage, and recent activity. |
 | Schedule Preview | Publishing / Support | Campaign Manager / Support Engineer | Occasional | Move to secondary Publishing or Support | It supports publish confidence and troubleshooting, but is not the main publishing object. |
 | Scheduler | Support / Legacy | Support Engineer | Rare | Move to Support, label legacy/deprecated if runtime-inactive | Legacy scheduler concepts should not appear as normal operations. |
 | Scheduler Diagnostics | Support | Support Engineer / Operator | Rare / Occasional | Move to Support secondary navigation | Critical for explainability, but advanced and read-only. |
 | Advanced Assignments | Support / Administration | Support Engineer / Administrator | Rare | Move to Support or Administration advanced area | Assignments are runtime bindings and should not be normal publishing UI. |
-| Audit | Administration / Support | Administrator / Support Engineer | Occasional / Rare | Move under Administration and cross-link from Support | Audit is governance and investigation, not a daily operator page. |
-| Settings | Administration | Administrator | Occasional | Remain under Administration | Platform configuration belongs outside daily workflows. |
+| Audit | Support / Administration | Administrator / Support Engineer | Occasional / Rare | Support | Audit is governance and investigation, with search and simple client-side filters. |
+| Settings | Support / Administration | Administrator | Occasional | Support | Platform configuration areas belong outside daily workflows. |
+| Admin Session | Support / Administration | Administrator / Support Engineer | Occasional | Support | Local admin key state is technical and should be obvious when needed but hidden from daily operators. |
 
 ## 11. Recommended Navigation Outcome
 
@@ -914,34 +928,32 @@ The long-term Dashboard should feel like this:
 Home
   Dashboard
 
-Content
+Create
   Media Library
   Playlists
   Programs
   Themes
 
-Publishing
+Publish
   Campaigns
   Preview / Schedule Preview
 
-Deployment
+Operate
   Screens
   Screen Groups
-
-Monitoring
-  System Status
+  Monitoring
   Future Alerts
   Future Incidents
 
 Support
+  Support Overview
   Scheduler Diagnostics
   Schedule Preview
+  Audit
+  Settings
+  Admin Session
   Advanced Assignments
   Legacy Scheduler
-
-Administration
-  Settings
-  Audit
   Future Users & Roles
 ```
 

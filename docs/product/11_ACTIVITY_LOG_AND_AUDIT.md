@@ -202,6 +202,10 @@ Audit
 
 Audit events are never hidden.
 
+Product 1.0 implementation note:
+
+The Audit workspace supports newest-first review, search, and simple client-side filters for All, Action, Screen, Campaign, and User/System views.
+
 ## 8. Object History
 
 Every object exposes its own history.

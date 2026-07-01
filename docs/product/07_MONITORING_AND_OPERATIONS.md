@@ -154,6 +154,10 @@ Storage Usage
 Last Deployments
 ```
 
+Product 1.0 implementation note:
+
+The Monitoring workspace is implemented as a read-oriented operational view with Health Overview, Deployment, Synchronization, Publishing, Storage, and Recent Activity sections. It uses compact health cards, attention filters, and links back to Screens, Campaigns, Media Library, and Support-oriented views.
+
 ## 6. Player Health
 
 Every player reports:

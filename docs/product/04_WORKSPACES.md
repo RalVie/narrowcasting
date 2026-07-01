@@ -58,6 +58,10 @@ Pending Actions
 
 Upcoming Publications
 
+Product 1.0 implementation note:
+
+The Home Dashboard shows compact operational cards for Screens, Playback / Sync, Publishing, Storage / Media, common next actions, and recent activity.
+
 ## Primary Action
 
 Investigate
@@ -219,6 +223,10 @@ Where should content be shown
 Screens
 
 Screen Groups
+
+Product 1.0 implementation note:
+
+The Screens workspace functions as the deployment management workspace. It uses compact screen cards, health indicators, filters, search, grouped screen details, rename/delete actions, pending approval handling, and screen-group membership management.
 
 ## Future
 
