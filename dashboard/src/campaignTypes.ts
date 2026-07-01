@@ -10,6 +10,7 @@ export interface Campaign {
   targetIds: string[];
   createdAt: string;
   updatedAt: string;
+  revision?: string | null;
   alwaysActive: boolean;
   startDate?: string | null;
   endDate?: string | null;

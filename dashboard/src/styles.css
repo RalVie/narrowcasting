@@ -807,6 +807,129 @@ button:disabled {
   gap: 14px;
 }
 
+.deployment-overview-panel {
+  margin-bottom: 14px;
+}
+
+.deployment-health-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.deployment-health-summary span {
+  border: 1px solid #d9dfd4;
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: #2b4938;
+  background: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.deployment-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 360px) minmax(0, 1fr);
+  gap: 10px;
+  align-items: end;
+}
+
+.deployment-toolbar label {
+  display: grid;
+  gap: 4px;
+  color: #647064;
+  font-size: 12px;
+}
+
+.deployment-toolbar input {
+  min-width: 0;
+  border: 1px solid #b9c8bd;
+  border-radius: 6px;
+  padding: 8px;
+  color: #17201a;
+  font: inherit;
+}
+
+.deployment-screen-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px;
+}
+
+.deployment-screen-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid #d9dfd4;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.deployment-screen-card.selected {
+  border-color: #4777d9;
+  box-shadow: 0 0 0 2px #dce8ff;
+}
+
+.deployment-screen-card-header {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.deployment-screen-card-header h3 {
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
+.deployment-screen-card-header span {
+  color: #647064;
+  font-size: 12px;
+}
+
+.deployment-screen-summary {
+  display: grid;
+  grid-template-columns: minmax(120px, auto) minmax(0, 1fr);
+  gap: 5px 10px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.deployment-screen-summary dt {
+  color: #647064;
+}
+
+.deployment-screen-summary dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.deployment-screen-card-actions,
+.screen-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.deployment-empty-state {
+  border: 1px dashed #b9c8bd;
+  border-radius: 8px;
+  padding: 18px;
+  color: #647064;
+  background: #ffffff;
+  text-align: center;
+}
+
+.deployment-empty-state h3 {
+  margin: 0 0 5px;
+  color: #17201a;
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
 .screen-card-list {
   display: grid;
   gap: 10px;
@@ -840,10 +963,19 @@ button:disabled {
 }
 
 .screen-online,
-.screen-offline {
+.screen-offline,
+.screen-pending,
+.screen-attention {
   border-radius: 999px;
   padding: 4px 8px;
   font-weight: 700;
+}
+
+.screen-health-badge {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  font-size: 12px;
 }
 
 .screen-online {
@@ -854,6 +986,16 @@ button:disabled {
 .screen-offline {
   color: #7b362b;
   background: #f8e4de;
+}
+
+.screen-pending {
+  color: #5f4900;
+  background: #fff1c9;
+}
+
+.screen-attention {
+  color: #7a4f00;
+  background: #fff1c9;
 }
 
 .screen-card label {
