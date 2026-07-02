@@ -118,7 +118,8 @@ Kiosk startup:
 - A Server Local Player at `http://SERVER:4174/player` is optional and shows only the server-local agent/player schedule. It is not a universal preview of every screen in a multi-screen installation.
 - Inspect per-screen output through the Dashboard Schedule Preview or Monitoring workspace.
 - Chromium uses a dedicated appliance profile at `player/chromium-kiosk-profile`.
-- The kiosk launcher disables first-run prompts, default-browser prompts, password/keyring prompts, restore prompts, translate prompts, screen blanking, and display power saving where the desktop environment allows it.
+- The kiosk launcher disables first-run prompts, default-browser prompts, password/keyring prompts, restore prompts, translate prompts, browser notification/permission prompts, autofill/password prompts, screen blanking, and display power saving where Chromium and the desktop environment allow it.
+- Website-owned cookie banners and language selectors are not automatically removed by Narrowcasting.
 - Automatic desktop login must be enabled on Raspberry Pi OS Desktop for unattended kiosk startup after boot.
 
 ## Validation

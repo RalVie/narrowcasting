@@ -11,6 +11,7 @@ RESTART_DELAY_SECONDS="${RESTART_DELAY_SECONDS:-10}"
 CHROMIUM_PROFILE_DIR="${CHROMIUM_PROFILE_DIR:-${HOME:-/tmp}/.config/narrowcasting/chromium-kiosk}"
 CHROMIUM_REMOTE_DEBUGGING_ADDRESS="${CHROMIUM_REMOTE_DEBUGGING_ADDRESS:-127.0.0.1}"
 CHROMIUM_REMOTE_DEBUGGING_PORT="${CHROMIUM_REMOTE_DEBUGGING_PORT:-9222}"
+BROWSER_RENDERER_CONTROL_URL="${BROWSER_RENDERER_CONTROL_URL:-http://127.0.0.1:4175/browser-renderer/render}"
 
 if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
   echo "No graphical session detected. Kiosk will start after desktop login/autostart." >&2
@@ -45,6 +46,78 @@ fi
 mkdir -p "$CHROMIUM_PROFILE_DIR"
 prepare_desktop_session
 
+write_chromium_preferences() {
+  local default_dir="$CHROMIUM_PROFILE_DIR/Default"
+  local preferences_file="$default_dir/Preferences"
+
+  mkdir -p "$default_dir"
+
+  cat > "$preferences_file" <<EOF
+{
+  "autofill": {
+    "credit_card_enabled": false,
+    "profile_enabled": false
+  },
+  "browser": {
+    "check_default_browser": false,
+    "has_seen_welcome_page": true
+  },
+  "credentials_enable_service": false,
+  "profile": {
+    "content_settings": {
+      "exceptions": {
+        "automatic_downloads": {},
+        "geolocation": {},
+        "media_stream_camera": {},
+        "media_stream_mic": {},
+        "notifications": {},
+        "popups": {}
+      }
+    },
+    "default_content_setting_values": {
+      "geolocation": 2,
+      "media_stream_camera": 2,
+      "media_stream_mic": 2,
+      "notifications": 2,
+      "popups": 2
+    },
+    "exit_type": "Normal",
+    "exited_cleanly": true,
+    "password_manager_enabled": false
+  },
+  "session": {
+    "exit_type": "Normal",
+    "restore_on_startup": 4,
+    "startup_urls": [
+      "$KIOSK_URL"
+    ]
+  },
+  "signin": {
+    "allowed": false
+  },
+  "sync": {
+    "requested": false,
+    "suppress_start": true
+  },
+  "translate": {
+    "enabled": false
+  }
+}
+EOF
+}
+
+write_chromium_preferences
+
+log_kiosk_startup() {
+  echo "narrowcasting kiosk starting" >&2
+  echo "chromium: $("$CHROMIUM_BIN" --version 2>/dev/null || echo unknown)" >&2
+  echo "profile: $CHROMIUM_PROFILE_DIR" >&2
+  echo "kiosk url: $KIOSK_URL" >&2
+  echo "browser renderer control: $BROWSER_RENDERER_CONTROL_URL" >&2
+  echo "remote debugging: $CHROMIUM_REMOTE_DEBUGGING_ADDRESS:$CHROMIUM_REMOTE_DEBUGGING_PORT" >&2
+  echo "flags: ${CHROMIUM_FLAGS[*]}" >&2
+}
+
 child_pid=""
 
 stop_child() {
@@ -57,30 +130,44 @@ stop_child() {
 
 trap stop_child INT TERM
 
+CHROMIUM_FLAGS=(
+  "--user-data-dir=$CHROMIUM_PROFILE_DIR"
+  "--kiosk"
+  "$KIOSK_URL"
+  "--remote-debugging-address=$CHROMIUM_REMOTE_DEBUGGING_ADDRESS"
+  "--remote-debugging-port=$CHROMIUM_REMOTE_DEBUGGING_PORT"
+  "--start-fullscreen"
+  "--no-first-run"
+  "--no-default-browser-check"
+  "--noerrdialogs"
+  "--disable-search-engine-choice-screen"
+  "--disable-infobars"
+  "--disable-default-apps"
+  "--disable-background-networking"
+  "--disable-component-update"
+  "--disable-domain-reliability"
+  "--disable-features=TranslateUI,AutofillServerCommunication,PasswordManagerOnboarding,MediaRouter,AutofillAddressSavePrompt,AutofillCreditCardUpload,AutofillEnableAccountWalletStorage,InterestFeedContentSuggestions,SignInProfileCreation,OptimizationHints,SidePanelPinning"
+  "--disable-notifications"
+  "--disable-session-crashed-bubble"
+  "--disable-signin-scoped-device-id"
+  "--disable-sync"
+  "--disable-translate"
+  "--disable-save-password-bubble"
+  "--disable-password-generation"
+  "--deny-permission-prompts"
+  "--hide-crash-restore-bubble"
+  "--metrics-recording-only"
+  "--no-service-autorun"
+  "--password-store=basic"
+  "--use-mock-keychain"
+  "--autoplay-policy=no-user-gesture-required"
+  "--check-for-update-interval=31536000"
+)
+
+log_kiosk_startup
+
 while true; do
-  "$CHROMIUM_BIN" \
-    --user-data-dir="$CHROMIUM_PROFILE_DIR" \
-    --kiosk "$KIOSK_URL" \
-    --remote-debugging-address="$CHROMIUM_REMOTE_DEBUGGING_ADDRESS" \
-    --remote-debugging-port="$CHROMIUM_REMOTE_DEBUGGING_PORT" \
-    --start-fullscreen \
-    --no-first-run \
-    --no-default-browser-check \
-    --noerrdialogs \
-    --disable-infobars \
-    --disable-default-apps \
-    --disable-background-networking \
-    --disable-component-update \
-    --disable-sync \
-    --disable-translate \
-    --disable-save-password-bubble \
-    --disable-password-generation \
-    --disable-session-crashed-bubble \
-    --disable-features=TranslateUI,AutofillServerCommunication,PasswordManagerOnboarding,MediaRouter \
-    --password-store=basic \
-    --use-mock-keychain \
-    --autoplay-policy=no-user-gesture-required \
-    --check-for-update-interval=31536000 &
+  "$CHROMIUM_BIN" "${CHROMIUM_FLAGS[@]}" &
   child_pid="$!"
   wait "$child_pid"
   exit_code="$?"

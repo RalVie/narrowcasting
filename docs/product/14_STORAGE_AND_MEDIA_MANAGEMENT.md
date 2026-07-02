@@ -155,6 +155,8 @@ Embedded iframe is the default Web URL render mode. It works only when the remot
 
 Browser renderer is a Product 1.2 MVP mode for dedicated Player appliances. It uses the local Chromium kiosk to temporarily navigate to a Web URL that blocks iframe embedding, then returns to the Player after the configured duration. The external website is still only rendered content; it does not become the scheduler.
 
+Narrowcasting suppresses browser-owned kiosk UI where technically possible. Website-owned cookie consent dialogs, language selectors, or modal overlays remain the responsibility of the website or customer configuration.
+
 ## 5. Media States
 
 A media object can be:
