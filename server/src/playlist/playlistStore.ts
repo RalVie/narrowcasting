@@ -16,7 +16,7 @@ import {
 export interface PlaylistItem {
   id: string;
   mediaId: string;
-  type: "image" | "video";
+  type: "image" | "video" | "web_url" | "rss_feed";
   file: string;
   duration: number;
   durationMode?: "auto" | "clip";
@@ -97,7 +97,11 @@ function normalizePlaylistItems(
         (typeof candidate.file === "string" && candidate.file.trim() ? candidate.file.trim() : undefined);
       const type = referencedMedia?.type ?? candidate.type;
 
-      if (!mediaId || (type !== "image" && type !== "video") || !file) {
+      if (
+        !mediaId ||
+        (type !== "image" && type !== "video" && type !== "web_url" && type !== "rss_feed") ||
+        !file
+      ) {
         return null;
       }
 
@@ -203,12 +207,18 @@ function validatePlaylistItemsInput(
       });
     }
 
-    if (item.type !== undefined && item.type !== "image" && item.type !== "video") {
+    if (
+      item.type !== undefined &&
+      item.type !== "image" &&
+      item.type !== "video" &&
+      item.type !== "web_url" &&
+      item.type !== "rss_feed"
+    ) {
       issues.push({
         ruleId: "VAL-ITEM-002",
         field: `${field}.type`,
         severity: "blocking_error",
-        message: "Playlist item type must be image or video."
+        message: "Playlist item type must be image, video, web URL, or RSS feed."
       });
     }
 
@@ -511,13 +521,21 @@ export async function getScheduleFromPlaylist(): Promise<Schedule> {
     version: playlist.version,
     updatedAt: playlist.updatedAt,
     items: playlist.items
-      .map((item) => ({
-        id: item.id,
-        mediaId: item.mediaId,
-        type: item.type,
-        file: item.file,
-        duration: item.duration,
-        durationMode: item.durationMode
-      }))
+      .flatMap((item) => {
+        if (item.type === "image" || item.type === "video") {
+          return [
+            {
+              id: item.id,
+              mediaId: item.mediaId,
+              type: item.type,
+              file: item.file,
+              duration: item.duration,
+              durationMode: item.durationMode
+            }
+          ];
+        }
+
+        return [];
+      })
   };
 }

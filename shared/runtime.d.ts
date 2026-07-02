@@ -22,7 +22,34 @@ export interface VideoScheduleItem {
   durationMode?: "auto" | "clip";
 }
 
-export type ScheduleItem = TextScheduleItem | ImageScheduleItem | VideoScheduleItem;
+export interface WebUrlScheduleItem {
+  id: string;
+  mediaId?: string;
+  type: "web_url";
+  title?: string;
+  url: string;
+  duration: number;
+}
+
+export interface RssScheduleItem {
+  id: string;
+  mediaId?: string;
+  type: "rss_item";
+  title: string;
+  summary?: string | null;
+  link?: string | null;
+  image?: string | null;
+  publishedAt?: string | null;
+  sourceTitle?: string | null;
+  duration: number;
+}
+
+export type ScheduleItem =
+  | TextScheduleItem
+  | ImageScheduleItem
+  | VideoScheduleItem
+  | WebUrlScheduleItem
+  | RssScheduleItem;
 
 export type ThemeOrientation = "landscape" | "portrait";
 export type ThemeRegionType = "program" | "logo" | "image" | "text" | "clock";

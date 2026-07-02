@@ -23,6 +23,11 @@ export function MediaLibraryPage() {
   const [items, setItems] = useState<MediaItem[]>([]);
   const [status, setStatus] = useState("Loading media library...");
   const [isBusy, setIsBusy] = useState(false);
+  const [externalType, setExternalType] = useState<"web_url" | "rss_feed">("web_url");
+  const [externalTitle, setExternalTitle] = useState("");
+  const [externalUrl, setExternalUrl] = useState("");
+  const [externalDuration, setExternalDuration] = useState(10);
+  const [externalMaxItems, setExternalMaxItems] = useState(5);
 
   async function loadMedia() {
     setIsBusy(true);
@@ -98,6 +103,42 @@ export function MediaLibraryPage() {
     }
   }
 
+  async function createExternalMedia() {
+    setIsBusy(true);
+    setStatus(`Creating ${externalType === "web_url" ? "Web URL" : "RSS Feed"} media...`);
+
+    try {
+      const response = await fetch(apiUrl("/api/media/external"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          type: externalType,
+          title: externalTitle.trim() || undefined,
+          url: externalUrl.trim(),
+          duration: externalDuration,
+          maxItems: externalType === "rss_feed" ? externalMaxItems : undefined
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+
+      setExternalTitle("");
+      setExternalUrl("");
+      setExternalDuration(10);
+      setExternalMaxItems(5);
+      setStatus("External media created.");
+      await loadMedia();
+    } catch (error) {
+      setStatus(error instanceof Error ? `Create failed: ${error.message}` : "Create failed.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   useEffect(() => {
     void loadMedia();
     const timer = window.setInterval(() => {
@@ -114,7 +155,7 @@ export function MediaLibraryPage() {
       <div className="section-header">
         <div>
           <h2>Media Library</h2>
-          <p>Uploaded image and video media stored on the local server.</p>
+          <p>Images, videos, Web URLs, and RSS feeds available for playlists.</p>
         </div>
         <div className="button-row">
           <button disabled={isBusy} onClick={() => inputRef.current?.click()} type="button">
@@ -136,21 +177,72 @@ export function MediaLibraryPage() {
 
       <p className="status-text">{status}</p>
 
+      <section className="operator-panel">
+        <h3>Add Dynamic Content</h3>
+        <div className="playlist-schedule-fields">
+          <label>
+            Type
+            <select value={externalType} onChange={(event) => setExternalType(event.target.value as "web_url" | "rss_feed")}>
+              <option value="web_url">Web URL</option>
+              <option value="rss_feed">RSS Feed</option>
+            </select>
+          </label>
+          <label>
+            Title
+            <input value={externalTitle} onChange={(event) => setExternalTitle(event.target.value)} placeholder="Optional title" />
+          </label>
+          <label>
+            URL
+            <input value={externalUrl} onChange={(event) => setExternalUrl(event.target.value)} placeholder="https://example.com" />
+          </label>
+          <label>
+            Duration
+            <input
+              min={1}
+              type="number"
+              value={externalDuration}
+              onChange={(event) => setExternalDuration(Math.max(Number(event.target.value), 1))}
+            />
+          </label>
+          {externalType === "rss_feed" ? (
+            <label>
+              Max items
+              <input
+                min={1}
+                max={20}
+                type="number"
+                value={externalMaxItems}
+                onChange={(event) => setExternalMaxItems(Math.max(Math.min(Number(event.target.value), 20), 1))}
+              />
+            </label>
+          ) : null}
+          <button disabled={isBusy || !externalUrl.trim()} onClick={() => void createExternalMedia()} type="button">
+            Add
+          </button>
+        </div>
+      </section>
+
       <div className="media-grid">
         {items.map((item) => (
           <article className="media-card" key={item.mediaId}>
             {item.type === "image" ? (
               <img alt="" src={apiUrl(`/media/${encodeURIComponent(item.filename)}`)} />
-            ) : (
+            ) : item.type === "video" ? (
               <div className="media-video-placeholder">
                 <span>Video</span>
+              </div>
+            ) : (
+              <div className="media-video-placeholder">
+                <span>{item.type === "web_url" ? "Web URL" : "RSS"}</span>
               </div>
             )}
             <div className="media-card-body">
               <div>
-                <h3>{item.filename}</h3>
+                <h3>{item.title ?? item.filename}</h3>
                 <p>
-                  {item.type} | {formatFileSize(item.size)}
+                  {item.type === "image" || item.type === "video"
+                    ? `${item.type} | ${formatFileSize(item.size)}`
+                    : `${item.type} | ${item.url ?? ""}`}
                 </p>
               </div>
               <button disabled={isBusy} onClick={() => void deleteItem(item)} type="button">

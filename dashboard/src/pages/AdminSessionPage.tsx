@@ -9,7 +9,7 @@ import {
 
 export function AdminSessionPage() {
   const [isUnlocked, setIsUnlocked] = useState(() => hasDashboardAdminKey());
-  const [status, setStatus] = useState("Stored admin keys are validated by the server.");
+  const [status, setStatus] = useState("Stored browser sessions are validated by the server.");
 
   useEffect(() => {
     let isMounted = true;
@@ -27,7 +27,11 @@ export function AdminSessionPage() {
 
       if (isMounted) {
         setIsUnlocked(isValid);
-        setStatus(isValid ? "Admin key accepted by the server." : "Stored admin key was rejected by the server.");
+        setStatus(
+          isValid
+            ? "Admin key accepted by the server."
+            : "The stored key does not match the admin key configured on the server."
+        );
       }
     }
 
@@ -49,7 +53,11 @@ export function AdminSessionPage() {
     setStatus("Validating admin key with the server...");
     const isValid = await promptAndValidateDashboardAdminKey();
     setIsUnlocked(isValid);
-    setStatus(isValid ? "Admin key accepted by the server." : "Admin key was not accepted by the server.");
+    setStatus(
+      isValid
+        ? "Admin key accepted by the server."
+        : "The entered key does not match the admin key configured on the server."
+    );
   }
 
   function clearKey() {
@@ -63,7 +71,7 @@ export function AdminSessionPage() {
       <div className="section-heading">
         <div>
           <h2>Admin Session</h2>
-          <p>Manage the local dashboard admin key used for protected management actions.</p>
+          <p>Unlock this browser with the existing admin key configured on the server.</p>
         </div>
       </div>
 
@@ -74,14 +82,15 @@ export function AdminSessionPage() {
           <p>
             {isUnlocked
               ? "This browser has a server-validated admin session for protected dashboard reads and management actions."
-              : "Enter the server admin key to unlock protected dashboard reads and management actions."}
+              : "Enter the existing server admin key to unlock protected dashboard reads and management actions."}
           </p>
+          <p className="operator-empty">This is the existing admin key configured on the server.</p>
           <p className="operator-empty">{status}</p>
         </div>
 
         <div className="admin-session-page-actions">
           <button onClick={unlockOrChangeKey} type="button">
-            {isUnlocked ? "Change key" : "Unlock"}
+            {isUnlocked ? "Use different key" : "Unlock"}
           </button>
           <button onClick={clearKey} type="button">
             Clear key
@@ -90,6 +99,22 @@ export function AdminSessionPage() {
             Retry current page
           </button>
         </div>
+      </section>
+
+      <section className="operator-panel">
+        <h3>Changing the server admin key</h3>
+        <p>The server admin key is configured on the server, not in the Dashboard.</p>
+        <ol>
+          <li>
+            Edit <code>/etc/narrowcasting/server.env</code>.
+          </li>
+          <li>
+            Change <code>NARROWCASTING_ADMIN_KEY=...</code>.
+          </li>
+          <li>
+            Restart with <code>sudo systemctl restart narrowcasting-server</code>.
+          </li>
+        </ol>
       </section>
     </section>
   );

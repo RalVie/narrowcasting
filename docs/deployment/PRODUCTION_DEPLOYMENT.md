@@ -24,6 +24,17 @@ If your Pi uses another user or path, edit the files in `deployment/systemd/` be
 
 In multi-screen deployments, `http://SERVER:4174/player` is not a universal preview for all screens. Each screen can have a different resolved schedule. Use Dashboard Schedule Preview or Monitoring for per-screen output.
 
+## Dynamic Content Pilot Notes
+
+Product 1.1 supports Web URL and RSS Feed media as an MVP.
+
+- Web URL items render as fullscreen web content where the remote site allows iframe embedding.
+- Some sites block embedding through X-Frame-Options or Content-Security-Policy.
+- RSS feeds are fetched and parsed by the server; the Player receives resolved RSS items.
+- Web URL playback requires network access from the Player.
+- RSS feed freshness depends on server access to the feed during schedule generation.
+- Uploaded images and videos remain the recommended choice for fully offline playback.
+
 ## Build Production Assets
 
 For scripted installation on Raspberry Pi/Linux, see [INSTALLATION.md](INSTALLATION.md).

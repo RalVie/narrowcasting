@@ -124,6 +124,32 @@ Deleted
 
 Deletion is always the final step.
 
+## 4.1 Dynamic Media
+
+Product 1.1 adds two dynamic Media types:
+
+- Web URL
+- RSS Feed
+
+These are Business Layer Media objects. They can be added to playlists, programs and campaigns like uploaded images and videos.
+
+Web URL media stores:
+
+- URL
+- display duration
+- optional title
+
+RSS Feed media stores:
+
+- feed URL
+- display duration per resolved item
+- maximum item count
+- optional title
+
+RSS fetching and parsing happens on the server. The Player receives only resolved schedule items and never fetches RSS feeds directly.
+
+Some Web URLs may not render in the Player because the remote website blocks iframe embedding with X-Frame-Options or Content-Security-Policy. This is an external website limitation.
+
 ## 5. Media States
 
 A media object can be:

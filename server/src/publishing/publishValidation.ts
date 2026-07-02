@@ -5,6 +5,7 @@ import { getProgramsOrDefault } from "../program/programStore.js";
 import { listScreenGroups } from "../screens/screenGroupStore.js";
 import { listScreens } from "../screens/screenStore.js";
 import { getThemeOrDefault } from "../theme/themeStore.js";
+import { fetchRssItems } from "../rss/rssFetcher.js";
 import {
   listAssignments,
   type Assignment,
@@ -139,6 +140,19 @@ function canonicalize(value: unknown): unknown {
   }
 
   return value;
+}
+
+function isValidHttpUrl(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) {
+    return false;
+  }
+
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function stableHash(value: unknown) {
@@ -630,7 +644,12 @@ export async function validatePublishIntent(intent: PublishValidationIntent): Pr
 
     mediaIds.add(media.mediaId);
 
-    if (media.type !== "image" && media.type !== "video") {
+    if (
+      media.type !== "image" &&
+      media.type !== "video" &&
+      media.type !== "web_url" &&
+      media.type !== "rss_feed"
+    ) {
       messages.push(
         message({
           severity: "blocking_error",
@@ -638,9 +657,54 @@ export async function validatePublishIntent(intent: PublishValidationIntent): Pr
           ruleId: "VAL-MEDIA-002",
           message: "Media type is not supported for publishing.",
           affectedObject: { type: "Media", id: media.mediaId, name: media.filename },
-          suggestedFix: "Use supported image or video media."
+          suggestedFix: "Use supported image, video, Web URL, or RSS Feed media."
         })
       );
+    }
+
+    if (media.type === "web_url" && !isValidHttpUrl(media.url)) {
+      messages.push(
+        message({
+          severity: "blocking_error",
+          category: "media",
+          ruleId: "VAL-MEDIA-004",
+          message: "Web URL media must use a valid http or https URL.",
+          affectedObject: { type: "Media", id: media.mediaId, name: media.title ?? media.filename },
+          suggestedFix: "Edit the Web URL media item and use a valid http or https URL."
+        })
+      );
+    }
+
+    if (media.type === "rss_feed") {
+      const feedUrl = typeof media.url === "string" ? media.url : "";
+
+      if (!isValidHttpUrl(feedUrl)) {
+        messages.push(
+          message({
+            severity: "blocking_error",
+            category: "media",
+            ruleId: "VAL-MEDIA-004",
+            message: "RSS Feed media must use a valid http or https URL.",
+            affectedObject: { type: "Media", id: media.mediaId, name: media.title ?? media.filename },
+            suggestedFix: "Edit the RSS Feed media item and use a valid http or https URL."
+          })
+        );
+      } else {
+        const feedItems = await fetchRssItems(feedUrl, 1);
+
+        if (feedItems.length === 0) {
+          messages.push(
+            message({
+              severity: "warning",
+              category: "media",
+              ruleId: "VAL-RSS-001",
+              message: "RSS Feed could not be loaded during publish validation.",
+              affectedObject: { type: "Media", id: media.mediaId, name: media.title ?? media.filename },
+              suggestedFix: "Check the feed URL and network access. Publishing can continue, but the schedule will show a feed unavailable card until the feed resolves."
+            })
+          );
+        }
+      }
     }
   }
 

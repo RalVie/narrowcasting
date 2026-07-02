@@ -123,7 +123,7 @@ export async function validateDashboardAdminKey(key = readDashboardAdminKey()) {
 }
 
 export async function promptAndValidateDashboardAdminKey() {
-  const key = window.prompt("Enter Narrowcasting admin key for management access.");
+  const key = window.prompt("Enter the existing Narrowcasting admin key configured on the server.");
 
   if (!key?.trim()) {
     return false;
@@ -133,7 +133,7 @@ export async function promptAndValidateDashboardAdminKey() {
   const isValid = await validateDashboardAdminKey(trimmedKey);
 
   if (!isValid) {
-    window.alert("Admin key was rejected by the server.");
+    window.alert("The entered key does not match the admin key configured on the server.");
     return false;
   }
 

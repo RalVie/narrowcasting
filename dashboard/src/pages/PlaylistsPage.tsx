@@ -6,7 +6,7 @@ import type { MediaItem } from "../mediaTypes";
 import type { PlaylistItem, PlaylistRecord } from "../playlistTypes";
 
 const refreshIntervalMs = 10_000;
-type MediaFilter = "all" | "image" | "video" | "logo" | "background" | "recent" | "favorite";
+type MediaFilter = "all" | "image" | "video" | "web_url" | "rss_feed" | "logo" | "background" | "recent" | "favorite";
 
 function createPlaylistItem(media: MediaItem): PlaylistItem {
   return {
@@ -14,7 +14,7 @@ function createPlaylistItem(media: MediaItem): PlaylistItem {
     mediaId: media.mediaId,
     type: media.type,
     file: media.filename,
-    duration: 10,
+    duration: media.duration ?? 10,
     durationMode: media.type === "video" ? "auto" : undefined
   };
 }
@@ -40,6 +40,14 @@ function mediaMatchesFilter(media: MediaItem, filter: MediaFilter) {
 
   if (filter === "video") {
     return media.type === "video";
+  }
+
+  if (filter === "web_url") {
+    return media.type === "web_url";
+  }
+
+  if (filter === "rss_feed") {
+    return media.type === "rss_feed";
   }
 
   if (filter === "logo") {
@@ -396,7 +404,13 @@ export function PlaylistsPage() {
     const search = mediaSearch.trim().toLowerCase();
     const media = mediaItems
       .filter((item) => mediaMatchesFilter(item, mediaFilter))
-      .filter((item) => (search ? item.filename.toLowerCase().includes(search) : true));
+      .filter((item) =>
+        search
+          ? [item.filename, item.title, item.url]
+              .filter((value): value is string => typeof value === "string")
+              .some((value) => value.toLowerCase().includes(search))
+          : true
+      );
 
     return mediaFilter === "recent" ? media.slice().reverse() : media;
   }, [mediaFilter, mediaItems, mediaSearch]);
@@ -407,6 +421,8 @@ export function PlaylistsPage() {
     { label: "All", value: "all" },
     { label: "Images", value: "image" },
     { label: "Videos", value: "video" },
+    { label: "Web", value: "web_url" },
+    { label: "RSS", value: "rss_feed" },
     { label: "Logos", value: "logo" },
     { label: "Backgrounds", value: "background" },
     { label: "Recent", value: "recent" },

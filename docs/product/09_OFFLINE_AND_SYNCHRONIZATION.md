@@ -142,6 +142,15 @@ Future cleanup
 
 The cache is not user-editable.
 
+Dynamic content has different offline behavior:
+
+- Uploaded images and videos are cached locally before schedule activation.
+- Web URL items require network access from the Player at playback time.
+- RSS Feed content is fetched and resolved by the server before it reaches the Player.
+- RSS item images may depend on the remote source unless later cached by a future media-cache phase.
+
+If a remote Web URL or RSS image is unavailable during playback, the Player should fail safely and continue with the next resolved item where possible.
+
 ## 7. Cache Health
 
 Every player reports:

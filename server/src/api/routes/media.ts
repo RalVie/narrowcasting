@@ -4,6 +4,7 @@ import type { FastifyPluginAsync } from "fastify";
 import multipart from "@fastify/multipart";
 import {
   createMedia,
+  createExternalMedia,
   deleteMedia,
   getMediaContentType,
   getMediaPath,
@@ -35,6 +36,15 @@ export const mediaRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.get("/api/media", async () => listMedia());
+
+  app.post("/api/media/external", async (request, reply) => {
+    try {
+      const item = await createExternalMedia(request.body ?? {});
+      return reply.code(201).send(item);
+    } catch (error) {
+      return badRequestForError(reply, error, "external media creation failed");
+    }
+  });
 
   app.post("/api/media", async (request, reply) => {
     try {

@@ -11,8 +11,12 @@ export interface MediaItem {
   id: string;
   mediaId: string;
   filename: string;
-  type: "image" | "video";
+  type: "image" | "video" | "web_url" | "rss_feed";
   size: number;
+  title?: string;
+  url?: string;
+  duration?: number;
+  maxItems?: number;
 }
 
 type MediaReference = string | undefined;
@@ -121,6 +125,23 @@ function getMediaType(filename: string): MediaItem["type"] | null {
   return null;
 }
 
+function isExternalMediaType(type: unknown): type is "web_url" | "rss_feed" {
+  return type === "web_url" || type === "rss_feed";
+}
+
+function isValidExternalUrl(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) {
+    return false;
+  }
+
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function validateMediaItem(item: MediaItem, existingIds = new Set<string>()): DomainValidationIssue[] {
   const issues: DomainValidationIssue[] = [];
 
@@ -151,12 +172,30 @@ function validateMediaItem(item: MediaItem, existingIds = new Set<string>()): Do
     });
   }
 
-  if (getMediaType(item.filename) !== item.type) {
+  if ((item.type === "image" || item.type === "video") && getMediaType(item.filename) !== item.type) {
     issues.push({
       ruleId: "VAL-MEDIA-002",
       field: "type",
       severity: "blocking_error",
       message: "Media type must match a supported file extension."
+    });
+  }
+
+  if (item.type === "web_url" && !isValidExternalUrl(item.url)) {
+    issues.push({
+      ruleId: "VAL-MEDIA-004",
+      field: "url",
+      severity: "blocking_error",
+      message: "Web URL media must use a valid http or https URL."
+    });
+  }
+
+  if (item.type === "rss_feed" && !isValidExternalUrl(item.url)) {
+    issues.push({
+      ruleId: "VAL-MEDIA-004",
+      field: "url",
+      severity: "blocking_error",
+      message: "RSS Feed media must use a valid http or https URL."
     });
   }
 
@@ -191,22 +230,60 @@ function normalizeMetadataItem(value: unknown): MediaItem | null {
   const candidate = value as Partial<MediaItem>;
 
   if (
+    (typeof candidate.filename !== "string" && !isExternalMediaType(candidate.type)) ||
+    (candidate.type !== "image" &&
+      candidate.type !== "video" &&
+      candidate.type !== "web_url" &&
+      candidate.type !== "rss_feed")
+  ) {
+    return null;
+  }
+
+  if (candidate.type === "web_url" || candidate.type === "rss_feed") {
+    const url = typeof candidate.url === "string" ? candidate.url.trim() : "";
+    const title = typeof candidate.title === "string" && candidate.title.trim() ? candidate.title.trim() : undefined;
+    const filename = typeof candidate.filename === "string" && candidate.filename.trim()
+      ? candidate.filename
+      : title ?? url;
+
+    return {
+      id:
+        typeof candidate.id === "string" && candidate.id.trim()
+          ? candidate.id
+          : createStableMediaId(),
+      mediaId:
+        typeof candidate.mediaId === "string" && candidate.mediaId.trim()
+          ? candidate.mediaId
+          : createStableMediaId(),
+      filename,
+      type: candidate.type,
+      size: 0,
+      title,
+      url,
+      duration: Math.max(Number(candidate.duration ?? 10), 1),
+      maxItems: candidate.type === "rss_feed" ? Math.max(Math.min(Number(candidate.maxItems ?? 5), 20), 1) : undefined
+    };
+  }
+
+  if (
     typeof candidate.filename !== "string" ||
     (candidate.type !== "image" && candidate.type !== "video")
   ) {
     return null;
   }
 
+  const filename = candidate.filename;
+
   return {
     id:
       typeof candidate.id === "string" && candidate.id.trim()
         ? candidate.id
-        : toLegacyMediaId(candidate.filename),
+        : toLegacyMediaId(filename),
     mediaId:
       typeof candidate.mediaId === "string" && candidate.mediaId.trim()
         ? candidate.mediaId
         : createStableMediaId(),
-    filename: candidate.filename,
+    filename,
     type: candidate.type,
     size: typeof candidate.size === "number" && Number.isFinite(candidate.size) ? candidate.size : 0
   };
@@ -285,15 +362,23 @@ export async function listMedia(): Promise<MediaItem[]> {
     readdir(mediaRoot),
     readMetadataFile()
   ]);
-  const metadataByFilename = new Map(metadata.map((item) => [item.filename, item]));
+  const externalItems = metadata.filter((item) => item.type === "web_url" || item.type === "rss_feed");
+  const metadataByFilename = new Map(
+    metadata
+      .filter((item) => item.type === "image" || item.type === "video")
+      .map((item) => [item.filename, item])
+  );
   const usedMediaIds = new Set<string>();
-  const items = (
+  const fileItems = (
     await Promise.all(
       filenames.map((filename) => itemFromFile(filename, metadataByFilename.get(filename), usedMediaIds))
     )
   )
     .filter((item): item is MediaItem => item !== null)
     .sort((first, second) => first.filename.localeCompare(second.filename));
+  const items = [...fileItems, ...externalItems].sort((first, second) =>
+    (first.title ?? first.filename).localeCompare(second.title ?? second.filename)
+  );
 
   await writeMetadataFile(items);
   return items;
@@ -329,6 +414,46 @@ export async function createMedia(filename: string, content: Buffer): Promise<Me
   return item;
 }
 
+export async function createExternalMedia(input: unknown): Promise<MediaItem> {
+  const candidate = input && typeof input === "object" ? (input as Partial<MediaItem>) : {};
+  const type = candidate.type;
+
+  if (type !== "web_url" && type !== "rss_feed") {
+    assertValid([
+      {
+        ruleId: "VAL-MEDIA-002",
+        field: "type",
+        severity: "blocking_error",
+        message: "External media type must be Web URL or RSS Feed."
+      }
+    ]);
+    throw new Error("invalid external media type");
+  }
+
+  const externalType: "web_url" | "rss_feed" = type;
+  const url = typeof candidate.url === "string" ? candidate.url.trim() : "";
+  const title = typeof candidate.title === "string" && candidate.title.trim() ? candidate.title.trim() : undefined;
+  const duration = Math.max(Number(candidate.duration ?? 10), 1);
+  const maxItems = externalType === "rss_feed" ? Math.max(Math.min(Number(candidate.maxItems ?? 5), 20), 1) : undefined;
+  const mediaId = createStableMediaId();
+  const item: MediaItem = {
+    id: mediaId,
+    mediaId,
+    filename: title ?? url,
+    type: externalType,
+    size: 0,
+    title,
+    url,
+    duration,
+    maxItems
+  };
+
+  assertValid(validateMediaItem(item));
+  const items = await listMedia();
+  await writeMetadataFile([...items, item]);
+  return item;
+}
+
 export async function deleteMedia(id: string): Promise<boolean> {
   const items = await listMedia();
   const item = items.find((mediaItem) => mediaItem.id === id || mediaItem.mediaId === id);
@@ -337,12 +462,14 @@ export async function deleteMedia(id: string): Promise<boolean> {
     return false;
   }
 
-  try {
-    const filePath = getMediaPath(item.filename);
-    await access(filePath);
-    await unlink(filePath);
-  } catch {
-    // Metadata is still removed even if the file is already gone.
+  if (item.type === "image" || item.type === "video") {
+    try {
+      const filePath = getMediaPath(item.filename);
+      await access(filePath);
+      await unlink(filePath);
+    } catch {
+      // Metadata is still removed even if the file is already gone.
+    }
   }
 
   await writeMetadataFile(items.filter((mediaItem) => mediaItem.mediaId !== item.mediaId));

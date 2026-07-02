@@ -131,7 +131,12 @@ function getItemKey(
     return "no-item";
   }
 
-  const file = item.type === "image" || item.type === "video" ? item.file : item.title;
+  const file =
+    item.type === "image" || item.type === "video"
+      ? item.file
+      : item.type === "web_url"
+        ? item.url
+        : item.title;
   return `${playbackSessionKey}-${schedule.version}-${schedule.updatedAt}-${activeIndex}-${playbackEpoch}-${item.id}-${file}`;
 }
 
@@ -1608,6 +1613,36 @@ export function PlayerApp() {
       );
     }
 
+    if (activeItem.type === "web_url") {
+      return (
+        <iframe
+          className="web-url-frame"
+          key={getItemKey(activeItem, schedule, activeIndex, playbackEpoch, playbackSessionKey)}
+          referrerPolicy="no-referrer"
+          sandbox="allow-forms allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts"
+          src={activeItem.url}
+          title={activeItem.title ?? activeItem.url}
+        />
+      );
+    }
+
+    if (activeItem.type === "rss_item") {
+      return (
+        <article className="rss-card" key={getItemKey(activeItem, schedule, activeIndex, playbackEpoch, playbackSessionKey)}>
+          {activeItem.image ? <img alt="" className="rss-card-image" src={activeItem.image} /> : null}
+          <div className="rss-card-content">
+            {activeItem.sourceTitle ? <p className="status-label">{activeItem.sourceTitle}</p> : null}
+            <h1>{activeItem.title}</h1>
+            {activeItem.summary ? <p className="supporting-copy">{activeItem.summary}</p> : null}
+            <div className="rss-card-meta">
+              {activeItem.publishedAt ? <span>{new Date(activeItem.publishedAt).toLocaleString()}</span> : null}
+              {activeItem.link ? <span>{activeItem.link}</span> : null}
+            </div>
+          </div>
+        </article>
+      );
+    }
+
     return <h1>{activeItem.title}</h1>;
   }
 
@@ -1956,7 +1991,7 @@ export function PlayerApp() {
     <main className="player-shell">
       <section
         className={`playback-surface ${
-          activeItem.type === "image" || activeItem.type === "video" ? "image-surface" : ""
+          activeItem.type === "image" || activeItem.type === "video" || activeItem.type === "web_url" ? "image-surface" : ""
         }`}
         aria-label="Local playlist playback"
       >

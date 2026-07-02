@@ -1,16 +1,20 @@
 import type {
   ImageScheduleItem,
   ResolvedSchedule,
+  RssScheduleItem,
   ScheduleItem,
   TextScheduleItem,
-  VideoScheduleItem
+  VideoScheduleItem,
+  WebUrlScheduleItem
 } from "../../shared/runtime";
 
 export type {
   ImageScheduleItem,
+  RssScheduleItem,
   ScheduleItem,
   TextScheduleItem,
-  VideoScheduleItem
+  VideoScheduleItem,
+  WebUrlScheduleItem
 };
 
 export type Schedule = ResolvedSchedule;
