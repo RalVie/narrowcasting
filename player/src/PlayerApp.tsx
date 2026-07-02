@@ -1375,7 +1375,7 @@ export function PlayerApp() {
     }
 
     lastWebUrlDiagnosticRef.current = diagnosticKey;
-    console.info("web_url render", {
+    console.info("rendering web_url iframe", {
       itemId: webUrlItem.id,
       itemType: webUrlItem.itemType,
       renderType: webUrlItem.renderType,
@@ -1687,10 +1687,23 @@ export function PlayerApp() {
 
       return (
         <iframe
+          allow="fullscreen; autoplay; encrypted-media; picture-in-picture"
           className="web-url-frame"
           key={getItemKey(activeItem, schedule, activeIndex, playbackEpoch, playbackSessionKey)}
+          onError={() => {
+            console.warn("web_url iframe error", {
+              itemId: webUrlItem.id,
+              url: webUrlItem.url
+            });
+          }}
+          onLoad={() => {
+            console.info("web_url iframe loaded", {
+              itemId: webUrlItem.id,
+              url: webUrlItem.url
+            });
+          }}
           referrerPolicy="no-referrer"
-          sandbox="allow-forms allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation"
           src={webUrlItem.url}
           title={webUrlItem.title ?? webUrlItem.url}
         />
