@@ -92,14 +92,20 @@ create_runtime_directories() {
 
 create_default_config() {
   log_step "Creating default configuration if absent"
-  local admin_key
-  admin_key="$(admin_key_for_config)"
 
-  install_env_file_if_absent "server.env" "NODE_ENV=production
+  if [ -f "$CONFIG_DIR/server.env" ]; then
+    log_info "Existing admin key preserved."
+    log_info "To change the admin key edit: $CONFIG_DIR/server.env"
+  else
+    local admin_key
+    admin_key="$(admin_key_for_config)"
+
+    install_env_file_if_absent "server.env" "NODE_ENV=production
 HOST=0.0.0.0
 PORT=3000
 NARROWCASTING_ADMIN_KEY=$admin_key
 NARROWCASTING_CORS_ORIGIN="
+  fi
 
   install_env_file_if_absent "agent.env" "SERVER_URL=http://localhost:3000
 CACHE_DIR=../player/public/data
