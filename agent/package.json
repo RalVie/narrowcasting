@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
+    "browser-renderer:test": "node dist/browserRenderer/testBrowserRenderer.js",
     "start": "node dist/index.js"
   },
   "dependencies": {},

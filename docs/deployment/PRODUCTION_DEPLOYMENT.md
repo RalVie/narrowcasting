@@ -155,6 +155,24 @@ CHROMIUM_PROFILE_DIR=/opt/narrowcasting/player/chromium-kiosk-profile
 
 This keeps kiosk browser state separate from the normal desktop browser profile and suppresses first-run, default-browser, password/keyring, restore, sign-in, and translate prompts.
 
+The kiosk also enables a local-only Chromium DevTools endpoint for appliance diagnostics:
+
+```bash
+CHROMIUM_REMOTE_DEBUGGING_ADDRESS=127.0.0.1
+CHROMIUM_REMOTE_DEBUGGING_PORT=9222
+```
+
+This is used by the Product 1.2 Browser Renderer spike to prove that a Raspberry Pi appliance can temporarily show a non-iframe-embeddable URL and then return to the Player. It is not part of the production schedule flow.
+
+After building the Agent, the manual diagnostic command is:
+
+```bash
+cd agent
+npm run browser-renderer:test -- https://app.full-pull.nl/scherm 30
+```
+
+The command connects to the local kiosk browser, navigates the active Chromium page to the URL for 30 seconds, and then attempts to return to `http://localhost:4174/player`.
+
 If Chromium is installed under a different command name, set:
 
 ```bash

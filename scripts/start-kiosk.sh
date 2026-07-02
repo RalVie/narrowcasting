@@ -9,6 +9,8 @@ fi
 KIOSK_URL="${KIOSK_URL:-http://localhost:4174/player}"
 RESTART_DELAY_SECONDS="${RESTART_DELAY_SECONDS:-10}"
 CHROMIUM_PROFILE_DIR="${CHROMIUM_PROFILE_DIR:-${HOME:-/tmp}/.config/narrowcasting/chromium-kiosk}"
+CHROMIUM_REMOTE_DEBUGGING_ADDRESS="${CHROMIUM_REMOTE_DEBUGGING_ADDRESS:-127.0.0.1}"
+CHROMIUM_REMOTE_DEBUGGING_PORT="${CHROMIUM_REMOTE_DEBUGGING_PORT:-9222}"
 
 if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
   echo "No graphical session detected. Kiosk will start after desktop login/autostart." >&2
@@ -59,6 +61,8 @@ while true; do
   "$CHROMIUM_BIN" \
     --user-data-dir="$CHROMIUM_PROFILE_DIR" \
     --kiosk "$KIOSK_URL" \
+    --remote-debugging-address="$CHROMIUM_REMOTE_DEBUGGING_ADDRESS" \
+    --remote-debugging-port="$CHROMIUM_REMOTE_DEBUGGING_PORT" \
     --start-fullscreen \
     --no-first-run \
     --no-default-browser-check \
