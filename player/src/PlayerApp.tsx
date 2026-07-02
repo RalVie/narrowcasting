@@ -1794,6 +1794,25 @@ export function PlayerApp() {
   const waitingForRegistration =
     registration.status === "pending" ||
     ((registration.status === "discovering" || registration.status === "error") && registration.serverUrl !== null);
+  const isDecommissioned = schedule?.assignmentStatus === "decommissioned";
+
+  if (isDecommissioned) {
+    return (
+      <main className="player-shell">
+        <section className="playback-surface decommissioned-surface" aria-label="Screen decommissioned">
+          <p className="status-label">Screen registration</p>
+          <h1>Screen decommissioned</h1>
+          <p className="supporting-copy">Register this player again from the dashboard.</p>
+        </section>
+        <footer className="status-bar">
+          <span>Playback: decommissioned</span>
+          <span>Schedule: version {schedule.version}</span>
+          <span>Reload: every 30s</span>
+        </footer>
+        {renderDebugOverlay()}
+      </main>
+    );
+  }
 
   if (waitingForRegistration) {
     return (
@@ -1821,37 +1840,29 @@ export function PlayerApp() {
   if (!activeItem) {
     const hasEmptyPlaylist = schedule !== null && schedule.items.length === 0;
     const hasNoProgramAssignment = schedule?.assignmentStatus === "unassigned";
-    const isDecommissioned = schedule?.assignmentStatus === "decommissioned";
 
     return (
       <main className="player-shell">
         <section className="playback-surface" aria-label="Local playlist playback">
           <p className="status-label">
-            {isDecommissioned
-              ? "Screen registration"
-              : hasNoProgramAssignment
+            {hasNoProgramAssignment
               ? "Screen assignment"
               : hasEmptyPlaylist
                 ? `Local schedule version ${schedule.version}`
                 : "Waiting for local schedule"}
           </p>
           <h1>
-            {isDecommissioned
-              ? "Screen decommissioned"
-              : hasNoProgramAssignment
+            {hasNoProgramAssignment
               ? "No program assigned."
               : hasEmptyPlaylist
                 ? "Playlist is empty"
                 : "Waiting for local schedule"}
           </h1>
-          {isDecommissioned ? <p>Register this player again from the dashboard.</p> : null}
         </section>
         <footer className="status-bar">
           <span>
             Playback:{" "}
-            {isDecommissioned
-              ? "decommissioned"
-              : hasNoProgramAssignment
+            {hasNoProgramAssignment
                 ? "no program assigned"
                 : hasEmptyPlaylist
                   ? "empty playlist"
