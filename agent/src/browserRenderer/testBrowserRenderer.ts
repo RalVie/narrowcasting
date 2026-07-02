@@ -1,5 +1,4 @@
-import { setTimeout as delay } from "node:timers/promises";
-import { CdpConnection, listChromiumTargets, selectKioskTarget } from "./cdpClient.js";
+import { renderExternalUrl } from "./renderExternalUrl.js";
 
 const DEFAULT_PLAYER_URL = "http://localhost:4174/player";
 const DEFAULT_DURATION_SECONDS = 30;
@@ -28,96 +27,18 @@ async function main() {
     throw new Error("URL must be an absolute http or https URL");
   }
 
-  const targets = await listChromiumTargets({
-    host: options.cdpHost,
-    port: options.cdpPort,
-    timeoutMs: options.timeoutMs
-  });
-
-  console.log("chromium targets found", targets.map((target) => ({
-    id: target.id,
-    title: target.title,
-    type: target.type,
-    url: target.url
-  })));
-
-  const target = selectKioskTarget(targets, options.playerUrl);
-
-  if (!target?.webSocketDebuggerUrl) {
-    throw new Error("No Chromium page target found. Is the kiosk running with remote debugging enabled?");
-  }
-
-  console.log("selected chromium target", {
-    id: target.id,
-    title: target.title,
-    url: target.url
-  });
-
-  const connection = new CdpConnection({
-    host: options.cdpHost,
-    port: options.cdpPort,
-    timeoutMs: options.timeoutMs
-  });
-
-  let connected = false;
-
-  try {
-    await connection.connect(target.webSocketDebuggerUrl);
-    connected = true;
-    await connection.send("Page.enable");
-
-    console.log("navigating kiosk to external URL", { url: options.url });
-    await navigateAndWait(connection, options.url, options.timeoutMs);
-
-    console.log("external URL active", {
+  await renderExternalUrl(
+    {
       durationSeconds: options.durationSeconds,
+      playerUrl: options.playerUrl,
       url: options.url
-    });
-    await delay(options.durationSeconds * 1000);
-  } finally {
-    if (connected) {
-      console.log("returning kiosk to player", { playerUrl: options.playerUrl });
-
-      try {
-        await navigateAndWait(connection, options.playerUrl, options.timeoutMs);
-        console.log("kiosk returned to player", { playerUrl: options.playerUrl });
-      } catch (error) {
-        console.error("failed to return kiosk to player", error);
-        process.exitCode = 1;
-      } finally {
-        connection.close();
-      }
+    },
+    {
+      host: options.cdpHost,
+      port: options.cdpPort,
+      timeoutMs: options.timeoutMs
     }
-  }
-}
-
-async function navigateAndWait(connection: CdpConnection, url: string, timeoutMs: number): Promise<void> {
-  const loaded = waitForCdpEvent(connection, "Page.loadEventFired", timeoutMs);
-  await connection.send("Page.navigate", { url });
-
-  try {
-    await loaded;
-  } catch (error) {
-    console.warn("navigation did not report load before timeout", {
-      error: error instanceof Error ? error.message : String(error),
-      url
-    });
-  }
-}
-
-function waitForCdpEvent(connection: CdpConnection, eventName: string, timeoutMs: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      unsubscribe();
-      reject(new Error(`Timed out waiting for ${eventName}`));
-    }, timeoutMs);
-
-    const unsubscribe = connection.on(eventName, () => {
-      clearTimeout(timer);
-      unsubscribe();
-      resolve();
-    });
-  });
+  );
 }
 
 function parseOptions(args: string[]): BrowserRendererOptions {

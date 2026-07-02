@@ -146,6 +146,7 @@ Dynamic content has different offline behavior:
 
 - Uploaded images and videos are cached locally before schedule activation.
 - Web URL items require network access from the Player at playback time.
+- Web URL Browser renderer mode also requires the local Chromium kiosk and Agent browser renderer control path on the Player appliance.
 - RSS Feed content is fetched and resolved by the server before it reaches the Player.
 - RSS item images may depend on the remote source unless later cached by a future media-cache phase.
 

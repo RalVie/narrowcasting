@@ -17,6 +17,7 @@ export interface MediaItem {
   url?: string;
   duration?: number;
   maxItems?: number;
+  webUrlRenderMode?: "iframe" | "browser";
 }
 
 type MediaReference = string | undefined;
@@ -129,6 +130,10 @@ function isExternalMediaType(type: unknown): type is "web_url" | "rss_feed" {
   return type === "web_url" || type === "rss_feed";
 }
 
+function getWebUrlRenderMode(value: unknown): "iframe" | "browser" {
+  return value === "browser" ? "browser" : "iframe";
+}
+
 function isValidExternalUrl(value: unknown) {
   if (typeof value !== "string" || !value.trim()) {
     return false;
@@ -199,6 +204,20 @@ function validateMediaItem(item: MediaItem, existingIds = new Set<string>()): Do
     });
   }
 
+  if (
+    item.type === "web_url" &&
+    item.webUrlRenderMode !== undefined &&
+    item.webUrlRenderMode !== "iframe" &&
+    item.webUrlRenderMode !== "browser"
+  ) {
+    issues.push({
+      ruleId: "VAL-MEDIA-005",
+      field: "webUrlRenderMode",
+      severity: "blocking_error",
+      message: "Web URL render mode must be iframe or browser."
+    });
+  }
+
   if (!Number.isFinite(item.size) || item.size < 0) {
     issues.push({
       ruleId: "VAL-MEDIA-003",
@@ -261,6 +280,7 @@ function normalizeMetadataItem(value: unknown): MediaItem | null {
       title,
       url,
       duration: Math.max(Number(candidate.duration ?? 10), 1),
+      webUrlRenderMode: candidate.type === "web_url" ? getWebUrlRenderMode(candidate.webUrlRenderMode) : undefined,
       maxItems: candidate.type === "rss_feed" ? Math.max(Math.min(Number(candidate.maxItems ?? 5), 20), 1) : undefined
     };
   }
@@ -435,6 +455,7 @@ export async function createExternalMedia(input: unknown): Promise<MediaItem> {
   const title = typeof candidate.title === "string" && candidate.title.trim() ? candidate.title.trim() : undefined;
   const duration = Math.max(Number(candidate.duration ?? 10), 1);
   const maxItems = externalType === "rss_feed" ? Math.max(Math.min(Number(candidate.maxItems ?? 5), 20), 1) : undefined;
+  const webUrlRenderMode = externalType === "web_url" ? getWebUrlRenderMode(candidate.webUrlRenderMode) : undefined;
   const mediaId = createStableMediaId();
   const item: MediaItem = {
     id: mediaId,
@@ -445,6 +466,7 @@ export async function createExternalMedia(input: unknown): Promise<MediaItem> {
     title,
     url,
     duration,
+    webUrlRenderMode,
     maxItems
   };
 
@@ -452,6 +474,55 @@ export async function createExternalMedia(input: unknown): Promise<MediaItem> {
   const items = await listMedia();
   await writeMetadataFile([...items, item]);
   return item;
+}
+
+export async function updateExternalMedia(id: string, input: unknown): Promise<MediaItem | null> {
+  const items = await listMedia();
+  const index = items.findIndex((mediaItem) => mediaItem.id === id || mediaItem.mediaId === id);
+
+  if (index === -1) {
+    return null;
+  }
+
+  const existingItem = items[index];
+
+  if (existingItem.type !== "web_url" && existingItem.type !== "rss_feed") {
+    assertValid([
+      {
+        ruleId: "VAL-MEDIA-002",
+        field: "type",
+        severity: "blocking_error",
+        message: "Only Web URL and RSS Feed media can be edited through this endpoint."
+      }
+    ]);
+  }
+
+  const candidate = input && typeof input === "object" ? (input as Partial<MediaItem>) : {};
+  const title = typeof candidate.title === "string" && candidate.title.trim() ? candidate.title.trim() : undefined;
+  const url = typeof candidate.url === "string" ? candidate.url.trim() : existingItem.url ?? "";
+  const duration = Math.max(Number(candidate.duration ?? existingItem.duration ?? 10), 1);
+  const maxItems = existingItem.type === "rss_feed"
+    ? Math.max(Math.min(Number(candidate.maxItems ?? existingItem.maxItems ?? 5), 20), 1)
+    : undefined;
+  const webUrlRenderMode = existingItem.type === "web_url"
+    ? getWebUrlRenderMode(candidate.webUrlRenderMode ?? existingItem.webUrlRenderMode)
+    : undefined;
+
+  const updatedItem: MediaItem = {
+    ...existingItem,
+    filename: title ?? url,
+    title,
+    url,
+    duration,
+    maxItems,
+    webUrlRenderMode
+  };
+
+  assertValid(validateMediaItem(updatedItem));
+  const updatedItems = [...items];
+  updatedItems[index] = updatedItem;
+  await writeMetadataFile(updatedItems);
+  return updatedItem;
 }
 
 export async function deleteMedia(id: string): Promise<boolean> {

@@ -8,4 +8,5 @@ export interface MediaItem {
   url?: string;
   duration?: number;
   maxItems?: number;
+  webUrlRenderMode?: "iframe" | "browser";
 }

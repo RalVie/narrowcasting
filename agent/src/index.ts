@@ -1,4 +1,5 @@
 import { loadAgentConfig } from "./config/loadAgentConfig.js";
+import { startBrowserRendererControlServer } from "./browserRenderer/controlServer.js";
 import { startHeartbeat } from "./sync/heartbeat.js";
 import { startSyncLoop } from "./sync/syncLoop.js";
 
@@ -10,8 +11,12 @@ console.log("narrowcasting agent starting", {
   mediaDir: config.mediaDir,
   schedulePath: config.schedulePath,
   statusPath: config.statusPath,
-  serverUrl: config.serverUrl
+  serverUrl: config.serverUrl,
+  browserRendererControl: config.browserRendererEnabled
+    ? `${config.browserRendererControlHost}:${config.browserRendererControlPort}`
+    : "disabled"
 });
 
+startBrowserRendererControlServer(config);
 startHeartbeat(config);
 startSyncLoop(config);

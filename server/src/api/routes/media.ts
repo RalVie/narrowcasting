@@ -8,7 +8,8 @@ import {
   deleteMedia,
   getMediaContentType,
   getMediaPath,
-  listMedia
+  listMedia,
+  updateExternalMedia
 } from "../../media/mediaStore.js";
 import { badRequest, badRequestForError, conflict, notFound, payloadTooLarge } from "../apiErrors.js";
 import { validateMediaDelete } from "../../validation/referenceIntegrity.js";
@@ -43,6 +44,20 @@ export const mediaRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(201).send(item);
     } catch (error) {
       return badRequestForError(reply, error, "external media creation failed");
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/api/media/:id/external", async (request, reply) => {
+    try {
+      const item = await updateExternalMedia(request.params.id, request.body ?? {});
+
+      if (!item) {
+        return notFound(reply, "media item not found", "MEDIA_NOT_FOUND");
+      }
+
+      return item;
+    } catch (error) {
+      return badRequestForError(reply, error, "external media update failed");
     }
   });
 

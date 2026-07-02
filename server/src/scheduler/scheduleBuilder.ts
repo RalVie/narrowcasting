@@ -59,7 +59,8 @@ export async function getScheduleForProgram(program: Program, themeId?: string):
               type: "web_url" as const,
               title: media.title,
               url,
-              duration: item.duration
+              duration: item.duration,
+              webUrlRenderMode: media.webUrlRenderMode ?? "iframe"
             }
           ];
         }

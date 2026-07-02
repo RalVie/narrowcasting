@@ -520,6 +520,22 @@ button:disabled {
   padding: 14px;
 }
 
+.media-card-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.media-card-editor label {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.media-card-editor input,
+.media-card-editor select {
+  width: 100%;
+}
+
 .media-card h3 {
   margin: 0 0 4px;
   overflow-wrap: anywhere;

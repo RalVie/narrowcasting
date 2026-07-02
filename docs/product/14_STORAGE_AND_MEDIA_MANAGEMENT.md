@@ -138,6 +138,9 @@ Web URL media stores:
 - URL
 - display duration
 - optional title
+- render mode:
+  - Embedded iframe
+  - Browser renderer
 
 RSS Feed media stores:
 
@@ -148,7 +151,9 @@ RSS Feed media stores:
 
 RSS fetching and parsing happens on the server. The Player receives only resolved schedule items and never fetches RSS feeds directly.
 
-Some Web URLs may not render in the Player because the remote website blocks iframe embedding with X-Frame-Options or Content-Security-Policy. This is an external website limitation.
+Embedded iframe is the default Web URL render mode. It works only when the remote website allows iframe embedding.
+
+Browser renderer is a Product 1.2 MVP mode for dedicated Player appliances. It uses the local Chromium kiosk to temporarily navigate to a Web URL that blocks iframe embedding, then returns to the Player after the configured duration. The external website is still only rendered content; it does not become the scheduler.
 
 ## 5. Media States
 

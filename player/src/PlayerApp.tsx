@@ -10,6 +10,8 @@ const playerIdKey = "narrowcasting:player-id";
 const screenIdKey = "narrowcasting:screen-id";
 const deviceSecretKey = "narrowcasting:device-secret";
 const serverUrlKey = "narrowcasting:server-url";
+const browserRendererResumeKey = "narrowcasting:browser-renderer-resume";
+const browserRendererControlUrl = "http://127.0.0.1:4175/browser-renderer/render";
 const playerVersion = "phase-1";
 const heartbeatIntervalMs = 10_000;
 const heartbeatFailureBackoffMs = 60_000;
@@ -81,6 +83,12 @@ interface PlaybackDebugEvent {
   note?: string;
 }
 
+interface BrowserRendererState {
+  itemKey: string | null;
+  message: string;
+  status: "idle" | "starting" | "active" | "failed";
+}
+
 function getViewportSize() {
   return {
     width: window.innerWidth,
@@ -149,6 +157,7 @@ function getWebUrlRenderData(item: ScheduleItem | null) {
     renderType?: unknown;
     title?: unknown;
     url?: unknown;
+    webUrlRenderMode?: unknown;
   };
 
   if (candidate.type !== "web_url" && candidate.renderType !== "web_url") {
@@ -160,7 +169,8 @@ function getWebUrlRenderData(item: ScheduleItem | null) {
     itemType: candidate.type,
     renderType: typeof candidate.renderType === "string" ? candidate.renderType : null,
     title: typeof candidate.title === "string" ? candidate.title : undefined,
-    url: typeof candidate.url === "string" ? candidate.url : ""
+    url: typeof candidate.url === "string" ? candidate.url : "",
+    webUrlRenderMode: candidate.webUrlRenderMode === "browser" ? "browser" : "iframe"
   };
 }
 
@@ -171,6 +181,47 @@ function isRenderableWebUrl(value: string) {
   } catch {
     return false;
   }
+}
+
+function getBrowserRendererItemKey(item: ScheduleItem, schedule: Schedule | null, activeIndex: number) {
+  return `${schedule?.version ?? "no-version"}:${schedule?.updatedAt ?? "no-date"}:${activeIndex}:${item.id}`;
+}
+
+function readBrowserRendererResume() {
+  const value = readLocalStorage(browserRendererResumeKey);
+
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as { expiresAt?: unknown; itemKey?: unknown; resumeAfter?: unknown };
+
+    if (
+      typeof parsed.itemKey === "string" &&
+      typeof parsed.resumeAfter === "number" &&
+      typeof parsed.expiresAt === "number"
+    ) {
+      return parsed as { expiresAt: number; itemKey: string; resumeAfter: number };
+    }
+  } catch {
+    // Invalid resume markers are ignored and replaced by the next browser handoff.
+  }
+
+  removeLocalStorage(browserRendererResumeKey);
+  return null;
+}
+
+function writeBrowserRendererResume(itemKey: string, durationMs: number) {
+  const resumeAfter = Date.now() + durationMs;
+  writeLocalStorage(
+    browserRendererResumeKey,
+    JSON.stringify({
+      expiresAt: resumeAfter + 120_000,
+      itemKey,
+      resumeAfter
+    })
+  );
 }
 
 function getMediaUrl(file: string) {
@@ -802,6 +853,11 @@ export function PlayerApp() {
     reloadCount: readScheduleReloadCount(),
     status: "waiting"
   }));
+  const [browserRendererState, setBrowserRendererState] = useState<BrowserRendererState>({
+    itemKey: null,
+    message: "",
+    status: "idle"
+  });
   const [videoDebugEvents, setVideoDebugEvents] = useState<VideoDebugEvent[]>([]);
   const [playbackDebugEvents, setPlaybackDebugEvents] = useState<PlaybackDebugEvent[]>([]);
   const playbackSessionKeyRef = useRef(0);
@@ -1520,6 +1576,124 @@ export function PlayerApp() {
     schedule
   ]);
 
+  useEffect(() => {
+    const webUrlItem = getWebUrlRenderData(activeItem);
+
+    if (!activeItem || !schedule || !webUrlItem || webUrlItem.webUrlRenderMode !== "browser") {
+      setBrowserRendererState((state) =>
+        state.status === "idle" ? state : { itemKey: null, message: "", status: "idle" }
+      );
+      return;
+    }
+
+    const durationMs = Math.max(typeof activeItem.duration === "number" ? activeItem.duration : 10, 1) * 1000;
+    const itemKey = getBrowserRendererItemKey(activeItem, schedule, activeIndex);
+    const resume = readBrowserRendererResume();
+
+    if (resume?.itemKey === itemKey) {
+      if (Date.now() <= resume.expiresAt) {
+        removeLocalStorage(browserRendererResumeKey);
+        setBrowserRendererState({
+          itemKey,
+          message: "Browser renderer returned to Player. Resuming schedule.",
+          status: "idle"
+        });
+        advanceToNextItem(playbackSessionKey, "browser renderer returned");
+        return;
+      }
+
+      removeLocalStorage(browserRendererResumeKey);
+    }
+
+    if (!isRenderableWebUrl(webUrlItem.url)) {
+      setBrowserRendererState({
+        itemKey,
+        message: "Browser renderer cannot start because the resolved URL is invalid.",
+        status: "failed"
+      });
+      return;
+    }
+
+    writeBrowserRendererResume(itemKey, durationMs);
+    setBrowserRendererState({
+      itemKey,
+      message: "Opening web page in local Chromium kiosk...",
+      status: "starting"
+    });
+
+    const controller = new AbortController();
+    const playerUrl = `${window.location.origin}/player`;
+    let handoffFallbackTimer: number | null = null;
+
+    void fetch(browserRendererControlUrl, {
+      body: JSON.stringify({
+        durationSeconds: Math.ceil(durationMs / 1000),
+        playerUrl,
+        url: webUrlItem.url
+      }),
+      headers: {
+        "Content-Type": "application/json"
+      },
+      method: "POST",
+      signal: controller.signal
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`Browser renderer rejected handoff with HTTP ${response.status}`);
+        }
+
+        console.info("browser renderer handoff accepted", {
+          durationSeconds: Math.ceil(durationMs / 1000),
+          playerUrl,
+          url: webUrlItem.url
+        });
+        setBrowserRendererState({
+          itemKey,
+          message: "Browser renderer active. Returning automatically after the configured duration.",
+          status: "active"
+        });
+        handoffFallbackTimer = window.setTimeout(() => {
+          if (playbackSessionKey !== playbackSessionKeyRef.current) {
+            return;
+          }
+
+          removeLocalStorage(browserRendererResumeKey);
+          setBrowserRendererState({
+            itemKey,
+            message: "Browser renderer did not take over. Continuing schedule.",
+            status: "failed"
+          });
+          advanceToNextItem(playbackSessionKey, "browser renderer takeover timeout");
+        }, 8000);
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        removeLocalStorage(browserRendererResumeKey);
+        console.warn("browser renderer handoff failed", error);
+        setBrowserRendererState({
+          itemKey,
+          message: "Browser renderer unavailable. Continuing schedule.",
+          status: "failed"
+        });
+
+        window.setTimeout(() => {
+          if (playbackSessionKey === playbackSessionKeyRef.current) {
+            advanceToNextItem(playbackSessionKey, "browser renderer handoff failed");
+          }
+        }, 3000);
+      });
+
+    return () => {
+      controller.abort();
+      if (handoffFallbackTimer !== null) {
+        window.clearTimeout(handoffFallbackTimer);
+      }
+    };
+  }, [activeIndex, activeItem, advanceToNextItem, playbackSessionKey, schedule]);
+
   const handleActiveItemFailure = useCallback(
     (sessionKey: number, message: string) => {
       emitPlaybackDebug("failure handler called", {
@@ -1675,6 +1849,18 @@ export function PlayerApp() {
     const webUrlItem = getWebUrlRenderData(activeItem);
 
     if (webUrlItem) {
+      if (webUrlItem.webUrlRenderMode === "browser") {
+        return (
+          <section className="web-url-fallback browser-renderer-handoff">
+            <p className="status-label">Browser renderer</p>
+            <h1>{webUrlItem.title ?? "Opening web page"}</h1>
+            <p className="supporting-copy">
+              {browserRendererState.message || "Opening this URL in the local Chromium kiosk."}
+            </p>
+          </section>
+        );
+      }
+
       if (!isRenderableWebUrl(webUrlItem.url)) {
         return (
           <section className="web-url-fallback">
@@ -1870,6 +2056,16 @@ export function PlayerApp() {
       emitPlaybackDebug("advance timer skipped", {
         reason: "duration timer",
         note: "video items advance on ended/watchdog, not generic duration"
+      });
+      return;
+    }
+
+    const webUrlItem = getWebUrlRenderData(activeItem);
+
+    if (webUrlItem?.webUrlRenderMode === "browser") {
+      emitPlaybackDebug("advance timer skipped", {
+        reason: "duration timer",
+        note: "browser-rendered web URL advances through Agent browser renderer handoff"
       });
       return;
     }

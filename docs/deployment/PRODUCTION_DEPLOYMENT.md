@@ -26,9 +26,10 @@ In multi-screen deployments, `http://SERVER:4174/player` is not a universal prev
 
 ## Dynamic Content Pilot Notes
 
-Product 1.1 supports Web URL and RSS Feed media as an MVP.
+Product 1.1/1.2 supports Web URL and RSS Feed media as an MVP.
 
-- Web URL items render as fullscreen web content where the remote site allows iframe embedding.
+- Web URL items default to Embedded iframe mode, which renders fullscreen web content where the remote site allows iframe embedding.
+- Web URL Browser renderer mode uses the local Chromium kiosk on a dedicated Player appliance for sites that block iframe embedding.
 - Some sites block embedding through X-Frame-Options or Content-Security-Policy.
 - RSS feeds are fetched and parsed by the server; the Player receives resolved RSS items.
 - Web URL playback requires network access from the Player.
@@ -155,16 +156,18 @@ CHROMIUM_PROFILE_DIR=/opt/narrowcasting/player/chromium-kiosk-profile
 
 This keeps kiosk browser state separate from the normal desktop browser profile and suppresses first-run, default-browser, password/keyring, restore, sign-in, and translate prompts.
 
-The kiosk also enables a local-only Chromium DevTools endpoint for appliance diagnostics:
+The kiosk also enables a local-only Chromium DevTools endpoint for Web URL Browser renderer mode:
 
 ```bash
 CHROMIUM_REMOTE_DEBUGGING_ADDRESS=127.0.0.1
 CHROMIUM_REMOTE_DEBUGGING_PORT=9222
 ```
 
-This is used by the Product 1.2 Browser Renderer spike to prove that a Raspberry Pi appliance can temporarily show a non-iframe-embeddable URL and then return to the Player. It is not part of the production schedule flow.
+This must remain bound to localhost. Never expose port `9222` on the network.
 
-After building the Agent, the manual diagnostic command is:
+The Agent exposes a local-only browser renderer control endpoint on `127.0.0.1:4175`. The Player uses this endpoint only for resolved Web URL schedule items with Browser renderer mode. The endpoint temporarily navigates the active Chromium kiosk page to the external URL and returns it to `http://localhost:4174/player` after the configured duration.
+
+After building the Agent, the manual diagnostic command remains available:
 
 ```bash
 cd agent

@@ -29,6 +29,7 @@ export interface WebUrlScheduleItem {
   title?: string;
   url: string;
   duration: number;
+  webUrlRenderMode?: "iframe" | "browser";
 }
 
 export interface RssScheduleItem {

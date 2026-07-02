@@ -28,6 +28,13 @@ export function MediaLibraryPage() {
   const [externalUrl, setExternalUrl] = useState("");
   const [externalDuration, setExternalDuration] = useState(10);
   const [externalMaxItems, setExternalMaxItems] = useState(5);
+  const [externalWebUrlRenderMode, setExternalWebUrlRenderMode] = useState<"iframe" | "browser">("iframe");
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editUrl, setEditUrl] = useState("");
+  const [editDuration, setEditDuration] = useState(10);
+  const [editMaxItems, setEditMaxItems] = useState(5);
+  const [editWebUrlRenderMode, setEditWebUrlRenderMode] = useState<"iframe" | "browser">("iframe");
 
   async function loadMedia() {
     setIsBusy(true);
@@ -118,6 +125,7 @@ export function MediaLibraryPage() {
           title: externalTitle.trim() || undefined,
           url: externalUrl.trim(),
           duration: externalDuration,
+          webUrlRenderMode: externalType === "web_url" ? externalWebUrlRenderMode : undefined,
           maxItems: externalType === "rss_feed" ? externalMaxItems : undefined
         })
       });
@@ -130,10 +138,53 @@ export function MediaLibraryPage() {
       setExternalUrl("");
       setExternalDuration(10);
       setExternalMaxItems(5);
+      setExternalWebUrlRenderMode("iframe");
       setStatus("External media created.");
       await loadMedia();
     } catch (error) {
       setStatus(error instanceof Error ? `Create failed: ${error.message}` : "Create failed.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  function startEditing(item: MediaItem) {
+    setEditingItemId(item.mediaId);
+    setEditTitle(item.title ?? "");
+    setEditUrl(item.url ?? "");
+    setEditDuration(item.duration ?? 10);
+    setEditMaxItems(item.maxItems ?? 5);
+    setEditWebUrlRenderMode(item.webUrlRenderMode ?? "iframe");
+  }
+
+  async function saveExternalMedia(item: MediaItem) {
+    setIsBusy(true);
+    setStatus(`Saving ${item.title ?? item.filename}...`);
+
+    try {
+      const response = await fetch(apiUrl(`/api/media/${encodeURIComponent(item.mediaId)}/external`), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          title: editTitle.trim() || undefined,
+          url: editUrl.trim(),
+          duration: editDuration,
+          maxItems: item.type === "rss_feed" ? editMaxItems : undefined,
+          webUrlRenderMode: item.type === "web_url" ? editWebUrlRenderMode : undefined
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+
+      setEditingItemId(null);
+      setStatus("External media saved.");
+      await loadMedia();
+    } catch (error) {
+      setStatus(error instanceof Error ? `Save failed: ${error.message}` : "Save failed.");
     } finally {
       setIsBusy(false);
     }
@@ -216,6 +267,22 @@ export function MediaLibraryPage() {
               />
             </label>
           ) : null}
+          {externalType === "web_url" ? (
+            <label>
+              Render mode
+              <select
+                value={externalWebUrlRenderMode}
+                onChange={(event) => setExternalWebUrlRenderMode(event.target.value as "iframe" | "browser")}
+              >
+                <option value="iframe">Embedded iframe</option>
+                <option value="browser">Browser renderer</option>
+              </select>
+              <small>
+                Embedded iframe werkt alleen als de website dit toestaat. Browser renderer gebruikt de lokale
+                Chromium-kiosk en kan ook websites tonen die iframe blokkeren.
+              </small>
+            </label>
+          ) : null}
           <button disabled={isBusy || !externalUrl.trim()} onClick={() => void createExternalMedia()} type="button">
             Add
           </button>
@@ -237,17 +304,80 @@ export function MediaLibraryPage() {
               </div>
             )}
             <div className="media-card-body">
-              <div>
-                <h3>{item.title ?? item.filename}</h3>
-                <p>
-                  {item.type === "image" || item.type === "video"
-                    ? `${item.type} | ${formatFileSize(item.size)}`
-                    : `${item.type} | ${item.url ?? ""}`}
-                </p>
-              </div>
-              <button disabled={isBusy} onClick={() => void deleteItem(item)} type="button">
-                Delete
-              </button>
+              {editingItemId === item.mediaId && (item.type === "web_url" || item.type === "rss_feed") ? (
+                <div className="media-card-editor">
+                  <label>
+                    Title
+                    <input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} />
+                  </label>
+                  <label>
+                    URL
+                    <input value={editUrl} onChange={(event) => setEditUrl(event.target.value)} />
+                  </label>
+                  <label>
+                    Duration
+                    <input
+                      min={1}
+                      type="number"
+                      value={editDuration}
+                      onChange={(event) => setEditDuration(Math.max(Number(event.target.value), 1))}
+                    />
+                  </label>
+                  {item.type === "rss_feed" ? (
+                    <label>
+                      Max items
+                      <input
+                        min={1}
+                        max={20}
+                        type="number"
+                        value={editMaxItems}
+                        onChange={(event) => setEditMaxItems(Math.max(Math.min(Number(event.target.value), 20), 1))}
+                      />
+                    </label>
+                  ) : (
+                    <label>
+                      Render mode
+                      <select
+                        value={editWebUrlRenderMode}
+                        onChange={(event) => setEditWebUrlRenderMode(event.target.value as "iframe" | "browser")}
+                      >
+                        <option value="iframe">Embedded iframe</option>
+                        <option value="browser">Browser renderer</option>
+                      </select>
+                    </label>
+                  )}
+                  <div className="button-row">
+                    <button disabled={isBusy || !editUrl.trim()} onClick={() => void saveExternalMedia(item)} type="button">
+                      Save
+                    </button>
+                    <button disabled={isBusy} onClick={() => setEditingItemId(null)} type="button">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <h3>{item.title ?? item.filename}</h3>
+                    <p>
+                      {item.type === "image" || item.type === "video"
+                        ? `${item.type} | ${formatFileSize(item.size)}`
+                        : `${item.type} | ${item.url ?? ""}`}
+                    </p>
+                    {item.type === "web_url" ? <p>Render mode: {item.webUrlRenderMode ?? "iframe"}</p> : null}
+                  </div>
+                  <div className="button-row">
+                    {item.type === "web_url" || item.type === "rss_feed" ? (
+                      <button disabled={isBusy} onClick={() => startEditing(item)} type="button">
+                        Edit
+                      </button>
+                    ) : null}
+                    <button disabled={isBusy} onClick={() => void deleteItem(item)} type="button">
+                      Delete
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </article>
         ))}
