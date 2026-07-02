@@ -128,6 +128,14 @@ Override the kiosk URL by editing `/etc/narrowcasting/kiosk.env`:
 KIOSK_URL=http://localhost:4174/player
 ```
 
+The player installer creates a dedicated Chromium appliance profile:
+
+```bash
+CHROMIUM_PROFILE_DIR=/opt/narrowcasting/player/chromium-kiosk-profile
+```
+
+This keeps kiosk browser state separate from the normal desktop browser profile and suppresses first-run, default-browser, password/keyring, restore, sign-in, and translate prompts.
+
 If Chromium is installed under a different command name, set:
 
 ```bash
@@ -135,6 +143,8 @@ CHROMIUM_BIN=/usr/bin/chromium-browser
 ```
 
 On Raspberry Pi OS Desktop, kiosk startup is installed as desktop autostart. It starts after graphical login/session availability. On OS Lite or systems without a graphical session, kiosk startup is skipped with a warning.
+
+For fully unattended boot, enable automatic desktop login in Raspberry Pi OS Desktop. The kiosk launcher also attempts to disable screen blanking, screen saver, DPMS/display sleep, and hide the mouse cursor when the desktop provides the required helper commands.
 
 ## Remote Dashboard Access
 

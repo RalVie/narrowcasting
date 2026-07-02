@@ -59,6 +59,7 @@ Responsibilities:
 - Configure the player server URL.
 - Configure the agent sync service.
 - Configure Chromium kiosk desktop autostart when a graphical session is available.
+- Configure a dedicated Chromium appliance profile.
 - Configure autostart after boot.
 - Preserve media cache and schedule cache.
 - Preserve player identity unless explicitly reset.
@@ -107,6 +108,9 @@ Kiosk startup:
 - Chromium kiosk startup is installed through desktop autostart at `/etc/xdg/autostart/narrowcasting-kiosk.desktop`.
 - On Raspberry Pi OS Lite or systems without a graphical session, kiosk autostart is skipped with a warning.
 - The default kiosk URL is `http://localhost:4174/player`.
+- Chromium uses a dedicated appliance profile at `player/chromium-kiosk-profile`.
+- The kiosk launcher disables first-run prompts, default-browser prompts, password/keyring prompts, restore prompts, translate prompts, screen blanking, and display power saving where the desktop environment allows it.
+- Automatic desktop login must be enabled on Raspberry Pi OS Desktop for unattended kiosk startup after boot.
 
 ## Validation
 

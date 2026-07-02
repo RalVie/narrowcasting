@@ -64,6 +64,7 @@ create_player_directories() {
   log_step "Preparing player runtime directories"
   ensure_dir "$ROOT_DIR/player/public/data"
   ensure_dir "$ROOT_DIR/player/public/media"
+  ensure_dir "$ROOT_DIR/player/chromium-kiosk-profile"
   ensure_dir "$ROOT_DIR/logs/agent"
   ensure_dir "$ROOT_DIR/logs/player"
   ensure_dir "$ROOT_DIR/logs/kiosk"
@@ -153,6 +154,7 @@ create_player_config() {
 PLAYER_PORT=${PLAYER_PORT:-4174}"
   create_agent_config
   install_env_file_if_absent "kiosk.env" "KIOSK_URL=${KIOSK_URL:-http://localhost:4174/player}
+CHROMIUM_PROFILE_DIR=${CHROMIUM_PROFILE_DIR:-$ROOT_DIR/player/chromium-kiosk-profile}
 RESTART_DELAY_SECONDS=10"
 }
 

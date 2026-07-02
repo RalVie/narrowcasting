@@ -133,6 +133,12 @@ ensure_executable() {
   local path="$1"
   [ -f "$path" ] || fatal "Required executable file is missing: $path"
   run_cmd chmod +x "$path"
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    return
+  fi
+
+  [ -x "$path" ] || fatal "Required executable file is not executable after chmod: $path. Run: chmod +x $path and retry."
 }
 
 write_file_if_absent() {

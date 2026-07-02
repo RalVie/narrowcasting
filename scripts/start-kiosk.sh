@@ -8,11 +8,24 @@ fi
 
 KIOSK_URL="${KIOSK_URL:-http://localhost:4174/player}"
 RESTART_DELAY_SECONDS="${RESTART_DELAY_SECONDS:-10}"
+CHROMIUM_PROFILE_DIR="${CHROMIUM_PROFILE_DIR:-${HOME:-/tmp}/.config/narrowcasting/chromium-kiosk}"
 
 if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
   echo "No graphical session detected. Kiosk will start after desktop login/autostart." >&2
   exit 0
 fi
+
+prepare_desktop_session() {
+  if [ -n "${DISPLAY:-}" ] && command -v xset >/dev/null 2>&1; then
+    xset s off >/dev/null 2>&1 || true
+    xset s noblank >/dev/null 2>&1 || true
+    xset -dpms >/dev/null 2>&1 || true
+  fi
+
+  if command -v unclutter >/dev/null 2>&1; then
+    unclutter -idle 1 -root >/dev/null 2>&1 &
+  fi
+}
 
 find_chromium() {
   command -v chromium-browser 2>/dev/null ||
@@ -26,6 +39,9 @@ if [ -z "$CHROMIUM_BIN" ]; then
   echo "Chromium executable not found. Install chromium-browser or set CHROMIUM_BIN." >&2
   exit 1
 fi
+
+mkdir -p "$CHROMIUM_PROFILE_DIR"
+prepare_desktop_session
 
 child_pid=""
 
@@ -41,12 +57,24 @@ trap stop_child INT TERM
 
 while true; do
   "$CHROMIUM_BIN" \
+    --user-data-dir="$CHROMIUM_PROFILE_DIR" \
     --kiosk "$KIOSK_URL" \
     --start-fullscreen \
+    --no-first-run \
+    --no-default-browser-check \
     --noerrdialogs \
     --disable-infobars \
+    --disable-default-apps \
+    --disable-background-networking \
+    --disable-component-update \
+    --disable-sync \
+    --disable-translate \
+    --disable-save-password-bubble \
+    --disable-password-generation \
     --disable-session-crashed-bubble \
-    --disable-features=TranslateUI \
+    --disable-features=TranslateUI,AutofillServerCommunication,PasswordManagerOnboarding,MediaRouter \
+    --password-store=basic \
+    --use-mock-keychain \
     --autoplay-policy=no-user-gesture-required \
     --check-for-update-interval=31536000 &
   child_pid="$!"

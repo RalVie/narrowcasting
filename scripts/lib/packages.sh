@@ -31,7 +31,9 @@ install_node_runtime_if_needed() {
     [ "$major" -ge 20 ] || needs_node=1
   fi
 
-  [ "$needs_node" -eq 1 ] || return
+  if [ "$needs_node" -ne 1 ]; then
+    return 0
+  fi
 
   if [ "$SKIP_SYSTEM_PACKAGES" -eq 1 ]; then
     log_warning "Node.js/npm installation skipped by --skip-system-packages."
@@ -50,6 +52,10 @@ install_node_runtime_if_needed() {
 
 install_player_system_packages() {
   install_system_packages
+
+  if command -v apt-get >/dev/null 2>&1 && [ "$SKIP_SYSTEM_PACKAGES" -ne 1 ]; then
+    sudo_cmd apt-get install -y x11-xserver-utils unclutter || log_warning "Optional desktop appliance packages could not be installed."
+  fi
 
   if command -v chromium >/dev/null 2>&1 || command -v chromium-browser >/dev/null 2>&1 || command -v google-chrome >/dev/null 2>&1; then
     log_info "Chromium-compatible browser already installed."
