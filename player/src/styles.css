@@ -88,6 +88,14 @@ h1 {
   min-height: 0;
 }
 
+.web-url-fallback {
+  display: grid;
+  place-items: center;
+  gap: 18px;
+  padding: 8vw;
+  text-align: center;
+}
+
 .rss-card {
   display: grid;
   grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.4fr);

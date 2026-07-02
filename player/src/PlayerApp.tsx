@@ -140,6 +140,39 @@ function getItemKey(
   return `${playbackSessionKey}-${schedule.version}-${schedule.updatedAt}-${activeIndex}-${playbackEpoch}-${item.id}-${file}`;
 }
 
+function getWebUrlRenderData(item: ScheduleItem | null) {
+  if (!item || typeof item !== "object") {
+    return null;
+  }
+
+  const candidate = item as ScheduleItem & {
+    renderType?: unknown;
+    title?: unknown;
+    url?: unknown;
+  };
+
+  if (candidate.type !== "web_url" && candidate.renderType !== "web_url") {
+    return null;
+  }
+
+  return {
+    id: candidate.id,
+    itemType: candidate.type,
+    renderType: typeof candidate.renderType === "string" ? candidate.renderType : null,
+    title: typeof candidate.title === "string" ? candidate.title : undefined,
+    url: typeof candidate.url === "string" ? candidate.url : ""
+  };
+}
+
+function isRenderableWebUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function getMediaUrl(file: string) {
   return `/media/${encodeURIComponent(file)}`;
 }
@@ -781,6 +814,7 @@ export function PlayerApp() {
   const missingItemMessageRef = useRef<string | null>(null);
   const heartbeatFailureCountRef = useRef(0);
   const heartbeatBackoffUntilRef = useRef(0);
+  const lastWebUrlDiagnosticRef = useRef<string | null>(null);
 
   const resetInvalidDeviceIdentity = useCallback(() => {
     removeLocalStorage(screenIdKey);
@@ -1328,6 +1362,31 @@ export function PlayerApp() {
   }, [activeItem]);
 
   useEffect(() => {
+    const webUrlItem = getWebUrlRenderData(activeItem);
+
+    if (!webUrlItem) {
+      return;
+    }
+
+    const diagnosticKey = `${playbackSessionKey}:${activeIndex}:${webUrlItem.id}:${webUrlItem.url}`;
+
+    if (lastWebUrlDiagnosticRef.current === diagnosticKey) {
+      return;
+    }
+
+    lastWebUrlDiagnosticRef.current = diagnosticKey;
+    console.info("web_url render", {
+      itemId: webUrlItem.id,
+      itemType: webUrlItem.itemType,
+      renderType: webUrlItem.renderType,
+      url: webUrlItem.url,
+      hasRenderableUrl: isRenderableWebUrl(webUrlItem.url),
+      activeIndex,
+      playbackSessionKey
+    });
+  }, [activeIndex, activeItem, playbackSessionKey]);
+
+  useEffect(() => {
     scheduleRef.current = schedule;
   }, [schedule]);
 
@@ -1613,15 +1672,27 @@ export function PlayerApp() {
       );
     }
 
-    if (activeItem.type === "web_url") {
+    const webUrlItem = getWebUrlRenderData(activeItem);
+
+    if (webUrlItem) {
+      if (!isRenderableWebUrl(webUrlItem.url)) {
+        return (
+          <section className="web-url-fallback">
+            <p className="status-label">Web URL unavailable</p>
+            <h1>{webUrlItem.title ?? "Web URL unavailable"}</h1>
+            <p className="supporting-copy">The resolved schedule item does not contain a valid http or https URL.</p>
+          </section>
+        );
+      }
+
       return (
         <iframe
           className="web-url-frame"
           key={getItemKey(activeItem, schedule, activeIndex, playbackEpoch, playbackSessionKey)}
           referrerPolicy="no-referrer"
           sandbox="allow-forms allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts"
-          src={activeItem.url}
-          title={activeItem.title ?? activeItem.url}
+          src={webUrlItem.url}
+          title={webUrlItem.title ?? webUrlItem.url}
         />
       );
     }
@@ -1991,7 +2062,7 @@ export function PlayerApp() {
     <main className="player-shell">
       <section
         className={`playback-surface ${
-          activeItem.type === "image" || activeItem.type === "video" || activeItem.type === "web_url" ? "image-surface" : ""
+          activeItem.type === "image" || activeItem.type === "video" || getWebUrlRenderData(activeItem) ? "image-surface" : ""
         }`}
         aria-label="Local playlist playback"
       >
