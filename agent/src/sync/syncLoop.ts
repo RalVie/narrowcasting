@@ -1,5 +1,6 @@
 import { access, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
+import { hostname } from "node:os";
 import type { AgentConfig } from "../config/loadAgentConfig.js";
 import type { Schedule } from "../schedule/types.js";
 
@@ -28,6 +29,13 @@ class DeviceIdentityRevokedError extends Error {
   }
 }
 
+class DeviceRegistrationPendingError extends Error {
+  constructor(message = "device registration is pending approval") {
+    super(message);
+    this.name = "DeviceRegistrationPendingError";
+  }
+}
+
 function isDeviceIdentityRevoked(status: number, code: unknown) {
   return (
     (status === 404 && (code === "SCREEN_NOT_FOUND" || code === "UNKNOWN_SCREEN")) ||
@@ -36,8 +44,14 @@ function isDeviceIdentityRevoked(status: number, code: unknown) {
   );
 }
 
+interface DeviceIdentity {
+  screenId: string | null;
+  deviceSecret: string | null;
+  playerId: string;
+}
+
 async function fetchSchedule(config: AgentConfig): Promise<Schedule> {
-  const deviceIdentity = await readDeviceIdentity(config);
+  const deviceIdentity = await ensureDeviceIdentity(config);
 
   if (!deviceIdentity.screenId) {
     throw new Error("screenId is required for schedule sync; keeping existing local schedule");
@@ -80,9 +94,11 @@ async function fetchSchedule(config: AgentConfig): Promise<Schedule> {
 async function readDeviceIdentity(config: AgentConfig): Promise<{
   screenId: string | null;
   deviceSecret: string | null;
+  playerId: string;
 }> {
   let screenId = config.screenId;
   let deviceSecret = config.deviceSecret;
+  let playerId = config.deviceId;
 
   if (config.screenId) {
     screenId = config.screenId;
@@ -90,7 +106,11 @@ async function readDeviceIdentity(config: AgentConfig): Promise<{
 
   try {
     const content = await readFile(config.registrationPath, "utf8");
-    const value = JSON.parse(content) as { screenId?: unknown; deviceSecret?: unknown };
+    const value = JSON.parse(content) as { screenId?: unknown; deviceSecret?: unknown; playerId?: unknown };
+
+    if (typeof value.playerId === "string" && value.playerId.trim()) {
+      playerId = value.playerId.trim();
+    }
 
     if (!screenId && typeof value.screenId === "string" && value.screenId.trim()) {
       screenId = value.screenId.trim();
@@ -102,14 +122,101 @@ async function readDeviceIdentity(config: AgentConfig): Promise<{
   } catch {
     return {
       screenId,
-      deviceSecret
+      deviceSecret,
+      playerId
     };
   }
 
   return {
     screenId,
+    deviceSecret,
+    playerId
+  };
+}
+
+async function writeDeviceRegistration(
+  config: AgentConfig,
+  registration: {
+    screenId: string | null;
+    playerId: string;
+    serverUrl: string;
+    deviceSecret: string | null;
+  }
+) {
+  await mkdir(dirname(config.registrationPath), { recursive: true });
+  await writeFile(
+    config.registrationPath,
+    `${JSON.stringify(
+      {
+        ...registration,
+        updatedAt: new Date().toISOString()
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+}
+
+async function registerDevice(config: AgentConfig, playerId: string): Promise<DeviceIdentity> {
+  const response = await fetch(`${config.serverUrl}/api/screens/register`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      playerId,
+      hostname: hostname() || "unknown",
+      userAgent: "narrowcasting-agent",
+      resolution: "unknown",
+      orientation: "unknown",
+      version: "agent"
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`registration request failed with HTTP ${response.status}`);
+  }
+
+  const body = (await response.json()) as {
+    screenId?: unknown;
+    playerId?: unknown;
+    status?: unknown;
+    deviceSecret?: unknown;
+  };
+
+  const screenId = typeof body.screenId === "string" ? body.screenId : null;
+  const returnedPlayerId = typeof body.playerId === "string" && body.playerId.trim() ? body.playerId.trim() : playerId;
+  const deviceSecret = typeof body.deviceSecret === "string" && body.deviceSecret.trim() ? body.deviceSecret.trim() : null;
+
+  await writeDeviceRegistration(config, {
+    screenId,
+    playerId: returnedPlayerId,
+    serverUrl: config.serverUrl,
+    deviceSecret
+  });
+
+  return {
+    screenId,
+    playerId: returnedPlayerId,
     deviceSecret
   };
+}
+
+async function ensureDeviceIdentity(config: AgentConfig): Promise<DeviceIdentity> {
+  const identity = await readDeviceIdentity(config);
+
+  if (identity.screenId && identity.deviceSecret) {
+    return identity;
+  }
+
+  const registeredIdentity = await registerDevice(config, identity.playerId);
+
+  if (!registeredIdentity.screenId || !registeredIdentity.deviceSecret) {
+    throw new DeviceRegistrationPendingError();
+  }
+
+  return registeredIdentity;
 }
 
 async function saveSchedule(config: AgentConfig, schedule: Schedule) {
@@ -483,6 +590,18 @@ export function startSyncLoop(config: AgentConfig) {
       });
     } catch (error) {
       const currentScheduleVersion = await readLocalScheduleVersion(config);
+
+      if (error instanceof DeviceRegistrationPendingError) {
+        await writeAgentFailureStatus(config, currentScheduleVersion, {
+          syncStatus: "registration_pending",
+          readinessState: "waiting_for_screen_approval",
+          lastError: error.message
+        });
+        console.log("device registration pending: waiting for screen approval", {
+          registrationPath: config.registrationPath
+        });
+        return;
+      }
 
       if (error instanceof DeviceIdentityRevokedError) {
         const schedule = createDecommissionedSchedule();

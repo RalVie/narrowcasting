@@ -903,8 +903,18 @@ export function PlayerApp() {
           return;
         }
 
+        if (typeof body?.screenId === "string") {
+          void persistPlayerRegistration(
+            body.screenId,
+            registration.playerId,
+            serverUrl,
+            null
+          );
+        }
+
         setRegistration((state) => ({
           ...state,
+          screenId: typeof body?.screenId === "string" ? body.screenId : state.screenId,
           serverUrl,
           status: "pending",
           message:
@@ -1795,6 +1805,12 @@ export function PlayerApp() {
     registration.status === "pending" ||
     ((registration.status === "discovering" || registration.status === "error") && registration.serverUrl !== null);
   const isDecommissioned = schedule?.assignmentStatus === "decommissioned";
+
+  useEffect(() => {
+    if (isDecommissioned && registration.deviceSecret) {
+      resetInvalidDeviceIdentity();
+    }
+  }, [isDecommissioned, registration.deviceSecret, resetInvalidDeviceIdentity]);
 
   if (isDecommissioned) {
     return (
