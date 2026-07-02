@@ -44,6 +44,12 @@ Safety requirements:
 - Be idempotent where practical.
 - Support a dry-run mode if practical.
 
+Admin access:
+
+- `NARROWCASTING_ADMIN_KEY` in the server environment is the single server-side admin key.
+- Browsers may remember an admin session locally, but the entered key is validated by the server.
+- A second browser must use the same server admin key.
+
 ## Player-Only Install
 
 Target:

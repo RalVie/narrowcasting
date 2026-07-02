@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 const adminKeyHeader = "x-narrowcasting-admin-key";
 const adminProtectedReadPrefixes = [
+  "/api/admin",
   "/api/media",
   "/api/playlist",
   "/api/playlists",
@@ -18,14 +19,9 @@ const adminProtectedReadPrefixes = [
   "/api/agent-status",
   "/api/audit"
 ];
-let warnedAboutDevBypass = false;
 
 function getConfiguredAdminKey() {
   return process.env.NARROWCASTING_ADMIN_KEY ?? process.env.ADMIN_KEY ?? "";
-}
-
-function isProduction() {
-  return process.env.NODE_ENV === "production";
 }
 
 function isReadMethod(method: string) {
@@ -111,19 +107,8 @@ export function authenticateAdminRequest(request: FastifyRequest, reply: Fastify
   const configuredAdminKey = getConfiguredAdminKey();
 
   if (!configuredAdminKey) {
-    if (isProduction()) {
-      authNotConfigured(reply);
-      return false;
-    }
-
-    if (!warnedAboutDevBypass) {
-      request.log.warn(
-        "admin API management routes are unprotected because NARROWCASTING_ADMIN_KEY is not configured outside production"
-      );
-      warnedAboutDevBypass = true;
-    }
-
-    return true;
+    authNotConfigured(reply);
+    return false;
   }
 
   const providedAdminKey = extractAdminKey(request);

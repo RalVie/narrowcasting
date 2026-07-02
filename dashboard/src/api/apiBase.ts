@@ -75,12 +75,6 @@ export function readDashboardAdminKey() {
     return null;
   }
 
-  const envKey = import.meta.env.VITE_ADMIN_KEY;
-
-  if (typeof envKey === "string" && envKey.trim()) {
-    return envKey.trim();
-  }
-
   return window.localStorage.getItem(adminKeyStorageKey)?.trim() || null;
 }
 
@@ -101,6 +95,50 @@ export function setDashboardAdminKey(key: string) {
 
   window.localStorage.setItem(adminKeyStorageKey, trimmedKey);
   notifyAdminKeyChanged();
+}
+
+export async function validateDashboardAdminKey(key = readDashboardAdminKey()) {
+  const trimmedKey = key?.trim();
+
+  if (!trimmedKey) {
+    return false;
+  }
+
+  const response = await fetch(apiUrl("/api/admin/session"), {
+    method: "POST",
+    headers: {
+      [adminKeyHeader]: trimmedKey
+    }
+  });
+
+  if (response.ok) {
+    return true;
+  }
+
+  if (response.status === 401 || response.status === 503) {
+    clearDashboardAdminKey();
+  }
+
+  return false;
+}
+
+export async function promptAndValidateDashboardAdminKey() {
+  const key = window.prompt("Enter Narrowcasting admin key for management access.");
+
+  if (!key?.trim()) {
+    return false;
+  }
+
+  const trimmedKey = key.trim();
+  const isValid = await validateDashboardAdminKey(trimmedKey);
+
+  if (!isValid) {
+    window.alert("Admin key was rejected by the server.");
+    return false;
+  }
+
+  setDashboardAdminKey(trimmedKey);
+  return true;
 }
 
 export function clearDashboardAdminKey() {
@@ -152,8 +190,8 @@ function installAdminFetchBoundary() {
     const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
 
     if (isDashboardApiRequest(url) && (isMutationMethod(method) || isProtectedDashboardRead(url))) {
-      const adminKey = getAdminKeyForProtectedRequest();
       const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+      const adminKey = headers.has(adminKeyHeader) ? null : getAdminKeyForProtectedRequest();
 
       if (adminKey) {
         headers.set(adminKeyHeader, adminKey);
