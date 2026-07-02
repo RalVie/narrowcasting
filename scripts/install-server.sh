@@ -69,7 +69,7 @@ admin_key_for_config() {
     return
   fi
 
-  printf 'Enter admin key for dashboard/API management, or leave empty to generate one: '
+  printf 'Enter admin key for dashboard/API management, or leave empty to generate one: ' >&2
   read -r entered_key
   if [ -n "$entered_key" ]; then
     printf '%s\n' "$entered_key"
