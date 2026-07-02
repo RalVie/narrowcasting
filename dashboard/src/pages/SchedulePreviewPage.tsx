@@ -5,10 +5,19 @@ import type { ScreenRecord } from "../screenTypes";
 
 const refreshIntervalMs = 10_000;
 
+function readScreenIdFromHash() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  const [, query = ""] = window.location.hash.split("?");
+  return new URLSearchParams(query).get("screenId") ?? "";
+}
+
 export function SchedulePreviewPage() {
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [screens, setScreens] = useState<ScreenRecord[]>([]);
-  const [selectedScreenId, setSelectedScreenId] = useState("");
+  const [selectedScreenId, setSelectedScreenId] = useState(() => readScreenIdFromHash());
   const [error, setError] = useState<string | null>(null);
 
   async function loadScreens() {
@@ -23,6 +32,12 @@ export function SchedulePreviewPage() {
       const approvedScreens = body.filter((screen) => screen.status === "approved");
       setScreens(approvedScreens);
       setSelectedScreenId((currentScreenId) => {
+        const hashScreenId = readScreenIdFromHash();
+
+        if (hashScreenId && approvedScreens.some((screen) => screen.screenId === hashScreenId)) {
+          return hashScreenId;
+        }
+
         if (currentScreenId && approvedScreens.some((screen) => screen.screenId === currentScreenId)) {
           return currentScreenId;
         }
@@ -92,7 +107,7 @@ export function SchedulePreviewPage() {
       <div className="section-header">
         <div>
           <h2>Schedule Preview</h2>
-          <p>Read-only preview of the Resolver schedule for a selected screen.</p>
+          <p>Read-only preview of the Resolver schedule for one selected screen.</p>
         </div>
         <span className="readonly-pill">Read-only</span>
       </div>

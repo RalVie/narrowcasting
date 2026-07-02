@@ -114,7 +114,7 @@ function currentHashPageId() {
     return "dashboard";
   }
 
-  return window.location.hash.replace(/^#/, "") || "dashboard";
+  return window.location.hash.replace(/^#/, "").split("?")[0] || "dashboard";
 }
 
 function resolveActivePageId(hashPageId: string) {

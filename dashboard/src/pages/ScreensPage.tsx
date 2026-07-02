@@ -63,6 +63,10 @@ function shortRevision(value: string | null | undefined) {
   return value ? value.slice(0, 12) : "-";
 }
 
+function schedulePreviewHref(screenId: string) {
+  return `#schedule-preview?screenId=${encodeURIComponent(screenId)}`;
+}
+
 export function ScreensPage() {
   const [screens, setScreens] = useState<ScreenRecord[]>([]);
   const [selectedScreenId, setSelectedScreenId] = useState<string | null>(null);
@@ -546,6 +550,18 @@ export function ScreensPage() {
     );
   }
 
+  function renderSchedulePreviewLink(screen: ScreenRecord) {
+    if (screen.status !== "approved") {
+      return <span>-</span>;
+    }
+
+    return (
+      <a className="screen-assignment-link" href={schedulePreviewHref(screen.screenId)}>
+        Preview this screen
+      </a>
+    );
+  }
+
   function campaignSummary(screen: ScreenRecord) {
     const targetedCampaigns = campaignsByScreenId.get(screen.screenId) ?? [];
     const enabledCampaigns = targetedCampaigns.filter((campaign) => campaign.enabled);
@@ -611,6 +627,11 @@ export function ScreensPage() {
           <button onClick={() => setSelectedScreenId(screen.screenId)} type="button">
             Details
           </button>
+          {screen.status === "approved" ? (
+            <a className="screen-assignment-link" href={schedulePreviewHref(screen.screenId)}>
+              Preview Schedule
+            </a>
+          ) : null}
           {screen.status === "pending" ? (
             <button disabled={isBusy} onClick={() => void approveScreen(screen.screenId)} type="button">
               Approve
@@ -670,6 +691,8 @@ export function ScreensPage() {
             <dd>{formatDateTime(screen.lastAssignment)}</dd>
             <dt>Last Publish Revision</dt>
             <dd>{latestCampaignRevision(screen)}</dd>
+            <dt>Schedule Preview</dt>
+            <dd>{renderSchedulePreviewLink(screen)}</dd>
           </dl>
         </section>
 

@@ -959,6 +959,14 @@ Support
 
 This organisation preserves all functionality while reducing cognitive load.
 
+### Player And Preview Terminology
+
+- Dedicated Player Appliance: the production player tied to one physical screen.
+- Server Local Player: an optional local player webapp on the server, useful only for diagnostics or testing of the server-local schedule.
+- Schedule Preview: the Dashboard feature for inspecting the resolved schedule of a specific screen.
+
+The Server Local Player must not be presented as a universal preview of all screens. In multi-screen deployments, each screen can have a different resolved schedule. Operators should use Schedule Preview, Monitoring, or the Screens workspace to inspect per-screen output.
+
 ## 12. Definition of Done
 
 Navigation is considered aligned with this specification when:

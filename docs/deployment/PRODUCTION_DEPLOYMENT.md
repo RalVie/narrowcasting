@@ -16,6 +16,14 @@ For current production installs, prefer the scripted installers in [INSTALLATION
 
 If your Pi uses another user or path, edit the files in `deployment/systemd/` before installing them.
 
+## Player And Preview Terminology
+
+- Dedicated Player Appliance: a production player tied to one physical screen.
+- Server Local Player: the optional player webapp served at `http://SERVER:4174/player` on the server. It shows only the server-local agent/player schedule and is useful for local diagnostics or testing.
+- Schedule Preview: the Dashboard feature for inspecting the resolved schedule of a specific screen.
+
+In multi-screen deployments, `http://SERVER:4174/player` is not a universal preview for all screens. Each screen can have a different resolved schedule. Use Dashboard Schedule Preview or Monitoring for per-screen output.
+
 ## Build Production Assets
 
 For scripted installation on Raspberry Pi/Linux, see [INSTALLATION.md](INSTALLATION.md).
@@ -161,11 +169,13 @@ http://PI-IP:3000/api/...
 http://PI-IP:3000/media/...
 ```
 
-The player remains separate:
+The optional Server Local Player remains separate:
 
 ```text
 http://PI-IP:4174/player
 ```
+
+This URL displays only the schedule cached by the local player/agent on that machine. It does not mirror every registered screen.
 
 Development dashboard access remains unchanged:
 
@@ -245,8 +255,10 @@ curl http://localhost:3000/api/schedule
 - Management dashboard: `http://PI-IP:3000/`
 - Server API: `http://PI-IP:3000`
 - Media: `http://PI-IP:3000/media/...`
-- Production player: `http://PI-IP:4174/player`
+- Server Local Player: `http://PI-IP:4174/player`
 - Kiosk target on the Pi: `http://localhost:4174/player`
+
+Use Dashboard Schedule Preview for per-screen resolved schedules.
 
 ## Development Workflows
 

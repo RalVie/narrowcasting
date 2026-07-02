@@ -72,4 +72,6 @@ After update, verify:
 - systemd service status
 - recent server and agent logs
 
+`http://localhost:4174/player` verifies only the local player server and the local cached schedule on that machine. It is not a universal preview for all screens. Use Dashboard Schedule Preview to inspect a specific screen's resolved schedule.
+
 Rollback and release history are future deployment topics.
