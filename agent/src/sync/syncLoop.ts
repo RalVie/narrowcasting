@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import type { AgentConfig } from "../config/loadAgentConfig.js";
 import type { Schedule } from "../schedule/types.js";
@@ -13,6 +13,26 @@ function isSchedule(value: unknown): value is Schedule {
     typeof schedule.version === "number" &&
     typeof schedule.updatedAt === "string" &&
     Array.isArray(schedule.items)
+  );
+}
+
+class DeviceIdentityRevokedError extends Error {
+  code: string;
+  status: number;
+
+  constructor(status: number, code: string, message: string) {
+    super(message);
+    this.name = "DeviceIdentityRevokedError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+function isDeviceIdentityRevoked(status: number, code: unknown) {
+  return (
+    (status === 404 && (code === "SCREEN_NOT_FOUND" || code === "UNKNOWN_SCREEN")) ||
+    ((status === 401 || status === 403) &&
+      (code === "INVALID_DEVICE_SECRET" || code === "DEVICE_AUTH_FAILED" || code === "DEVICE_AUTH_REQUIRED"))
   );
 }
 
@@ -35,6 +55,16 @@ async function fetchSchedule(config: AgentConfig): Promise<Schedule> {
   });
 
   if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { code?: unknown; message?: unknown } | null;
+
+    if (isDeviceIdentityRevoked(response.status, body?.code)) {
+      throw new DeviceIdentityRevokedError(
+        response.status,
+        String(body?.code ?? "DEVICE_IDENTITY_REVOKED"),
+        typeof body?.message === "string" ? body.message : "Device identity is no longer authorized."
+      );
+    }
+
     throw new Error(`schedule request failed with HTTP ${response.status}`);
   }
 
@@ -88,6 +118,27 @@ async function saveSchedule(config: AgentConfig, schedule: Schedule) {
 
   await writeFile(pendingPath, `${JSON.stringify(schedule, null, 2)}\n`, "utf8");
   await rename(pendingPath, config.schedulePath);
+}
+
+function createDecommissionedSchedule(): Schedule {
+  const updatedAt = new Date().toISOString();
+
+  return {
+    version: Date.now(),
+    updatedAt,
+    assignmentStatus: "decommissioned",
+    assignedProgramId: null,
+    assignedProgramName: null,
+    items: []
+  };
+}
+
+async function clearDeviceRegistration(config: AgentConfig) {
+  try {
+    await unlink(config.registrationPath);
+  } catch {
+    // Registration may already be absent. The player id/cache/media remain untouched.
+  }
 }
 
 interface MediaSyncResult {
@@ -432,6 +483,25 @@ export function startSyncLoop(config: AgentConfig) {
       });
     } catch (error) {
       const currentScheduleVersion = await readLocalScheduleVersion(config);
+
+      if (error instanceof DeviceIdentityRevokedError) {
+        const schedule = createDecommissionedSchedule();
+        await saveSchedule(config, schedule);
+        await clearDeviceRegistration(config);
+        await writeAgentFailureStatus(config, schedule.version, {
+          syncStatus: "decommissioned",
+          readinessState: "device_identity_revoked",
+          lastError: `${error.code}: ${error.message}`
+        });
+        console.error("device identity revoked: activated decommissioned local schedule", {
+          code: error.code,
+          status: error.status,
+          schedulePath: config.schedulePath,
+          registrationPath: config.registrationPath
+        });
+        return;
+      }
+
       await writeAgentFailureStatus(config, currentScheduleVersion, {
         lastError: error instanceof Error ? error.message : String(error)
       });

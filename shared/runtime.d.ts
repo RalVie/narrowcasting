@@ -72,7 +72,7 @@ export interface Theme {
 export interface ResolvedSchedule {
   version: number;
   updatedAt: string;
-  assignmentStatus?: "assigned" | "unassigned";
+  assignmentStatus?: "assigned" | "unassigned" | "decommissioned";
   assignedProgramId?: string | null;
   assignedProgramName?: string | null;
   theme?: Theme;

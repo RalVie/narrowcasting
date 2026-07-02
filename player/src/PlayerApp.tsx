@@ -1821,28 +1821,41 @@ export function PlayerApp() {
   if (!activeItem) {
     const hasEmptyPlaylist = schedule !== null && schedule.items.length === 0;
     const hasNoProgramAssignment = schedule?.assignmentStatus === "unassigned";
+    const isDecommissioned = schedule?.assignmentStatus === "decommissioned";
 
     return (
       <main className="player-shell">
         <section className="playback-surface" aria-label="Local playlist playback">
           <p className="status-label">
-            {hasNoProgramAssignment
+            {isDecommissioned
+              ? "Screen registration"
+              : hasNoProgramAssignment
               ? "Screen assignment"
               : hasEmptyPlaylist
                 ? `Local schedule version ${schedule.version}`
                 : "Waiting for local schedule"}
           </p>
           <h1>
-            {hasNoProgramAssignment
+            {isDecommissioned
+              ? "Screen decommissioned"
+              : hasNoProgramAssignment
               ? "No program assigned."
               : hasEmptyPlaylist
                 ? "Playlist is empty"
                 : "Waiting for local schedule"}
           </h1>
+          {isDecommissioned ? <p>Register this player again from the dashboard.</p> : null}
         </section>
         <footer className="status-bar">
           <span>
-            Playback: {hasNoProgramAssignment ? "no program assigned" : hasEmptyPlaylist ? "empty playlist" : "waiting"}
+            Playback:{" "}
+            {isDecommissioned
+              ? "decommissioned"
+              : hasNoProgramAssignment
+                ? "no program assigned"
+                : hasEmptyPlaylist
+                  ? "empty playlist"
+                  : "waiting"}
           </span>
           <span>Schedule: {hasEmptyPlaylist ? `version ${schedule.version}` : "not cached"}</span>
           <span>Reload: every 30s</span>
