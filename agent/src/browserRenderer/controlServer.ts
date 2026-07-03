@@ -1,11 +1,13 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AgentConfig } from "../config/loadAgentConfig.js";
 import { renderExternalUrl } from "./renderExternalUrl.js";
+import type { BrowserAction } from "../../../shared/runtime.js";
 
 interface BrowserRenderPayload {
   durationSeconds?: unknown;
   playerUrl?: unknown;
   url?: unknown;
+  browserActions?: unknown;
 }
 
 let activeRender: Promise<void> | null = null;
@@ -77,7 +79,8 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
     {
       durationSeconds,
       playerUrl: payload.playerUrl,
-      url: payload.url
+      url: payload.url,
+      browserActions: normalizeBrowserActions(payload.browserActions)
     },
     {
       host: config.chromiumCdpHost,
@@ -90,6 +93,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
   renderPromise
     .then(() => {
       console.log("browser renderer request completed", {
+        browserActions: Array.isArray(payload.browserActions) ? payload.browserActions.length : 0,
         durationSeconds,
         url: payload.url
       });
@@ -104,6 +108,55 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
     });
 
   writeJson(response, 202, { ok: true, status: "accepted" }, request.headers.origin);
+}
+
+function normalizeBrowserActions(value: unknown): BrowserAction[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.slice(0, 5).flatMap((candidate): BrowserAction[] => {
+    if (!candidate || typeof candidate !== "object") {
+      return [];
+    }
+
+    const action = candidate as Partial<BrowserAction> & Record<string, unknown>;
+
+    if (action.type === "wait") {
+      return [
+        {
+          type: "wait",
+          waitMs: Math.max(Math.min(Number(action.waitMs ?? 1000), 15_000), 0)
+        }
+      ];
+    }
+
+    if (action.type === "click") {
+      const selector = typeof action.selector === "string" ? action.selector.trim() : "";
+      if (!selector) {
+        return [];
+      }
+
+      return [
+        {
+          type: "click",
+          selector,
+          timeoutMs: Math.max(Math.min(Number(action.timeoutMs ?? 5000), 15_000), 0)
+        }
+      ];
+    }
+
+    if (action.type === "refresh_interval") {
+      return [
+        {
+          type: "refresh_interval",
+          intervalSeconds: Math.max(Number(action.intervalSeconds ?? 300), 30)
+        }
+      ];
+    }
+
+    return [];
+  });
 }
 
 function readBody(request: IncomingMessage): Promise<string> {

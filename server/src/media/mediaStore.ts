@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { access, mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, extname, resolve } from "node:path";
 import { assertValid, type DomainValidationIssue } from "../validation/domainValidation.js";
+import type { BrowserAction } from "../../../shared/runtime.js";
 
 export interface MediaItem {
   /**
@@ -18,6 +19,7 @@ export interface MediaItem {
   duration?: number;
   maxItems?: number;
   webUrlRenderMode?: "iframe" | "browser";
+  browserActions?: BrowserAction[];
 }
 
 type MediaReference = string | undefined;
@@ -134,6 +136,58 @@ function getWebUrlRenderMode(value: unknown): "iframe" | "browser" {
   return value === "browser" ? "browser" : "iframe";
 }
 
+function normalizeBrowserActions(value: unknown): BrowserAction[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value.flatMap((candidate): BrowserAction[] => {
+    if (!candidate || typeof candidate !== "object") {
+      return [];
+    }
+
+    const action = candidate as Partial<BrowserAction> & Record<string, unknown>;
+
+    if (action.type === "wait") {
+      return [
+        {
+          id: typeof action.id === "string" ? action.id : undefined,
+          type: "wait",
+          waitMs: Math.max(Math.min(Number(action.waitMs ?? 1000), 15_000), 0)
+        }
+      ];
+    }
+
+    if (action.type === "click") {
+      const selector = typeof action.selector === "string" ? action.selector.trim() : "";
+      if (!selector) {
+        return [];
+      }
+
+      return [
+        {
+          id: typeof action.id === "string" ? action.id : undefined,
+          type: "click",
+          selector,
+          timeoutMs: Math.max(Math.min(Number(action.timeoutMs ?? 5000), 15_000), 0)
+        }
+      ];
+    }
+
+    if (action.type === "refresh_interval") {
+      return [
+        {
+          id: typeof action.id === "string" ? action.id : undefined,
+          type: "refresh_interval",
+          intervalSeconds: Math.max(Number(action.intervalSeconds ?? 300), 30)
+        }
+      ];
+    }
+
+    return [];
+  });
+}
+
 function isValidExternalUrl(value: unknown) {
   if (typeof value !== "string" || !value.trim()) {
     return false;
@@ -227,6 +281,49 @@ function validateMediaItem(item: MediaItem, existingIds = new Set<string>()): Do
     });
   }
 
+  if (item.type === "web_url" && item.browserActions && item.browserActions.length > 5) {
+    issues.push({
+      ruleId: "VAL-MEDIA-006",
+      field: "browserActions",
+      severity: "blocking_error",
+      message: "Web URL browser automation supports a maximum of 5 actions."
+    });
+  }
+
+  if (item.type === "web_url") {
+    for (const [index, action] of (item.browserActions ?? []).entries()) {
+      if (action.type === "wait" && (!Number.isFinite(action.waitMs) || action.waitMs < 0 || action.waitMs > 15_000)) {
+        issues.push({
+          ruleId: "VAL-MEDIA-006",
+          field: `browserActions.${index}.waitMs`,
+          severity: "blocking_error",
+          message: "WAIT action duration must be between 0 and 15000 ms."
+        });
+      } else if (
+        action.type === "click" &&
+        (!action.selector.trim() ||
+          (action.timeoutMs !== undefined && (!Number.isFinite(action.timeoutMs) || action.timeoutMs < 0 || action.timeoutMs > 15_000)))
+      ) {
+        issues.push({
+          ruleId: "VAL-MEDIA-006",
+          field: `browserActions.${index}.selector`,
+          severity: "blocking_error",
+          message: "CLICK action requires a selector and an optional timeout up to 15000 ms."
+        });
+      } else if (
+        action.type === "refresh_interval" &&
+        (!Number.isFinite(action.intervalSeconds) || action.intervalSeconds < 30)
+      ) {
+        issues.push({
+          ruleId: "VAL-MEDIA-006",
+          field: `browserActions.${index}.intervalSeconds`,
+          severity: "blocking_error",
+          message: "REFRESH interval must be at least 30 seconds."
+        });
+      }
+    }
+  }
+
   return issues;
 }
 
@@ -281,6 +378,7 @@ function normalizeMetadataItem(value: unknown): MediaItem | null {
       url,
       duration: Math.max(Number(candidate.duration ?? 10), 1),
       webUrlRenderMode: candidate.type === "web_url" ? getWebUrlRenderMode(candidate.webUrlRenderMode) : undefined,
+      browserActions: candidate.type === "web_url" ? normalizeBrowserActions(candidate.browserActions) : undefined,
       maxItems: candidate.type === "rss_feed" ? Math.max(Math.min(Number(candidate.maxItems ?? 5), 20), 1) : undefined
     };
   }
@@ -456,6 +554,7 @@ export async function createExternalMedia(input: unknown): Promise<MediaItem> {
   const duration = Math.max(Number(candidate.duration ?? 10), 1);
   const maxItems = externalType === "rss_feed" ? Math.max(Math.min(Number(candidate.maxItems ?? 5), 20), 1) : undefined;
   const webUrlRenderMode = externalType === "web_url" ? getWebUrlRenderMode(candidate.webUrlRenderMode) : undefined;
+  const browserActions = externalType === "web_url" ? normalizeBrowserActions(candidate.browserActions) : undefined;
   const mediaId = createStableMediaId();
   const item: MediaItem = {
     id: mediaId,
@@ -467,6 +566,7 @@ export async function createExternalMedia(input: unknown): Promise<MediaItem> {
     url,
     duration,
     webUrlRenderMode,
+    browserActions,
     maxItems
   };
 
@@ -507,6 +607,9 @@ export async function updateExternalMedia(id: string, input: unknown): Promise<M
   const webUrlRenderMode = existingItem.type === "web_url"
     ? getWebUrlRenderMode(candidate.webUrlRenderMode ?? existingItem.webUrlRenderMode)
     : undefined;
+  const browserActions = existingItem.type === "web_url"
+    ? normalizeBrowserActions(candidate.browserActions ?? existingItem.browserActions)
+    : undefined;
 
   const updatedItem: MediaItem = {
     ...existingItem,
@@ -515,7 +618,8 @@ export async function updateExternalMedia(id: string, input: unknown): Promise<M
     url,
     duration,
     maxItems,
-    webUrlRenderMode
+    webUrlRenderMode,
+    browserActions
   };
 
   assertValid(validateMediaItem(updatedItem));

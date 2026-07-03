@@ -22,6 +22,24 @@ export interface VideoScheduleItem {
   durationMode?: "auto" | "clip";
 }
 
+export type BrowserAction =
+  | {
+      id?: string;
+      type: "wait";
+      waitMs: number;
+    }
+  | {
+      id?: string;
+      type: "click";
+      selector: string;
+      timeoutMs?: number;
+    }
+  | {
+      id?: string;
+      type: "refresh_interval";
+      intervalSeconds: number;
+    };
+
 export interface WebUrlScheduleItem {
   id: string;
   mediaId?: string;
@@ -30,6 +48,7 @@ export interface WebUrlScheduleItem {
   url: string;
   duration: number;
   webUrlRenderMode?: "iframe" | "browser";
+  browserActions?: BrowserAction[];
 }
 
 export interface RssScheduleItem {

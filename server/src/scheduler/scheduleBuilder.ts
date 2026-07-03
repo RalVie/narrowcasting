@@ -60,7 +60,8 @@ export async function getScheduleForProgram(program: Program, themeId?: string):
               title: media.title,
               url,
               duration: item.duration,
-              webUrlRenderMode: media.webUrlRenderMode ?? "iframe"
+              webUrlRenderMode: media.webUrlRenderMode ?? "iframe",
+              browserActions: media.browserActions
             }
           ];
         }

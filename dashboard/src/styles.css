@@ -536,6 +536,28 @@ button:disabled {
   width: 100%;
 }
 
+.browser-actions-editor {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #d9dfd4;
+  border-radius: 8px;
+  padding: 10px;
+  background: #ffffff;
+}
+
+.browser-actions-editor p {
+  margin: 0;
+  color: #5f6f64;
+  font-size: 13px;
+}
+
+.browser-action-row {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid #e4e9df;
+  padding-top: 10px;
+}
+
 .media-card h3 {
   margin: 0 0 4px;
   overflow-wrap: anywhere;

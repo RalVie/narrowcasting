@@ -157,6 +157,14 @@ Browser renderer is a Product 1.2 MVP mode for dedicated Player appliances. It u
 
 Narrowcasting suppresses browser-owned kiosk UI where technically possible. Website-owned cookie consent dialogs, language selectors, or modal overlays remain the responsibility of the website or customer configuration.
 
+Product 1.3 adds optional Browser automation for Web URL media using Browser renderer mode. Automation is stored as configuration on the Media object and is copied into the resolved schedule. Supported MVP actions are:
+
+- WAIT: pause for a configured number of milliseconds.
+- CLICK: click a configured CSS selector with an optional timeout.
+- REFRESH: refresh the active browser page at a configured interval while the Web URL item remains active.
+
+Automation is generic configuration, not website-specific code. Narrowcasting does not execute operator-provided JavaScript, store passwords, bypass website security, or automatically accept cookies.
+
 ## 5. Media States
 
 A media object can be:

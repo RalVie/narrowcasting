@@ -12,6 +12,7 @@ const deviceSecretKey = "narrowcasting:device-secret";
 const serverUrlKey = "narrowcasting:server-url";
 const browserRendererResumeKey = "narrowcasting:browser-renderer-resume";
 const browserRendererControlUrl = "http://127.0.0.1:4175/browser-renderer/render";
+const browserRendererPersistentAllItemsSeconds = 24 * 60 * 60;
 const playerVersion = "phase-1";
 const heartbeatIntervalMs = 10_000;
 const heartbeatFailureBackoffMs = 60_000;
@@ -158,6 +159,7 @@ function getWebUrlRenderData(item: ScheduleItem | null) {
     title?: unknown;
     url?: unknown;
     webUrlRenderMode?: unknown;
+    browserActions?: unknown;
   };
 
   if (candidate.type !== "web_url" && candidate.renderType !== "web_url") {
@@ -170,7 +172,8 @@ function getWebUrlRenderData(item: ScheduleItem | null) {
     renderType: typeof candidate.renderType === "string" ? candidate.renderType : null,
     title: typeof candidate.title === "string" ? candidate.title : undefined,
     url: typeof candidate.url === "string" ? candidate.url : "",
-    webUrlRenderMode: candidate.webUrlRenderMode === "browser" ? "browser" : "iframe"
+    webUrlRenderMode: candidate.webUrlRenderMode === "browser" ? "browser" : "iframe",
+    browserActions: Array.isArray(candidate.browserActions) ? candidate.browserActions : []
   };
 }
 
@@ -183,8 +186,19 @@ function isRenderableWebUrl(value: string) {
   }
 }
 
-function getBrowserRendererItemKey(item: ScheduleItem, schedule: Schedule | null, activeIndex: number) {
-  return `${schedule?.version ?? "no-version"}:${schedule?.updatedAt ?? "no-date"}:${activeIndex}:${item.id}`;
+function getBrowserRendererSessionSignature(item: ScheduleItem | null) {
+  const webUrlItem = getWebUrlRenderData(item);
+
+  if (!webUrlItem || webUrlItem.webUrlRenderMode !== "browser") {
+    return null;
+  }
+
+  return JSON.stringify({
+    browserActions: webUrlItem.browserActions,
+    mode: webUrlItem.webUrlRenderMode,
+    type: "web_url",
+    url: webUrlItem.url
+  });
 }
 
 function readBrowserRendererResume() {
@@ -195,14 +209,20 @@ function readBrowserRendererResume() {
   }
 
   try {
-    const parsed = JSON.parse(value) as { expiresAt?: unknown; itemKey?: unknown; resumeAfter?: unknown };
+    const parsed = JSON.parse(value) as {
+      expiresAt?: unknown;
+      nextIndex?: unknown;
+      resumeAfter?: unknown;
+      sessionSignature?: unknown;
+    };
 
     if (
-      typeof parsed.itemKey === "string" &&
+      typeof parsed.sessionSignature === "string" &&
+      typeof parsed.nextIndex === "number" &&
       typeof parsed.resumeAfter === "number" &&
       typeof parsed.expiresAt === "number"
     ) {
-      return parsed as { expiresAt: number; itemKey: string; resumeAfter: number };
+      return parsed as { expiresAt: number; nextIndex: number; resumeAfter: number; sessionSignature: string };
     }
   } catch {
     // Invalid resume markers are ignored and replaced by the next browser handoff.
@@ -212,16 +232,51 @@ function readBrowserRendererResume() {
   return null;
 }
 
-function writeBrowserRendererResume(itemKey: string, durationMs: number) {
+function writeBrowserRendererResume(sessionSignature: string, durationMs: number, nextIndex: number) {
   const resumeAfter = Date.now() + durationMs;
   writeLocalStorage(
     browserRendererResumeKey,
     JSON.stringify({
       expiresAt: resumeAfter + 120_000,
-      itemKey,
-      resumeAfter
+      nextIndex,
+      resumeAfter,
+      sessionSignature
     })
   );
+}
+
+function getBrowserRendererRun(schedule: Schedule, activeIndex: number) {
+  const activeItem = schedule.items[activeIndex % schedule.items.length];
+  const activeSignature = getBrowserRendererSessionSignature(activeItem);
+
+  if (!activeSignature) {
+    return null;
+  }
+
+  let durationSeconds = 0;
+  let itemCount = 0;
+
+  for (let offset = 0; offset < schedule.items.length; offset += 1) {
+    const index = (activeIndex + offset) % schedule.items.length;
+    const item = schedule.items[index];
+
+    if (getBrowserRendererSessionSignature(item) !== activeSignature) {
+      break;
+    }
+
+    durationSeconds += Math.max(typeof item.duration === "number" ? item.duration : 10, 1);
+    itemCount += 1;
+  }
+
+  const allItemsSameSession = itemCount === schedule.items.length;
+
+  return {
+    allItemsSameSession,
+    durationMs: (allItemsSameSession ? browserRendererPersistentAllItemsSeconds : durationSeconds) * 1000,
+    itemCount,
+    nextIndex: (activeIndex + itemCount) % schedule.items.length,
+    sessionSignature: activeSignature
+  };
 }
 
 function getMediaUrl(file: string) {
@@ -1586,11 +1641,12 @@ export function PlayerApp() {
       return;
     }
 
-    const durationMs = Math.max(typeof activeItem.duration === "number" ? activeItem.duration : 10, 1) * 1000;
-    const itemKey = getBrowserRendererItemKey(activeItem, schedule, activeIndex);
+    const browserRun = getBrowserRendererRun(schedule, activeIndex);
+    const durationMs = browserRun?.durationMs ?? Math.max(typeof activeItem.duration === "number" ? activeItem.duration : 10, 1) * 1000;
+    const itemKey = browserRun?.sessionSignature ?? `${activeIndex}:${activeItem.id}`;
     const resume = readBrowserRendererResume();
 
-    if (resume?.itemKey === itemKey) {
+    if (browserRun && resume?.sessionSignature === browserRun.sessionSignature) {
       if (Date.now() <= resume.expiresAt) {
         removeLocalStorage(browserRendererResumeKey);
         setBrowserRendererState({
@@ -1598,7 +1654,15 @@ export function PlayerApp() {
           message: "Browser renderer returned to Player. Resuming schedule.",
           status: "idle"
         });
-        advanceToNextItem(playbackSessionKey, "browser renderer returned");
+        console.info("browser session closed", {
+          nextIndex: resume.nextIndex,
+          sessionSignature: browserRun.sessionSignature
+        });
+        setActiveIndex(resume.nextIndex);
+        if (resume.nextIndex === activeIndex) {
+          bumpProgramCycle();
+          setPlaybackEpoch((epoch) => epoch + 1);
+        }
         return;
       }
 
@@ -1614,7 +1678,20 @@ export function PlayerApp() {
       return;
     }
 
-    writeBrowserRendererResume(itemKey, durationMs);
+    writeBrowserRendererResume(browserRun?.sessionSignature ?? itemKey, durationMs, browserRun?.nextIndex ?? ((activeIndex + 1) % schedule.items.length));
+    console.info("browser session started", {
+      allItemsSameSession: browserRun?.allItemsSameSession ?? false,
+      durationSeconds: Math.ceil(durationMs / 1000),
+      itemCount: browserRun?.itemCount ?? 1,
+      nextIndex: browserRun?.nextIndex ?? ((activeIndex + 1) % schedule.items.length),
+      url: webUrlItem.url
+    });
+    if (browserRun && browserRun.itemCount > 1) {
+      console.info("browser session reused consecutive items", {
+        itemCount: browserRun.itemCount,
+        url: webUrlItem.url
+      });
+    }
     setBrowserRendererState({
       itemKey,
       message: "Opening web page in local Chromium kiosk...",
@@ -1627,6 +1704,7 @@ export function PlayerApp() {
 
     void fetch(browserRendererControlUrl, {
       body: JSON.stringify({
+        browserActions: webUrlItem.browserActions,
         durationSeconds: Math.ceil(durationMs / 1000),
         playerUrl,
         url: webUrlItem.url
@@ -1644,6 +1722,7 @@ export function PlayerApp() {
 
         console.info("browser renderer handoff accepted", {
           durationSeconds: Math.ceil(durationMs / 1000),
+          itemCount: browserRun?.itemCount ?? 1,
           playerUrl,
           url: webUrlItem.url
         });
@@ -1692,7 +1771,7 @@ export function PlayerApp() {
         window.clearTimeout(handoffFallbackTimer);
       }
     };
-  }, [activeIndex, activeItem, advanceToNextItem, playbackSessionKey, schedule]);
+  }, [activeIndex, activeItem, advanceToNextItem, bumpProgramCycle, playbackEpoch, playbackSessionKey, schedule]);
 
   const handleActiveItemFailure = useCallback(
     (sessionKey: number, message: string) => {

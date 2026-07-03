@@ -1,3 +1,21 @@
+export type BrowserAction =
+  | {
+      id?: string;
+      type: "wait";
+      waitMs: number;
+    }
+  | {
+      id?: string;
+      type: "click";
+      selector: string;
+      timeoutMs?: number;
+    }
+  | {
+      id?: string;
+      type: "refresh_interval";
+      intervalSeconds: number;
+    };
+
 export interface MediaItem {
   id: string;
   mediaId: string;
@@ -9,4 +27,5 @@ export interface MediaItem {
   duration?: number;
   maxItems?: number;
   webUrlRenderMode?: "iframe" | "browser";
+  browserActions?: BrowserAction[];
 }

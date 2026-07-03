@@ -169,7 +169,9 @@ export function SchedulePreviewPage() {
                   <p>
                     Type: {item.type}
                     {item.type === "image" || item.type === "video" ? ` | File: ${item.file}` : ""}
-                    {item.type === "web_url" ? ` | URL: ${item.url} | Render: ${item.webUrlRenderMode ?? "iframe"}` : ""}
+                    {item.type === "web_url"
+                      ? ` | URL: ${item.url} | Render: ${item.webUrlRenderMode ?? "iframe"} | Automation: ${item.browserActions?.length ?? 0}`
+                      : ""}
                     {item.type === "rss_item" && item.sourceTitle ? ` | Feed: ${item.sourceTitle}` : ""}
                   </p>
                 </div>

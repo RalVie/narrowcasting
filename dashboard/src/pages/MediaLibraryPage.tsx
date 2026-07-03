@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { apiUrl } from "../api/apiBase";
 import { readApiError } from "../api/readApiError";
-import type { MediaItem } from "../mediaTypes";
+import type { BrowserAction, MediaItem } from "../mediaTypes";
 
 const refreshIntervalMs = 10_000;
 
@@ -18,6 +18,20 @@ function formatFileSize(size: number) {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function createBrowserAction(type: BrowserAction["type"]): BrowserAction {
+  const id = `action-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  if (type === "wait") {
+    return { id, type: "wait", waitMs: 3000 };
+  }
+
+  if (type === "click") {
+    return { id, type: "click", selector: "", timeoutMs: 5000 };
+  }
+
+  return { id, type: "refresh_interval", intervalSeconds: 300 };
+}
+
 export function MediaLibraryPage() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [items, setItems] = useState<MediaItem[]>([]);
@@ -29,12 +43,14 @@ export function MediaLibraryPage() {
   const [externalDuration, setExternalDuration] = useState(10);
   const [externalMaxItems, setExternalMaxItems] = useState(5);
   const [externalWebUrlRenderMode, setExternalWebUrlRenderMode] = useState<"iframe" | "browser">("iframe");
+  const [externalBrowserActions, setExternalBrowserActions] = useState<BrowserAction[]>([]);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editUrl, setEditUrl] = useState("");
   const [editDuration, setEditDuration] = useState(10);
   const [editMaxItems, setEditMaxItems] = useState(5);
   const [editWebUrlRenderMode, setEditWebUrlRenderMode] = useState<"iframe" | "browser">("iframe");
+  const [editBrowserActions, setEditBrowserActions] = useState<BrowserAction[]>([]);
 
   async function loadMedia() {
     setIsBusy(true);
@@ -126,6 +142,7 @@ export function MediaLibraryPage() {
           url: externalUrl.trim(),
           duration: externalDuration,
           webUrlRenderMode: externalType === "web_url" ? externalWebUrlRenderMode : undefined,
+          browserActions: externalType === "web_url" && externalWebUrlRenderMode === "browser" ? externalBrowserActions : undefined,
           maxItems: externalType === "rss_feed" ? externalMaxItems : undefined
         })
       });
@@ -139,6 +156,7 @@ export function MediaLibraryPage() {
       setExternalDuration(10);
       setExternalMaxItems(5);
       setExternalWebUrlRenderMode("iframe");
+      setExternalBrowserActions([]);
       setStatus("External media created.");
       await loadMedia();
     } catch (error) {
@@ -155,6 +173,7 @@ export function MediaLibraryPage() {
     setEditDuration(item.duration ?? 10);
     setEditMaxItems(item.maxItems ?? 5);
     setEditWebUrlRenderMode(item.webUrlRenderMode ?? "iframe");
+    setEditBrowserActions(item.browserActions ?? []);
   }
 
   async function saveExternalMedia(item: MediaItem) {
@@ -172,7 +191,8 @@ export function MediaLibraryPage() {
           url: editUrl.trim(),
           duration: editDuration,
           maxItems: item.type === "rss_feed" ? editMaxItems : undefined,
-          webUrlRenderMode: item.type === "web_url" ? editWebUrlRenderMode : undefined
+          webUrlRenderMode: item.type === "web_url" ? editWebUrlRenderMode : undefined,
+          browserActions: item.type === "web_url" && editWebUrlRenderMode === "browser" ? editBrowserActions : undefined
         })
       });
 
@@ -188,6 +208,138 @@ export function MediaLibraryPage() {
     } finally {
       setIsBusy(false);
     }
+  }
+
+  function updateBrowserAction(
+    actions: BrowserAction[],
+    setActions: (actions: BrowserAction[]) => void,
+    index: number,
+    patch: Partial<BrowserAction>
+  ) {
+    setActions(actions.map((action, actionIndex) => (actionIndex === index ? ({ ...action, ...patch } as BrowserAction) : action)));
+  }
+
+  function renderBrowserActionsEditor(actions: BrowserAction[], setActions: (actions: BrowserAction[]) => void) {
+    return (
+      <div className="browser-actions-editor">
+        <div>
+          <strong>Browser automation</strong>
+          <p>
+            Browser automation is website-specific. If a website changes, selectors may need updating.
+          </p>
+        </div>
+        {actions.length === 0 ? <p>No automation actions configured.</p> : null}
+        {actions.map((action, index) => (
+          <div className="browser-action-row" key={action.id ?? index}>
+            <label>
+              Action
+              <select
+                value={action.type}
+                onChange={(event) => {
+                  const nextAction = createBrowserAction(event.target.value as BrowserAction["type"]);
+                  setActions(actions.map((candidate, actionIndex) => (actionIndex === index ? nextAction : candidate)));
+                }}
+              >
+                <option value="wait">WAIT</option>
+                <option value="click">CLICK</option>
+                <option value="refresh_interval">REFRESH</option>
+              </select>
+            </label>
+            {action.type === "wait" ? (
+              <label>
+                Wait ms
+                <input
+                  min={0}
+                  max={15000}
+                  type="number"
+                  value={action.waitMs}
+                  onChange={(event) =>
+                    updateBrowserAction(actions, setActions, index, {
+                      waitMs: Math.max(Math.min(Number(event.target.value), 15000), 0)
+                    })
+                  }
+                />
+              </label>
+            ) : null}
+            {action.type === "click" ? (
+              <>
+                <label>
+                  CSS selector
+                  <input
+                    placeholder="button[data-testid='accept']"
+                    value={action.selector}
+                    onChange={(event) =>
+                      updateBrowserAction(actions, setActions, index, {
+                        selector: event.target.value
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  Timeout ms
+                  <input
+                    min={0}
+                    max={15000}
+                    type="number"
+                    value={action.timeoutMs ?? 5000}
+                    onChange={(event) =>
+                      updateBrowserAction(actions, setActions, index, {
+                        timeoutMs: Math.max(Math.min(Number(event.target.value), 15000), 0)
+                      })
+                    }
+                  />
+                </label>
+              </>
+            ) : null}
+            {action.type === "refresh_interval" ? (
+              <label>
+                Interval seconds
+                <input
+                  min={30}
+                  type="number"
+                  value={action.intervalSeconds}
+                  onChange={(event) =>
+                    updateBrowserAction(actions, setActions, index, {
+                      intervalSeconds: Math.max(Number(event.target.value), 30)
+                    })
+                  }
+                />
+              </label>
+            ) : null}
+            <div className="button-row">
+              <button disabled={index === 0} onClick={() => {
+                const nextActions = [...actions];
+                [nextActions[index - 1], nextActions[index]] = [nextActions[index], nextActions[index - 1]];
+                setActions(nextActions);
+              }} type="button">
+                Up
+              </button>
+              <button disabled={index === actions.length - 1} onClick={() => {
+                const nextActions = [...actions];
+                [nextActions[index], nextActions[index + 1]] = [nextActions[index + 1], nextActions[index]];
+                setActions(nextActions);
+              }} type="button">
+                Down
+              </button>
+              <button onClick={() => setActions(actions.filter((_, actionIndex) => actionIndex !== index))} type="button">
+                Remove
+              </button>
+            </div>
+          </div>
+        ))}
+        <div className="button-row">
+          <button disabled={actions.length >= 5} onClick={() => setActions([...actions, createBrowserAction("wait")])} type="button">
+            Add WAIT
+          </button>
+          <button disabled={actions.length >= 5} onClick={() => setActions([...actions, createBrowserAction("click")])} type="button">
+            Add CLICK
+          </button>
+          <button disabled={actions.length >= 5} onClick={() => setActions([...actions, createBrowserAction("refresh_interval")])} type="button">
+            Add REFRESH
+          </button>
+        </div>
+      </div>
+    );
   }
 
   useEffect(() => {
@@ -283,6 +435,9 @@ export function MediaLibraryPage() {
               </small>
             </label>
           ) : null}
+          {externalType === "web_url" && externalWebUrlRenderMode === "browser"
+            ? renderBrowserActionsEditor(externalBrowserActions, setExternalBrowserActions)
+            : null}
           <button disabled={isBusy || !externalUrl.trim()} onClick={() => void createExternalMedia()} type="button">
             Add
           </button>
@@ -335,16 +490,21 @@ export function MediaLibraryPage() {
                       />
                     </label>
                   ) : (
-                    <label>
-                      Render mode
-                      <select
-                        value={editWebUrlRenderMode}
-                        onChange={(event) => setEditWebUrlRenderMode(event.target.value as "iframe" | "browser")}
-                      >
-                        <option value="iframe">Embedded iframe</option>
-                        <option value="browser">Browser renderer</option>
-                      </select>
-                    </label>
+                    <>
+                      <label>
+                        Render mode
+                        <select
+                          value={editWebUrlRenderMode}
+                          onChange={(event) => setEditWebUrlRenderMode(event.target.value as "iframe" | "browser")}
+                        >
+                          <option value="iframe">Embedded iframe</option>
+                          <option value="browser">Browser renderer</option>
+                        </select>
+                      </label>
+                      {editWebUrlRenderMode === "browser"
+                        ? renderBrowserActionsEditor(editBrowserActions, setEditBrowserActions)
+                        : null}
+                    </>
                   )}
                   <div className="button-row">
                     <button disabled={isBusy || !editUrl.trim()} onClick={() => void saveExternalMedia(item)} type="button">
@@ -365,6 +525,9 @@ export function MediaLibraryPage() {
                         : `${item.type} | ${item.url ?? ""}`}
                     </p>
                     {item.type === "web_url" ? <p>Render mode: {item.webUrlRenderMode ?? "iframe"}</p> : null}
+                    {item.type === "web_url" && item.browserActions && item.browserActions.length > 0 ? (
+                      <p>Automation actions: {item.browserActions.length}</p>
+                    ) : null}
                   </div>
                   <div className="button-row">
                     {item.type === "web_url" || item.type === "rss_feed" ? (
