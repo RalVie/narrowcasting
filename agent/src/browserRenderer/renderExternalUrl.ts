@@ -7,6 +7,7 @@ export interface BrowserRenderRequest {
   playerUrl: string;
   url: string;
   browserActions?: BrowserAction[];
+  signal?: AbortSignal;
 }
 
 export interface BrowserRendererOptions {
@@ -54,14 +55,15 @@ export async function renderExternalUrl(
 
     console.log("browser renderer navigating to external URL", { url: request.url });
     await navigateAndWait(connection, request.url, options.timeoutMs);
-    await executeBrowserActions(connection, request.browserActions ?? [], options.timeoutMs);
+    throwIfAborted(request.signal);
+    await executeBrowserActions(connection, request.browserActions ?? [], options.timeoutMs, request.signal);
 
     console.log("browser renderer external URL active", {
       browserActions: request.browserActions?.length ?? 0,
       durationSeconds: request.durationSeconds,
       url: request.url
     });
-    await waitWithRefresh(connection, request.browserActions ?? [], request.durationSeconds * 1000);
+    await waitWithRefresh(connection, request.browserActions ?? [], request.durationSeconds * 1000, request.signal);
   } finally {
     if (connected) {
       console.log("browser renderer returning to player", { playerUrl: request.playerUrl });
@@ -76,8 +78,15 @@ export async function renderExternalUrl(
   }
 }
 
-async function executeBrowserActions(connection: CdpConnection, actions: BrowserAction[], timeoutMs: number) {
+async function executeBrowserActions(
+  connection: CdpConnection,
+  actions: BrowserAction[],
+  timeoutMs: number,
+  signal?: AbortSignal
+) {
   for (const [index, action] of actions.entries()) {
+    throwIfAborted(signal);
+
     if (action.type === "refresh_interval") {
       console.log("browser automation refresh interval armed", {
         actionIndex: index,
@@ -90,9 +99,9 @@ async function executeBrowserActions(connection: CdpConnection, actions: Browser
 
     try {
       if (action.type === "wait") {
-        await delay(action.waitMs);
+        await abortableDelay(action.waitMs, signal);
       } else if (action.type === "click") {
-        await clickSelector(connection, action.selector, action.timeoutMs ?? 5000, timeoutMs);
+        await clickSelector(connection, action.selector, action.timeoutMs ?? 5000, timeoutMs, signal);
       }
 
       console.log("browser automation action completed", { actionIndex: index, type: action.type });
@@ -106,7 +115,12 @@ async function executeBrowserActions(connection: CdpConnection, actions: Browser
   }
 }
 
-async function waitWithRefresh(connection: CdpConnection, actions: BrowserAction[], durationMs: number) {
+async function waitWithRefresh(
+  connection: CdpConnection,
+  actions: BrowserAction[],
+  durationMs: number,
+  signal?: AbortSignal
+) {
   const refreshActions = actions.filter((action): action is Extract<BrowserAction, { type: "refresh_interval" }> =>
     action.type === "refresh_interval"
   );
@@ -129,7 +143,7 @@ async function waitWithRefresh(connection: CdpConnection, actions: BrowserAction
   );
 
   try {
-    await delay(durationMs);
+    await abortableDelay(durationMs, signal);
   } finally {
     for (const timer of timers) {
       clearInterval(timer);
@@ -137,10 +151,18 @@ async function waitWithRefresh(connection: CdpConnection, actions: BrowserAction
   }
 }
 
-async function clickSelector(connection: CdpConnection, selector: string, clickTimeoutMs: number, commandTimeoutMs: number) {
+async function clickSelector(
+  connection: CdpConnection,
+  selector: string,
+  clickTimeoutMs: number,
+  commandTimeoutMs: number,
+  signal?: AbortSignal
+) {
   const deadline = Date.now() + clickTimeoutMs;
 
   while (Date.now() <= deadline) {
+    throwIfAborted(signal);
+
     const result = await connection.send("Runtime.evaluate", {
       awaitPromise: true,
       expression: `(() => {
@@ -164,10 +186,24 @@ async function clickSelector(connection: CdpConnection, selector: string, clickT
       return;
     }
 
-    await delay(Math.min(500, Math.max(commandTimeoutMs, 1)));
+    await abortableDelay(Math.min(500, Math.max(commandTimeoutMs, 1)), signal);
   }
 
   throw new Error(`Selector not found before timeout: ${selector}`);
+}
+
+function abortableDelay(ms: number, signal?: AbortSignal) {
+  if (!signal) {
+    return delay(ms);
+  }
+
+  return delay(ms, undefined, { signal });
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) {
+    throw new Error("browser renderer cancelled");
+  }
 }
 
 async function navigateAndWait(connection: CdpConnection, url: string, timeoutMs: number): Promise<void> {

@@ -1635,6 +1635,7 @@ export function PlayerApp() {
     const webUrlItem = getWebUrlRenderData(activeItem);
 
     if (!activeItem || !schedule || !webUrlItem || webUrlItem.webUrlRenderMode !== "browser") {
+      removeLocalStorage(browserRendererResumeKey);
       setBrowserRendererState((state) =>
         state.status === "idle" ? state : { itemKey: null, message: "", status: "idle" }
       );

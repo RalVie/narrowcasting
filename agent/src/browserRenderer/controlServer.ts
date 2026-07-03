@@ -11,6 +11,16 @@ interface BrowserRenderPayload {
 }
 
 let activeRender: Promise<void> | null = null;
+let activeRenderController: AbortController | null = null;
+
+export function cancelActiveBrowserRenderer(reason: string) {
+  if (!activeRenderController) {
+    return;
+  }
+
+  console.log("browser session cancelled due to schedule update", { reason });
+  activeRenderController.abort();
+}
 
 export function startBrowserRendererControlServer(config: AgentConfig) {
   if (!config.browserRendererEnabled) {
@@ -75,12 +85,15 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
     return;
   }
 
+  const controller = new AbortController();
+  activeRenderController = controller;
   const renderPromise = renderExternalUrl(
     {
       durationSeconds,
       playerUrl: payload.playerUrl,
       url: payload.url,
-      browserActions: normalizeBrowserActions(payload.browserActions)
+      browserActions: normalizeBrowserActions(payload.browserActions),
+      signal: controller.signal
     },
     {
       host: config.chromiumCdpHost,
@@ -99,11 +112,20 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
       });
     })
     .catch((error: unknown) => {
-      console.error("browser renderer request failed", error);
+      if (controller.signal.aborted) {
+        console.warn("browser renderer request cancelled", {
+          reason: "schedule update or runtime interruption"
+        });
+      } else {
+        console.error("browser renderer request failed", error);
+      }
     })
     .finally(() => {
       if (activeRender === renderPromise) {
         activeRender = null;
+      }
+      if (activeRenderController === controller) {
+        activeRenderController = null;
       }
     });
 

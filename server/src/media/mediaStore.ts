@@ -153,23 +153,20 @@ function normalizeBrowserActions(value: unknown): BrowserAction[] | undefined {
         {
           id: typeof action.id === "string" ? action.id : undefined,
           type: "wait",
-          waitMs: Math.max(Math.min(Number(action.waitMs ?? 1000), 15_000), 0)
+          waitMs: Number(action.waitMs ?? 1000)
         }
       ];
     }
 
     if (action.type === "click") {
       const selector = typeof action.selector === "string" ? action.selector.trim() : "";
-      if (!selector) {
-        return [];
-      }
 
       return [
         {
           id: typeof action.id === "string" ? action.id : undefined,
           type: "click",
           selector,
-          timeoutMs: Math.max(Math.min(Number(action.timeoutMs ?? 5000), 15_000), 0)
+          timeoutMs: Number(action.timeoutMs ?? 5000)
         }
       ];
     }
@@ -179,7 +176,7 @@ function normalizeBrowserActions(value: unknown): BrowserAction[] | undefined {
         {
           id: typeof action.id === "string" ? action.id : undefined,
           type: "refresh_interval",
-          intervalSeconds: Math.max(Number(action.intervalSeconds ?? 300), 30)
+          intervalSeconds: Number(action.intervalSeconds ?? 300)
         }
       ];
     }

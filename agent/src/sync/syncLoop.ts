@@ -1,6 +1,7 @@
 import { access, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { hostname } from "node:os";
+import { cancelActiveBrowserRenderer } from "../browserRenderer/controlServer.js";
 import type { AgentConfig } from "../config/loadAgentConfig.js";
 import type { Schedule } from "../schedule/types.js";
 
@@ -446,6 +447,25 @@ async function readLocalScheduleVersion(config: AgentConfig): Promise<number | n
   return null;
 }
 
+async function readLocalSchedule(config: AgentConfig): Promise<Schedule | null> {
+  try {
+    const content = await readFile(config.schedulePath, "utf8");
+    const body: unknown = JSON.parse(content);
+
+    if (isSchedule(body)) {
+      return body;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function getScheduleSignature(schedule: Schedule | null) {
+  return schedule ? JSON.stringify(schedule) : null;
+}
+
 async function countCachedFiles(config: AgentConfig): Promise<number> {
   try {
     const filenames = await readdir(config.mediaDir);
@@ -581,6 +601,13 @@ export function startSyncLoop(config: AgentConfig) {
         return;
       }
 
+      const existingSchedule = await readLocalSchedule(config);
+      const scheduleChanged = getScheduleSignature(existingSchedule) !== getScheduleSignature(schedule);
+
+      if (scheduleChanged) {
+        cancelActiveBrowserRenderer(`activated schedule ${schedule.version}`);
+      }
+
       await saveSchedule(config, schedule);
       await writeAgentStatus(config, schedule.version);
       console.log("sync success", {
@@ -605,6 +632,7 @@ export function startSyncLoop(config: AgentConfig) {
 
       if (error instanceof DeviceIdentityRevokedError) {
         const schedule = createDecommissionedSchedule();
+        cancelActiveBrowserRenderer("device identity revoked");
         await saveSchedule(config, schedule);
         await clearDeviceRegistration(config);
         await writeAgentFailureStatus(config, schedule.version, {

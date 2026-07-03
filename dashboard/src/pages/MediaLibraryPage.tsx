@@ -32,6 +32,33 @@ function createBrowserAction(type: BrowserAction["type"]): BrowserAction {
   return { id, type: "refresh_interval", intervalSeconds: 300 };
 }
 
+function serializeBrowserActions(actions: BrowserAction[]) {
+  return actions.map((action) => {
+    if (action.type === "wait") {
+      return {
+        id: action.id,
+        type: action.type,
+        waitMs: action.waitMs
+      };
+    }
+
+    if (action.type === "click") {
+      return {
+        id: action.id,
+        type: action.type,
+        selector: action.selector,
+        timeoutMs: action.timeoutMs ?? 5000
+      };
+    }
+
+    return {
+      id: action.id,
+      type: action.type,
+      intervalSeconds: action.intervalSeconds
+    };
+  });
+}
+
 export function MediaLibraryPage() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [items, setItems] = useState<MediaItem[]>([]);
@@ -142,7 +169,9 @@ export function MediaLibraryPage() {
           url: externalUrl.trim(),
           duration: externalDuration,
           webUrlRenderMode: externalType === "web_url" ? externalWebUrlRenderMode : undefined,
-          browserActions: externalType === "web_url" && externalWebUrlRenderMode === "browser" ? externalBrowserActions : undefined,
+          browserActions: externalType === "web_url" && externalWebUrlRenderMode === "browser"
+            ? serializeBrowserActions(externalBrowserActions)
+            : undefined,
           maxItems: externalType === "rss_feed" ? externalMaxItems : undefined
         })
       });
@@ -192,7 +221,9 @@ export function MediaLibraryPage() {
           duration: editDuration,
           maxItems: item.type === "rss_feed" ? editMaxItems : undefined,
           webUrlRenderMode: item.type === "web_url" ? editWebUrlRenderMode : undefined,
-          browserActions: item.type === "web_url" && editWebUrlRenderMode === "browser" ? editBrowserActions : undefined
+          browserActions: item.type === "web_url" && editWebUrlRenderMode === "browser"
+            ? serializeBrowserActions(editBrowserActions)
+            : undefined
         })
       });
 
