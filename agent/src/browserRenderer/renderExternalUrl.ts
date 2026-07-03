@@ -160,32 +160,50 @@ async function clickSelector(
 ) {
   const deadline = Date.now() + clickTimeoutMs;
   let lastSearchResult: ClickSearchResult | null = null;
+  const contexts = await getClickSearchContexts(connection);
+  const accessibleFrames = contexts.filter((context) => context.contextId !== null).length;
+  const inaccessibleFrames = contexts.filter((context) => context.contextId === null && !context.isMain).length;
 
   console.log("browser automation click selector search started", {
+    accessibleFrames,
+    inaccessibleFrames,
     selector,
+    searchedContexts: contexts.length,
     timeoutMs: clickTimeoutMs
   });
 
   while (Date.now() <= deadline) {
     throwIfAborted(signal);
 
-    const result = await connection.send("Runtime.evaluate", {
-      awaitPromise: true,
-      expression: buildClickSelectorExpression(selector),
-      returnByValue: true
-    }) as { result?: { value?: unknown } };
+    for (const context of contexts) {
+      if (context.contextId === null && !context.isMain) {
+        continue;
+      }
 
-    lastSearchResult = isClickSearchResult(result.result?.value) ? result.result.value : null;
+      const result = await connection.send("Runtime.evaluate", {
+        awaitPromise: true,
+        ...(context.contextId === null ? {} : { contextId: context.contextId }),
+        expression: buildClickSelectorExpression(selector),
+        returnByValue: true
+      }) as { result?: { value?: unknown } };
 
-    if (lastSearchResult?.clicked) {
-      console.log("browser automation click dispatched", {
-        foundIn: lastSearchResult.foundIn,
-        selector,
-        tagName: lastSearchResult.tagName,
-        visible: lastSearchResult.visible,
-        enabled: lastSearchResult.enabled
-      });
-      return;
+      const searchResult = isClickSearchResult(result.result?.value) ? result.result.value : null;
+      lastSearchResult = normalizeFrameSearchResult(searchResult, context);
+
+      if (lastSearchResult?.clicked) {
+        console.log("browser automation click dispatched", {
+          contextId: context.contextId,
+          frameId: context.frameId,
+          frameUrl: lastSearchResult.contextUrl ?? context.url,
+          foundIn: lastSearchResult.foundIn,
+          searchedContexts: contexts.length,
+          selector,
+          tagName: lastSearchResult.tagName,
+          visible: lastSearchResult.visible,
+          enabled: lastSearchResult.enabled
+        });
+        return;
+      }
     }
 
     await abortableDelay(Math.min(500, Math.max(commandTimeoutMs, 1)), signal);
@@ -201,11 +219,19 @@ async function clickSelector(
 
 interface ClickSearchResult {
   clicked: boolean;
+  contextUrl?: string | null;
   enabled: boolean | null;
   found: boolean;
-  foundIn: "document" | "shadow" | null;
+  foundIn: "document" | "shadow" | "frame" | "shadow-frame" | null;
   tagName: string | null;
   visible: boolean | null;
+}
+
+interface ClickSearchContext {
+  contextId: number | null;
+  frameId: string | null;
+  isMain: boolean;
+  url: string | null;
 }
 
 function isClickSearchResult(value: unknown): value is ClickSearchResult {
@@ -263,6 +289,7 @@ function buildClickSelectorExpression(selector: string) {
     if (!match) {
       return {
         clicked: false,
+        contextUrl: window.location.href,
         enabled: null,
         found: false,
         foundIn: null,
@@ -278,6 +305,7 @@ function buildClickSelectorExpression(selector: string) {
     if (!visible || !enabled) {
       return {
         clicked: false,
+        contextUrl: window.location.href,
         enabled,
         found: true,
         foundIn: source,
@@ -295,6 +323,7 @@ function buildClickSelectorExpression(selector: string) {
 
     return {
       clicked: true,
+      contextUrl: window.location.href,
       enabled,
       found: true,
       foundIn: source,
@@ -302,6 +331,98 @@ function buildClickSelectorExpression(selector: string) {
       visible
     };
   })()`;
+}
+
+async function getClickSearchContexts(connection: CdpConnection): Promise<ClickSearchContext[]> {
+  const contexts: ClickSearchContext[] = [
+    {
+      contextId: null,
+      frameId: null,
+      isMain: true,
+      url: null
+    }
+  ];
+
+  try {
+    const frameTreeResponse = await connection.send("Page.getFrameTree") as { frameTree?: CdpFrameTree };
+    const frames = flattenFrameTree(frameTreeResponse.frameTree);
+
+    for (const [index, frame] of frames.entries()) {
+      try {
+        const contextResponse = await connection.send("Page.createIsolatedWorld", {
+          frameId: frame.id,
+          grantUniveralAccess: false,
+          worldName: `narrowcasting-browser-automation-${index}`
+        }) as { executionContextId?: unknown };
+
+        if (typeof contextResponse.executionContextId === "number") {
+          contexts.push({
+            contextId: contextResponse.executionContextId,
+            frameId: frame.id,
+            isMain: index === 0,
+            url: frame.url ?? null
+          });
+        }
+      } catch (error) {
+        contexts.push({
+          contextId: null,
+          frameId: frame.id,
+          isMain: index === 0,
+          url: frame.url ?? null
+        });
+        console.warn("browser automation frame context inaccessible", {
+          error: error instanceof Error ? error.message : String(error),
+          frameId: frame.id,
+          frameUrl: frame.url ?? null
+        });
+      }
+    }
+  } catch (error) {
+    console.warn("browser automation frame discovery failed; searching main context only", {
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+
+  return contexts;
+}
+
+interface CdpFrame {
+  id: string;
+  url?: string;
+}
+
+interface CdpFrameTree {
+  childFrames?: CdpFrameTree[];
+  frame?: CdpFrame;
+}
+
+function flattenFrameTree(frameTree: CdpFrameTree | undefined): CdpFrame[] {
+  if (!frameTree?.frame) {
+    return [];
+  }
+
+  return [
+    frameTree.frame,
+    ...(frameTree.childFrames ?? []).flatMap((childFrame) => flattenFrameTree(childFrame))
+  ];
+}
+
+function normalizeFrameSearchResult(
+  result: ClickSearchResult | null,
+  context: ClickSearchContext
+): ClickSearchResult | null {
+  if (!result) {
+    return null;
+  }
+
+  if (context.isMain || !result.foundIn) {
+    return result;
+  }
+
+  return {
+    ...result,
+    foundIn: result.foundIn === "shadow" ? "shadow-frame" : "frame"
+  };
 }
 
 function abortableDelay(ms: number, signal?: AbortSignal) {
