@@ -159,37 +159,149 @@ async function clickSelector(
   signal?: AbortSignal
 ) {
   const deadline = Date.now() + clickTimeoutMs;
+  let lastSearchResult: ClickSearchResult | null = null;
+
+  console.log("browser automation click selector search started", {
+    selector,
+    timeoutMs: clickTimeoutMs
+  });
 
   while (Date.now() <= deadline) {
     throwIfAborted(signal);
 
     const result = await connection.send("Runtime.evaluate", {
       awaitPromise: true,
-      expression: `(() => {
-        const element = document.querySelector(${JSON.stringify(selector)});
-        if (!element) {
-          return false;
-        }
-
-        if (typeof element.click === "function") {
-          element.click();
-          return true;
-        }
-
-        element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
-        return true;
-      })()`,
+      expression: buildClickSelectorExpression(selector),
       returnByValue: true
     }) as { result?: { value?: unknown } };
 
-    if (result.result?.value === true) {
+    lastSearchResult = isClickSearchResult(result.result?.value) ? result.result.value : null;
+
+    if (lastSearchResult?.clicked) {
+      console.log("browser automation click dispatched", {
+        foundIn: lastSearchResult.foundIn,
+        selector,
+        tagName: lastSearchResult.tagName,
+        visible: lastSearchResult.visible,
+        enabled: lastSearchResult.enabled
+      });
       return;
     }
 
     await abortableDelay(Math.min(500, Math.max(commandTimeoutMs, 1)), signal);
   }
 
-  throw new Error(`Selector not found before timeout: ${selector}`);
+  console.warn("browser automation click selector timed out", {
+    lastResult: lastSearchResult,
+    selector,
+    timeoutMs: clickTimeoutMs
+  });
+  throw new Error(`Selector not found as visible/enabled before timeout: ${selector}`);
+}
+
+interface ClickSearchResult {
+  clicked: boolean;
+  enabled: boolean | null;
+  found: boolean;
+  foundIn: "document" | "shadow" | null;
+  tagName: string | null;
+  visible: boolean | null;
+}
+
+function isClickSearchResult(value: unknown): value is ClickSearchResult {
+  return Boolean(value && typeof value === "object" && "found" in value && "clicked" in value);
+}
+
+function buildClickSelectorExpression(selector: string) {
+  return `(() => {
+    const selector = ${JSON.stringify(selector)};
+
+    function isVisible(element) {
+      const style = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return (
+        style &&
+        style.visibility !== "hidden" &&
+        style.display !== "none" &&
+        Number(style.opacity || "1") !== 0 &&
+        rect.width > 0 &&
+        rect.height > 0
+      );
+    }
+
+    function isEnabled(element) {
+      return !(
+        element.disabled === true ||
+        element.getAttribute("aria-disabled") === "true" ||
+        element.closest("[disabled],[aria-disabled='true']")
+      );
+    }
+
+    function findMatchingElement(root, source) {
+      const direct = root.querySelectorAll ? Array.from(root.querySelectorAll(selector)) : [];
+      for (const element of direct) {
+        if (isVisible(element) && isEnabled(element)) {
+          return { element, source };
+        }
+      }
+
+      const children = root.querySelectorAll ? Array.from(root.querySelectorAll("*")) : [];
+      for (const child of children) {
+        if (child.shadowRoot) {
+          const match = findMatchingElement(child.shadowRoot, "shadow");
+          if (match) {
+            return match;
+          }
+        }
+      }
+
+      return null;
+    }
+
+    const match = findMatchingElement(document, "document");
+
+    if (!match) {
+      return {
+        clicked: false,
+        enabled: null,
+        found: false,
+        foundIn: null,
+        tagName: null,
+        visible: null
+      };
+    }
+
+    const { element, source } = match;
+    const visible = isVisible(element);
+    const enabled = isEnabled(element);
+
+    if (!visible || !enabled) {
+      return {
+        clicked: false,
+        enabled,
+        found: true,
+        foundIn: source,
+        tagName: element.tagName,
+        visible
+      };
+    }
+
+    element.scrollIntoView({ block: "center", inline: "center" });
+    if (typeof element.click === "function") {
+      element.click();
+    } else {
+      element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+    }
+
+    return {
+      clicked: true,
+      enabled,
+      found: true,
+      foundIn: source,
+      tagName: element.tagName,
+      visible
+    };
+  })()`;
 }
 
 function abortableDelay(ms: number, signal?: AbortSignal) {
