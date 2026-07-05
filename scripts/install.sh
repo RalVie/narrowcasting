@@ -19,6 +19,7 @@ Interactive entry point for Narrowcasting appliance installation and lifecycle m
 
 Options:
   --yes, -y                Use defaults for confirmations where possible.
+  --server-url URL         Server URL for player installs; skips discovery.
   --dry-run                Print actions without changing the system.
   --skip-system-packages   Skip apt package installation.
   --help, -h               Show this help.
@@ -31,10 +32,17 @@ USAGE
 }
 
 parse_args() {
+  SERVER_URL="${SERVER_URL:-}"
+
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --yes|-y|--dry-run|--skip-system-packages)
         parse_common_args "$1" || true
+        ;;
+      --server-url)
+        [ "${2:-}" ] || fatal "--server-url requires a value."
+        SERVER_URL="$2"
+        shift
         ;;
       --help|-h)
         usage
@@ -64,17 +72,97 @@ prompt_choice() {
   printf '%s' "$answer"
 }
 
-prompt_server_url() {
-  local default_url="${SERVER_URL:-http://localhost:3000}"
-  local answer
+get_active_ipv4_address() {
+  local ip_address=""
 
-  if [ "$YES" -eq 1 ]; then
-    if [ "$default_url" = "http://localhost:3000" ]; then
-      log_warning "No SERVER_URL was provided. Using $default_url, which is only correct when a server runs on this player."
-    fi
-    printf '%s' "$default_url"
-    return
+  if command -v ip >/dev/null 2>&1; then
+    ip_address="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{ for (i = 1; i <= NF; i++) { if ($i == "src") { print $(i + 1); exit } } }' || true)"
   fi
+
+  if [ -z "$ip_address" ] && command -v hostname >/dev/null 2>&1; then
+    ip_address="$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | grep -v '^127\.' | head -n 1 || true)"
+  fi
+
+  printf '%s' "$ip_address"
+}
+
+subnet_from_ipv4() {
+  local ip_address="$1"
+  printf '%s' "$ip_address" | awk -F. 'NF == 4 { printf "%s.%s.%s", $1, $2, $3 }'
+}
+
+is_narrowcasting_server() {
+  local base_url="$1"
+  local response=""
+
+  command -v curl >/dev/null 2>&1 || return 1
+
+  response="$(curl -fsS --connect-timeout 0.25 --max-time 0.6 "$base_url/api/status" 2>/dev/null || true)"
+  if printf '%s' "$response" | grep -q '"application"[[:space:]]*:[[:space:]]*"Narrowcasting Server"'; then
+    return 0
+  fi
+
+  response="$(curl -fsS --connect-timeout 0.25 --max-time 0.6 "$base_url/api/" 2>/dev/null || true)"
+  if printf '%s' "$response" | grep -q '"service"[[:space:]]*:[[:space:]]*"narrowcasting-api"'; then
+    return 0
+  fi
+
+  return 1
+}
+
+discover_narrowcasting_servers() {
+  command -v curl >/dev/null 2>&1 || {
+    printf 'WARNING curl is not available; server auto-discovery skipped.\n' >&2
+    return 0
+  }
+
+  local ip_address
+  ip_address="$(get_active_ipv4_address)"
+
+  if [ -z "$ip_address" ]; then
+    printf 'WARNING Could not determine active IPv4 address; server auto-discovery skipped.\n' >&2
+    return 0
+  fi
+
+  local subnet
+  subnet="$(subnet_from_ipv4 "$ip_address")"
+
+  if [ -z "$subnet" ]; then
+    printf 'WARNING Could not determine IPv4 subnet from %s; server auto-discovery skipped.\n' "$ip_address" >&2
+    return 0
+  fi
+
+  printf 'INFO Scanning %s.0/24 for Narrowcasting Servers on port 3000...\n' "$subnet" >&2
+
+  local temp_file
+  temp_file="$(mktemp)"
+
+  local host
+  local running=0
+  for host in $(seq 1 254); do
+    (
+      local candidate="http://$subnet.$host:3000"
+      if is_narrowcasting_server "$candidate"; then
+        printf '%s\n' "$candidate" >> "$temp_file"
+      fi
+    ) &
+
+    running=$((running + 1))
+    if [ "$running" -ge 32 ]; then
+      wait
+      running=0
+    fi
+  done
+
+  wait
+
+  sort -u "$temp_file"
+  rm -f "$temp_file"
+}
+
+manual_server_url_prompt() {
+  local default_url="${1:-http://localhost:3000}"
+  local answer
 
   printf 'Enter Narrowcasting server URL for this player [%s]: ' "$default_url" >&2
   read -r answer
@@ -84,6 +172,158 @@ prompt_server_url() {
   else
     printf '%s' "$default_url"
   fi
+}
+
+select_discovered_server_url() {
+  local -a candidates=("$@")
+  local count="${#candidates[@]}"
+  local answer
+
+  if [ "$count" -eq 0 ]; then
+    if [ "$YES" -eq 1 ]; then
+      fatal "No Narrowcasting Server was discovered. Re-run with --server-url http://SERVER-IP:3000."
+    fi
+
+    printf 'INFO No Narrowcasting Server was found automatically.\n' >&2
+    manual_server_url_prompt "http://localhost:3000"
+    return
+  fi
+
+  if [ "$count" -eq 1 ]; then
+    printf 'Found Narrowcasting Server:\n%s\n' "${candidates[0]}" >&2
+
+    if [ "$YES" -eq 1 ]; then
+      printf '%s' "${candidates[0]}"
+      return
+    fi
+
+    printf 'Use this server? [Y/n] ' >&2
+    read -r answer
+    case "$answer" in
+      n|N|no|NO)
+        manual_server_url_prompt "${candidates[0]}"
+        ;;
+      *)
+        printf '%s' "${candidates[0]}"
+        ;;
+    esac
+    return
+  fi
+
+  if [ "$YES" -eq 1 ]; then
+    fatal "Multiple Narrowcasting Servers were discovered. Re-run with --server-url http://SERVER-IP:3000."
+  fi
+
+  printf 'Multiple Narrowcasting Servers found:\n' >&2
+  local index=1
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    printf '%s) %s\n' "$index" "$candidate" >&2
+    index=$((index + 1))
+  done
+  printf 'm) Enter manually\n' >&2
+
+  while true; do
+    printf 'Choose server [1-%s/m]: ' "$count" >&2
+    read -r answer
+
+    if [ "$answer" = "m" ] || [ "$answer" = "M" ]; then
+      manual_server_url_prompt "${candidates[0]}"
+      return
+    fi
+
+    if printf '%s' "$answer" | grep -Eq '^[0-9]+$' && [ "$answer" -ge 1 ] && [ "$answer" -le "$count" ]; then
+      printf '%s' "${candidates[$((answer - 1))]}"
+      return
+    fi
+
+    printf 'Invalid selection.\n' >&2
+  done
+}
+
+prompt_server_url() {
+  if [ -n "${SERVER_URL:-}" ]; then
+    printf 'INFO Using server URL from --server-url: %s\n' "$SERVER_URL" >&2
+    printf '%s' "$SERVER_URL"
+    return
+  fi
+
+  local discovered
+  discovered="$(discover_narrowcasting_servers)"
+
+  local -a candidates=()
+  local candidate
+  while IFS= read -r candidate; do
+    [ -n "$candidate" ] && candidates+=("$candidate")
+  done <<< "$discovered"
+
+  select_discovered_server_url "${candidates[@]}"
+}
+
+read_existing_agent_server_url() {
+  local file="$CONFIG_DIR/agent.env"
+
+  if [ ! -f "$file" ]; then
+    return 0
+  fi
+
+  if [ -r "$file" ]; then
+    awk -F= '/^SERVER_URL=/{sub(/^SERVER_URL=/, ""); print; exit}' "$file"
+    return 0
+  fi
+
+  if command -v sudo >/dev/null 2>&1; then
+    sudo awk -F= '/^SERVER_URL=/{sub(/^SERVER_URL=/, ""); print; exit}' "$file" 2>/dev/null || true
+  fi
+}
+
+prompt_repair_server_url() {
+  if [ -n "${SERVER_URL:-}" ]; then
+    printf 'INFO Using server URL from --server-url: %s\n' "$SERVER_URL" >&2
+    printf '%s' "$SERVER_URL"
+    return
+  fi
+
+  local existing_url
+  existing_url="$(read_existing_agent_server_url)"
+
+  if [ -n "$existing_url" ]; then
+    if is_narrowcasting_server "$existing_url"; then
+      printf 'Existing configured server found:\n%s\n' "$existing_url" >&2
+
+      if [ "$YES" -eq 1 ]; then
+        printf '%s' "$existing_url"
+        return
+      fi
+
+      local answer
+      printf 'Keep this server? [Y/n] ' >&2
+      read -r answer
+      case "$answer" in
+        n|N|no|NO)
+          ;;
+        *)
+          printf '%s' "$existing_url"
+          return
+          ;;
+      esac
+    else
+      printf 'WARNING Existing configured server is not reachable or is not a Narrowcasting Server: %s\n' "$existing_url" >&2
+    fi
+  else
+    printf 'INFO No existing agent SERVER_URL configuration found.\n' >&2
+  fi
+
+  local discovered
+  discovered="$(discover_narrowcasting_servers)"
+
+  local -a candidates=()
+  local candidate
+  while IFS= read -r candidate; do
+    [ -n "$candidate" ] && candidates+=("$candidate")
+  done <<< "$discovered"
+
+  select_discovered_server_url "${candidates[@]}"
 }
 
 prompt_start_after_install() {
@@ -317,7 +557,7 @@ repair_player() {
   log_info "Repair re-runs the authoritative player installer without removing identity, cache, or media."
 
   local server_url
-  server_url="$(prompt_server_url)"
+  server_url="$(prompt_repair_server_url)"
 
   local args=(--yes --server-url "$server_url" --start)
   [ "$DRY_RUN" -eq 1 ] && args+=(--dry-run)

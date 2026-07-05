@@ -35,12 +35,14 @@ Direct scripts remain available for advanced/manual installs and automation.
 Use `scripts/install.sh` for the normal appliance lifecycle:
 
 - Install Server: runs the authoritative server installer.
-- Install Player: asks for the server URL and runs the authoritative player installer.
+- Install Player: attempts to discover a Narrowcasting Server on the local network, allows manual override, and runs the authoritative player installer.
 - Update Installation: pulls and rebuilds the selected appliance components, then restarts the relevant services.
 - Repair Installation: re-runs the appropriate authoritative installer to restore dependencies, builds, directories, services, kiosk configuration, Browser Renderer configuration, watchdog installation and autostart without removing user data.
 - Uninstall: removes selected appliance components using the safety rules below.
 
 Repair is intended for broken or incomplete installations. It must not remove media, campaigns, playlists, programs, assignments, configuration, screen registrations, schedule cache, player identity or browser cache.
+
+When repairing a Player appliance, the Appliance Manager first reads the existing `SERVER_URL` from `/etc/narrowcasting/agent.env` when available. If that configured server is reachable and validates as a Narrowcasting Server, the operator can keep it. If it is missing or unreachable, the manager runs the same local network discovery used by Player install, then falls back to manual entry when needed. In non-interactive mode, `--server-url` takes priority; otherwise a reachable existing server or exactly one discovered server is required.
 
 ## Server Install
 
@@ -117,7 +119,30 @@ cd /opt/narrowcasting
 ./scripts/install.sh
 ```
 
-The interactive installer asks for the server URL and whether services should start after installation.
+The interactive Appliance Manager first attempts to discover a Narrowcasting Server on the same local IPv4 subnet. Discovery checks port `3000` and validates the Narrowcasting API/status response so arbitrary port `3000` services are not accepted.
+
+If one server is found, the installer asks whether to use it. If multiple servers are found, it shows a numbered list. If none are found, it falls back to manual Server URL entry. Manual entry remains supported at all times.
+
+Discovery requires:
+
+- the server to be reachable from the player appliance;
+- port `3000` open on the server;
+- `curl` available on the player appliance.
+
+The interactive installer then asks whether services should start after installation.
+
+Recommended interactive player install:
+
+```bash
+cd /opt/narrowcasting
+./scripts/install.sh
+```
+
+Manual player install through the Appliance Manager:
+
+```bash
+./scripts/install.sh --server-url http://SERVER-IP:3000
+```
 
 Advanced/manual player install:
 
@@ -128,10 +153,16 @@ Advanced/manual player install:
 For unattended installs, combine `--yes` with an explicit server URL:
 
 ```bash
-./scripts/install-player.sh --yes --server-url http://SERVER-IP:3000 --start
+./scripts/install.sh --yes --server-url http://SERVER-IP:3000
 ```
 
-If `--server-url` is omitted, the installer prompts for the server URL in interactive mode. In `--yes` mode it falls back to `http://localhost:3000` with a warning, which is usually only correct for combined server/player appliances.
+In non-interactive `--yes` mode, the Appliance Manager uses `--server-url` when supplied. If no server URL is supplied, it only proceeds automatically when exactly one verified Narrowcasting Server is discovered. If none or multiple servers are found, it stops with a clear message asking for `--server-url`.
+
+The direct player installer remains available for advanced/manual installs:
+
+```bash
+./scripts/install-player.sh --yes --server-url http://SERVER-IP:3000 --start
+```
 
 If `/etc/narrowcasting/agent.env` already exists, the installer preserves it and prints the currently configured `SERVER_URL`. To change the server URL later, edit the file:
 
