@@ -13,7 +13,11 @@ server/data/programs.json
 server/data/scheduler.json
 server/data/themes.json
 server/data/agent-status.json
+server/data/runtime-watchdog-status.json
 player/public/data/schedule.json
+player/public/data/agent-status.json
+player/public/data/player-registration.json
+player/public/data/runtime-watchdog-status.json
 player/public/media/*
 !player/public/media/.gitkeep
 agent/data/
