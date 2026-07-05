@@ -9,7 +9,7 @@ scripts/install.sh
 scripts/update-production.sh
 ```
 
-`scripts/install.sh` is the recommended interactive entry point for operators. Choose `Update existing installation`, then select Server, Player, or Both.
+`scripts/install.sh` is the recommended interactive Appliance Manager for operators. Choose `Update Installation`, then select Server, Player, or Both. The same menu also exposes repair and uninstall actions; see [INSTALLATION.md](INSTALLATION.md) for the full lifecycle behavior and safety rules.
 
 Example:
 

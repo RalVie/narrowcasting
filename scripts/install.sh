@@ -15,7 +15,7 @@ usage() {
   cat <<'USAGE'
 Usage: scripts/install.sh [options]
 
-Interactive entry point for Narrowcasting appliance installation.
+Interactive entry point for Narrowcasting appliance installation and lifecycle management.
 
 Options:
   --yes, -y                Use defaults for confirmations where possible.
@@ -26,6 +26,7 @@ Options:
 For direct/manual installs, use:
   scripts/install-server.sh
   scripts/install-player.sh --server-url http://SERVER-IP:3000 --start
+  scripts/update-production.sh --start
 USAGE
 }
 
@@ -112,6 +113,23 @@ run_existing_installer() {
   ensure_executable "$ROOT_DIR/scripts/$installer"
   log_info "Running scripts/$installer $*"
   run_cmd "$ROOT_DIR/scripts/$installer" "$@"
+}
+
+explicit_confirm() {
+  local prompt="$1"
+  local answer
+
+  printf '%s [y/N] ' "$prompt" >&2
+  read -r answer
+
+  case "$answer" in
+    y|Y|yes|YES)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 install_server_appliance() {
@@ -283,16 +301,289 @@ MENU
   confirm_reboot_if_requested
 }
 
+repair_server() {
+  log_step "Repairing server appliance"
+  log_info "Repair re-runs the authoritative server installer without removing user data."
+
+  local args=(--yes --start)
+  [ "$DRY_RUN" -eq 1 ] && args+=(--dry-run)
+  [ "$SKIP_SYSTEM_PACKAGES" -eq 1 ] && args+=(--skip-system-packages)
+
+  run_existing_installer install-server.sh "${args[@]}"
+}
+
+repair_player() {
+  log_step "Repairing player appliance"
+  log_info "Repair re-runs the authoritative player installer without removing identity, cache, or media."
+
+  local server_url
+  server_url="$(prompt_server_url)"
+
+  local args=(--yes --server-url "$server_url" --start)
+  [ "$DRY_RUN" -eq 1 ] && args+=(--dry-run)
+  [ "$SKIP_SYSTEM_PACKAGES" -eq 1 ] && args+=(--skip-system-packages)
+
+  run_existing_installer install-player.sh "${args[@]}"
+}
+
+repair_installation() {
+  log_step "Repair installation"
+  cat <<'MENU'
+What should be repaired?
+
+1) Server
+2) Player
+3) Both
+4) Cancel
+MENU
+
+  local repair_choice
+  repair_choice="$(prompt_choice "Choose option [1-4]: ")"
+
+  case "$repair_choice" in
+    1|2|3)
+      require_linux
+      require_systemd
+      chown_repo_to_current_user_if_needed
+      install_node_runtime_if_needed
+      require_node_runtime
+      ;;
+  esac
+
+  case "$repair_choice" in
+    1)
+      repair_server
+      ;;
+    2)
+      repair_player
+      ;;
+    3)
+      repair_server
+      repair_player
+      ;;
+    4)
+      log_info "Repair cancelled."
+      return
+      ;;
+    *)
+      fatal "Unknown repair option: $repair_choice"
+      ;;
+  esac
+
+  log_success "Repair completed."
+}
+
+remove_systemd_service_if_present() {
+  local service_name="$1"
+  local service_path="/etc/systemd/system/$service_name.service"
+
+  if systemctl cat "$service_name.service" >/dev/null 2>&1; then
+    log_info "Stopping and disabling $service_name.service"
+    sudo_cmd systemctl stop "$service_name.service" || true
+    sudo_cmd systemctl disable "$service_name.service" || true
+  fi
+
+  if [ -f "$service_path" ]; then
+    log_info "Removing $service_path"
+    sudo_cmd rm -f "$service_path"
+  fi
+}
+
+remove_path_if_exists() {
+  local path="$1"
+  local label="$2"
+
+  if [ -z "$path" ] || [ "$path" = "/" ]; then
+    fatal "Refusing to remove unsafe path for $label: $path"
+  fi
+
+  if [ ! -e "$path" ]; then
+    log_info "No $label found at $path"
+    return
+  fi
+
+  log_info "Removing $label at $path"
+  sudo_cmd rm -rf "$path"
+}
+
+soft_uninstall_server() {
+  log_step "Soft uninstall server components"
+  remove_systemd_service_if_present narrowcasting-server
+  remove_path_if_exists "$ROOT_DIR/server/node_modules" "server node_modules"
+  remove_path_if_exists "$ROOT_DIR/server/dist" "server production build"
+  remove_path_if_exists "$ROOT_DIR/dashboard/node_modules" "dashboard node_modules"
+  remove_path_if_exists "$ROOT_DIR/dashboard/dist" "dashboard production build"
+}
+
+soft_uninstall_player() {
+  log_step "Soft uninstall player components"
+  remove_systemd_service_if_present narrowcasting-agent
+  remove_systemd_service_if_present narrowcasting-player
+  remove_systemd_service_if_present narrowcasting-kiosk
+  remove_path_if_exists "/etc/xdg/autostart/narrowcasting-kiosk.desktop" "kiosk desktop autostart"
+  remove_path_if_exists "$ROOT_DIR/agent/node_modules" "agent node_modules"
+  remove_path_if_exists "$ROOT_DIR/agent/dist" "agent production build"
+  remove_path_if_exists "$ROOT_DIR/player/node_modules" "player node_modules"
+  remove_path_if_exists "$ROOT_DIR/player/dist" "player production build"
+  remove_path_if_exists "$ROOT_DIR/player/.vite" "player temporary cache"
+}
+
+full_uninstall_server_data() {
+  log_step "Removing server application data"
+  remove_path_if_exists "$ROOT_DIR/server/data" "server data"
+  remove_path_if_exists "$ROOT_DIR/server/public/media" "server media"
+  remove_path_if_exists "$ROOT_DIR/logs/server" "server logs"
+}
+
+full_uninstall_player_data() {
+  log_step "Removing player application data"
+  remove_path_if_exists "$ROOT_DIR/player/public/data" "player schedule/cache data"
+  remove_path_if_exists "$ROOT_DIR/player/public/media" "player media cache"
+  remove_path_if_exists "$ROOT_DIR/player/chromium-kiosk-profile" "Chromium kiosk profile"
+  remove_path_if_exists "$ROOT_DIR/logs/player" "player logs"
+  remove_path_if_exists "$ROOT_DIR/logs/agent" "agent logs"
+  remove_path_if_exists "$ROOT_DIR/logs/kiosk" "kiosk logs"
+}
+
+confirm_full_uninstall() {
+  local answer
+
+  printf 'Remove all application data as well? Type YES to continue: ' >&2
+  read -r answer
+
+  if [ "$answer" != "YES" ]; then
+    return 1
+  fi
+
+  printf 'Type REMOVE to confirm full uninstall: ' >&2
+  read -r answer
+  [ "$answer" = "REMOVE" ]
+}
+
+maybe_remove_configuration() {
+  if explicit_confirm "Remove /etc/narrowcasting configuration?"; then
+    remove_path_if_exists "$CONFIG_DIR" "Narrowcasting configuration"
+  else
+    log_info "Configuration preserved at $CONFIG_DIR"
+  fi
+}
+
+maybe_remove_repository() {
+  if explicit_confirm "Remove the repository directory $ROOT_DIR?"; then
+    log_warning "Removing repository directory by explicit operator request."
+    sudo_cmd rm -rf "$ROOT_DIR"
+  else
+    log_info "Repository preserved at $ROOT_DIR"
+  fi
+}
+
+uninstall_selection() {
+  local target="$1"
+  local full=0
+
+  case "$target" in
+    player)
+      explicit_confirm "Soft uninstall Player components?" || {
+        log_info "Uninstall cancelled."
+        return
+      }
+      soft_uninstall_player
+      if confirm_full_uninstall; then
+        full=1
+        full_uninstall_player_data
+      fi
+      ;;
+    server)
+      explicit_confirm "Soft uninstall Server components?" || {
+        log_info "Uninstall cancelled."
+        return
+      }
+      soft_uninstall_server
+      if confirm_full_uninstall; then
+        full=1
+        full_uninstall_server_data
+      fi
+      ;;
+    everything)
+      explicit_confirm "Soft uninstall Server and Player components?" || {
+        log_info "Uninstall cancelled."
+        return
+      }
+      soft_uninstall_player
+      soft_uninstall_server
+      if confirm_full_uninstall; then
+        full=1
+        full_uninstall_player_data
+        full_uninstall_server_data
+      fi
+      ;;
+    *)
+      fatal "Unknown uninstall target: $target"
+      ;;
+  esac
+
+  if [ "$full" -eq 1 ]; then
+    maybe_remove_configuration
+    maybe_remove_repository
+  else
+    log_info "Soft uninstall completed. Media, schedules, campaigns, playlists, programs, assignments, configuration, and runtime data were preserved."
+  fi
+
+  reload_systemd
+  log_success "Uninstall completed."
+}
+
+uninstall_installation() {
+  log_step "Uninstall"
+  log_warning "Uninstall is destructive. It always requires explicit confirmation."
+  cat <<'MENU'
+What should be uninstalled?
+
+1) Player only
+2) Server only
+3) Everything
+4) Cancel
+MENU
+
+  local uninstall_choice
+  uninstall_choice="$(prompt_choice "Choose option [1-4]: ")"
+
+  case "$uninstall_choice" in
+    1|2|3)
+      require_linux
+      require_systemd
+      ;;
+  esac
+
+  case "$uninstall_choice" in
+    1)
+      uninstall_selection player
+      ;;
+    2)
+      uninstall_selection server
+      ;;
+    3)
+      uninstall_selection everything
+      ;;
+    4)
+      log_info "Uninstall cancelled."
+      ;;
+    *)
+      fatal "Unknown uninstall option: $uninstall_choice"
+      ;;
+  esac
+}
+
 show_menu() {
   cat <<'MENU'
-Narrowcasting Appliance Installer
+Narrowcasting Appliance Manager
 
-Choose installation type:
-
-1) Server appliance
-2) Player appliance
-3) Update existing installation
-4) Exit
+1) Install Server
+2) Install Player
+3) Update Installation
+4) Repair Installation
+5) Uninstall
+6) Exit
 MENU
 }
 
@@ -302,7 +593,7 @@ main() {
 
   show_menu
   local choice
-  choice="$(prompt_choice "Choose option [1-4]: ")"
+  choice="$(prompt_choice "Choose option [1-6]: ")"
 
   case "$choice" in
     1)
@@ -315,7 +606,13 @@ main() {
       update_installation
       ;;
     4)
-      log_info "Installer exited."
+      repair_installation
+      ;;
+    5)
+      uninstall_installation
+      ;;
+    6)
+      log_info "Appliance Manager exited."
       ;;
     *)
       fatal "Unknown option: $choice"

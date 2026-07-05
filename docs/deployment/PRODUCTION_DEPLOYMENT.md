@@ -4,7 +4,7 @@ This guide turns a Raspberry Pi into a self-starting Narrowcasting appliance.
 
 Playback remains local. The player reads its cached schedule and media from the Pi, so cached content keeps playing when the server, network, or internet is unavailable.
 
-For current production installs, prefer the scripted installers in [INSTALLATION.md](INSTALLATION.md). They prepare executable runtime scripts, install Node.js/npm when needed, and configure kiosk startup safely for Raspberry Pi OS Desktop.
+For current production installs, repairs, updates and uninstalls, prefer the Appliance Manager described in [INSTALLATION.md](INSTALLATION.md). It prepares executable runtime scripts, installs Node.js/npm when needed, configures kiosk startup safely for Raspberry Pi OS Desktop, and keeps lifecycle actions behind explicit operator choices.
 
 ## Assumptions
 

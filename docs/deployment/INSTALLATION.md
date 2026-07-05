@@ -10,12 +10,14 @@ scripts/install-server.sh
 scripts/install-player.sh
 ```
 
-`scripts/install.sh` is the recommended interactive entry point. It shows a menu for:
+`scripts/install.sh` is the recommended interactive appliance manager. It shows a menu for:
 
-1. Server appliance
-2. Player appliance
-3. Update existing installation
-4. Exit
+1. Install Server
+2. Install Player
+3. Update Installation
+4. Repair Installation
+5. Uninstall
+6. Exit
 
 The unified installer does not replace the existing installers. It guides the operator and then calls the existing authoritative scripts.
 
@@ -27,6 +29,18 @@ cd /opt/narrowcasting
 ```
 
 Direct scripts remain available for advanced/manual installs and automation.
+
+## Appliance Lifecycle
+
+Use `scripts/install.sh` for the normal appliance lifecycle:
+
+- Install Server: runs the authoritative server installer.
+- Install Player: asks for the server URL and runs the authoritative player installer.
+- Update Installation: pulls and rebuilds the selected appliance components, then restarts the relevant services.
+- Repair Installation: re-runs the appropriate authoritative installer to restore dependencies, builds, directories, services, kiosk configuration, Browser Renderer configuration, watchdog installation and autostart without removing user data.
+- Uninstall: removes selected appliance components using the safety rules below.
+
+Repair is intended for broken or incomplete installations. It must not remove media, campaigns, playlists, programs, assignments, configuration, screen registrations, schedule cache, player identity or browser cache.
 
 ## Server Install
 
@@ -163,3 +177,24 @@ Each install script should end with clear checks:
 - reachable player URL;
 - data directory existence;
 - systemd enablement state.
+
+## Uninstall
+
+The Appliance Manager supports:
+
+1. Player only
+2. Server only
+3. Everything
+4. Cancel
+
+Uninstall always asks for confirmation before changing the system.
+
+Soft uninstall removes installed services, kiosk/autostart entries, Node dependencies, production builds and temporary build cache. It leaves media, campaigns, programs, playlists, assignments, configuration and runtime data intact.
+
+Full uninstall is intentionally harder to trigger. The operator must first choose to remove application data, then type:
+
+```text
+REMOVE
+```
+
+Full uninstall may also remove media, schedules, configuration, cache, logs, browser profile and runtime data, depending on the selected target and follow-up confirmations. Repository removal is a separate explicit confirmation.
