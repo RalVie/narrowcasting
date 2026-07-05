@@ -17,6 +17,20 @@ const playerVersion = "phase-1";
 const heartbeatIntervalMs = 10_000;
 const heartbeatFailureBackoffMs = 60_000;
 
+declare global {
+  interface Window {
+    __narrowcastingPlayerHealth?: {
+      activeIndex: number;
+      assignmentStatus: string | null;
+      itemCount: number;
+      lastRenderAt: number;
+      lastRenderIso: string;
+      scheduleVersion: number | null;
+      state: string;
+    };
+  }
+}
+
 interface RegistrationState {
   playerId: string;
   screenId: string | null;
@@ -926,6 +940,37 @@ export function PlayerApp() {
   const heartbeatFailureCountRef = useRef(0);
   const heartbeatBackoffUntilRef = useRef(0);
   const lastWebUrlDiagnosticRef = useRef<string | null>(null);
+  const waitingForRegistration =
+    registration.status === "pending" ||
+    ((registration.status === "discovering" || registration.status === "error") && registration.serverUrl !== null);
+
+  useEffect(() => {
+    const activeItemType = activeItem ? activeItem.type : null;
+    const assignmentStatus = schedule?.assignmentStatus ?? null;
+    const itemCount = schedule?.items.length ?? 0;
+    const state =
+      assignmentStatus === "decommissioned"
+        ? "decommissioned"
+        : waitingForRegistration
+          ? "registration"
+          : activeItem
+            ? `playing:${activeItemType}`
+            : itemCount === 0
+              ? assignmentStatus === "unassigned"
+                ? "unassigned"
+                : "empty"
+              : "waiting";
+
+    window.__narrowcastingPlayerHealth = {
+      activeIndex,
+      assignmentStatus,
+      itemCount,
+      lastRenderAt: Date.now(),
+      lastRenderIso: new Date().toISOString(),
+      scheduleVersion: schedule?.version ?? null,
+      state
+    };
+  });
 
   const resetInvalidDeviceIdentity = useCallback(() => {
     removeLocalStorage(screenIdKey);
@@ -2196,9 +2241,6 @@ export function PlayerApp() {
     };
   }, [activeItem, advanceToNextItem, emitPlaybackDebug, playbackSessionKey, schedule]);
 
-  const waitingForRegistration =
-    registration.status === "pending" ||
-    ((registration.status === "discovering" || registration.status === "error") && registration.serverUrl !== null);
   const isDecommissioned = schedule?.assignmentStatus === "decommissioned";
 
   useEffect(() => {

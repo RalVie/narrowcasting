@@ -31,13 +31,38 @@ interface CdpHealth {
   error?: string;
 }
 
+interface PlayerFunctionalHealth {
+  blankSuspected: boolean;
+  bodyChildCount: number;
+  bodyTextLength: number;
+  documentReadyState: string | null;
+  errorText: string | null;
+  hasMediaLikeElement: boolean;
+  playerHealth: {
+    activeIndex?: number;
+    assignmentStatus?: string | null;
+    itemCount?: number;
+    lastRenderAt?: number;
+    lastRenderIso?: string;
+    scheduleVersion?: number | null;
+    state?: string;
+  } | null;
+  playerHealthAgeMs: number | null;
+  rootChildCount: number;
+  rootPresent: boolean;
+  url: string | null;
+}
+
 const recoveryState = {
   chromiumRestartTimes: [] as number[],
+  consecutiveFunctionalFailures: 0,
   recoveryCount: 0,
   failedRecoveryCount: 0,
   lastRecovery: null as WatchdogStatus["lastRecovery"],
   lastSuccessfulHealthCheck: null as string | null
 };
+
+const functionalFailureThreshold = 2;
 
 function timestamp() {
   return new Date().toISOString();
@@ -219,6 +244,117 @@ async function navigateTargetToPlayer(config: AgentConfig, target: ChromiumTarge
   }
 }
 
+function isCdpEvaluateResult(value: unknown): value is { result?: { value?: unknown } } {
+  return Boolean(value && typeof value === "object" && "result" in value);
+}
+
+function isPlayerFunctionalHealth(value: unknown): value is PlayerFunctionalHealth {
+  return Boolean(value && typeof value === "object");
+}
+
+async function getFunctionalHealth(config: AgentConfig, target: ChromiumTarget | null) {
+  if (!target?.webSocketDebuggerUrl) {
+    return null;
+  }
+
+  const connection = new CdpConnection({
+    host: config.chromiumCdpHost,
+    port: config.chromiumCdpPort,
+    timeoutMs: config.browserRendererTimeoutMs
+  });
+
+  try {
+    await connection.connect(target.webSocketDebuggerUrl);
+    const result = await connection.send("Runtime.evaluate", {
+      awaitPromise: false,
+      expression: `(() => {
+        const root = document.getElementById("root");
+        const body = document.body;
+        const playerHealth = window.__narrowcastingPlayerHealth || null;
+        const now = Date.now();
+        const bodyTextLength = (body?.innerText || body?.textContent || "").trim().length;
+        const bodyChildCount = body?.children?.length || 0;
+        const rootChildCount = root?.children?.length || 0;
+        const hasMediaLikeElement = Boolean(document.querySelector("video,img,iframe,canvas,article,.playback-surface,.web-url-frame,.rss-card"));
+        const errorText = document.querySelector("vite-error-overlay, react-error-overlay, [data-runtime-error]")?.textContent || null;
+        const readyState = document.readyState || null;
+        const playerHealthAgeMs = playerHealth?.lastRenderAt ? now - playerHealth.lastRenderAt : null;
+        const blankSuspected =
+          readyState === "complete" &&
+          (
+            !body ||
+            bodyChildCount === 0 ||
+            !root ||
+            rootChildCount === 0 ||
+            (!hasMediaLikeElement && bodyTextLength === 0)
+          );
+
+        return {
+          blankSuspected,
+          bodyChildCount,
+          bodyTextLength,
+          documentReadyState: readyState,
+          errorText,
+          hasMediaLikeElement,
+          playerHealth,
+          playerHealthAgeMs,
+          rootChildCount,
+          rootPresent: Boolean(root),
+          url: window.location.href
+        };
+      })()`,
+      returnByValue: true
+    });
+
+    if (!isCdpEvaluateResult(result)) {
+      return null;
+    }
+
+    const value = result.result?.value;
+    return isPlayerFunctionalHealth(value) ? value : null;
+  } catch (error) {
+    console.warn("runtime watchdog functional health check failed", {
+      error: error instanceof Error ? error.message : String(error),
+      targetUrl: target.url ?? null
+    });
+    return null;
+  } finally {
+    connection.close();
+  }
+}
+
+function functionalFailureReason(health: PlayerFunctionalHealth | null, playerExpected: boolean) {
+  if (!health) {
+    return "Player functional health could not be read through CDP.";
+  }
+
+  if (health.errorText) {
+    return "Player page reports a runtime error overlay.";
+  }
+
+  if (health.blankSuspected) {
+    return "Chromium appears to be rendering a blank Player page.";
+  }
+
+  if (playerExpected && !health.rootPresent) {
+    return "Player root element is missing.";
+  }
+
+  if (playerExpected && health.rootChildCount === 0) {
+    return "Player root element is empty.";
+  }
+
+  if (playerExpected && !health.playerHealth) {
+    return "Player runtime health marker is missing.";
+  }
+
+  if (playerExpected && typeof health.playerHealthAgeMs === "number" && health.playerHealthAgeMs > 120_000) {
+    return "Player runtime health marker is stale.";
+  }
+
+  return null;
+}
+
 async function restartService(serviceName: string, label: string) {
   if (!isLinux()) {
     console.warn("runtime watchdog service restart skipped outside Linux", { label, serviceName });
@@ -381,11 +517,52 @@ async function healthCheck(config: AgentConfig) {
   }
 
   if (browserRendererActive) {
+    const functionalHealth = await getFunctionalHealth(config, cdp.target);
+    const reason = functionalFailureReason(functionalHealth, false);
+
+    console.log("runtime watchdog browser renderer check", {
+      at: now,
+      blankSuspected: functionalHealth?.blankSuspected ?? null,
+      browserRendererActive,
+      currentUrl: cdp.target?.url ?? null,
+      documentReadyState: functionalHealth?.documentReadyState ?? null,
+      playerHealthAgeMs: functionalHealth?.playerHealthAgeMs ?? null,
+      rootPresent: functionalHealth?.rootPresent ?? null
+    });
+
+    if (reason) {
+      recoveryState.consecutiveFunctionalFailures += 1;
+      console.warn("runtime watchdog detected Browser Renderer functional health issue", {
+        at: now,
+        consecutiveFailures: recoveryState.consecutiveFunctionalFailures,
+        currentUrl: cdp.target?.url ?? null,
+        documentReadyState: functionalHealth?.documentReadyState ?? null,
+        reason
+      });
+
+      if (recoveryState.consecutiveFunctionalFailures >= functionalFailureThreshold) {
+        await recoverRuntime(config, reason, cdp);
+        return;
+      }
+
+      await writeStatus(config, {
+        lastCheckAt: now,
+        lastRecovery: recoveryState.lastRecovery,
+        lastSuccessfulHealthCheck: recoveryState.lastSuccessfulHealthCheck,
+        message: reason,
+        recoveryCount: recoveryState.recoveryCount,
+        state: "warning"
+      });
+      return;
+    }
+
+    recoveryState.consecutiveFunctionalFailures = 0;
     recoveryState.lastSuccessfulHealthCheck = now;
     console.log("runtime watchdog health OK", {
       at: now,
       browserRendererActive,
-      currentUrl: cdp.target?.url ?? null
+      currentUrl: cdp.target?.url ?? null,
+      documentReadyState: functionalHealth?.documentReadyState ?? null
     });
     await writeStatus(config, {
       lastCheckAt: now,
@@ -419,17 +596,65 @@ async function healthCheck(config: AgentConfig) {
     return;
   }
 
+  const functionalHealth = await getFunctionalHealth(config, cdp.target);
+  const functionalReason = functionalFailureReason(functionalHealth, true);
+
+  console.log("runtime watchdog Player functional check", {
+    at: now,
+    activeUrl: cdp.target?.url ?? null,
+    blankSuspected: functionalHealth?.blankSuspected ?? null,
+    bodyChildCount: functionalHealth?.bodyChildCount ?? null,
+    bodyTextLength: functionalHealth?.bodyTextLength ?? null,
+    documentReadyState: functionalHealth?.documentReadyState ?? null,
+    playerHealthAgeMs: functionalHealth?.playerHealthAgeMs ?? null,
+    playerState: functionalHealth?.playerHealth?.state ?? null,
+    rootChildCount: functionalHealth?.rootChildCount ?? null,
+    rootPresent: functionalHealth?.rootPresent ?? null
+  });
+
+  if (functionalReason) {
+    recoveryState.consecutiveFunctionalFailures += 1;
+    console.warn("runtime watchdog detected Player functional health issue", {
+      at: now,
+      activeUrl: cdp.target?.url ?? null,
+      consecutiveFailures: recoveryState.consecutiveFunctionalFailures,
+      documentReadyState: functionalHealth?.documentReadyState ?? null,
+      playerHealthAgeMs: functionalHealth?.playerHealthAgeMs ?? null,
+      reason: functionalReason,
+      rootPresent: functionalHealth?.rootPresent ?? null
+    });
+
+    if (recoveryState.consecutiveFunctionalFailures >= functionalFailureThreshold) {
+      await recoverRuntime(config, functionalReason, cdp);
+      return;
+    }
+
+    await writeStatus(config, {
+      lastCheckAt: now,
+      lastRecovery: recoveryState.lastRecovery,
+      lastSuccessfulHealthCheck: recoveryState.lastSuccessfulHealthCheck,
+      message: functionalReason,
+      recoveryCount: recoveryState.recoveryCount,
+      state: "warning"
+    });
+    return;
+  }
+
+  recoveryState.consecutiveFunctionalFailures = 0;
   recoveryState.lastSuccessfulHealthCheck = now;
   recoveryState.failedRecoveryCount = 0;
   console.log("runtime watchdog health OK", {
     at: now,
-    currentUrl: cdp.target?.url ?? null
+    currentUrl: cdp.target?.url ?? null,
+    documentReadyState: functionalHealth?.documentReadyState ?? null,
+    playerHealthAgeMs: functionalHealth?.playerHealthAgeMs ?? null,
+    playerState: functionalHealth?.playerHealth?.state ?? null
   });
   await writeStatus(config, {
     lastCheckAt: now,
     lastRecovery: recoveryState.lastRecovery,
     lastSuccessfulHealthCheck: now,
-    message: "Chromium, CDP, and Player URL are healthy.",
+    message: "Chromium, CDP, Player URL, and Player runtime are healthy.",
     recoveryCount: recoveryState.recoveryCount,
     state: "healthy"
   });
