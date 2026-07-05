@@ -646,6 +646,7 @@ function InstrumentedVideo({
 }: InstrumentedVideoProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const clipTimerRef = useRef<number | null>(null);
+  const readinessTimerRef = useRef<number | null>(null);
   const watchdogTimerRef = useRef<number | null>(null);
 
   function clearVideoClipTimer() {
@@ -662,8 +663,16 @@ function InstrumentedVideo({
     }
   }
 
+  function clearVideoReadinessTimer() {
+    if (readinessTimerRef.current !== null) {
+      window.clearTimeout(readinessTimerRef.current);
+      readinessTimerRef.current = null;
+    }
+  }
+
   function clearVideoTimers() {
     clearVideoClipTimer();
+    clearVideoReadinessTimer();
     clearVideoWatchdog();
   }
 
@@ -791,6 +800,17 @@ function InstrumentedVideo({
       });
     }, 250);
 
+    readinessTimerRef.current = window.setTimeout(() => {
+      const video = videoRef.current;
+      emit("video readiness timeout", "video did not become playable within 12s", video, {
+        playSkippedReason: "readiness timeout"
+      });
+
+      if (!video || video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) {
+        onFailure(sessionKey, `Video did not become playable: ${item.file}`);
+      }
+    }, 12_000);
+
     const animationFrame = window.requestAnimationFrame(() => {
       emit("post-mount animation frame", "checking DOM state after paint", videoRef.current, {
         playSkippedReason: "waiting for canplay handler"
@@ -801,6 +821,16 @@ function InstrumentedVideo({
       clearVideoTimers();
       window.clearTimeout(snapshotTimer);
       window.cancelAnimationFrame(animationFrame);
+      const video = videoRef.current;
+      if (video) {
+        try {
+          video.pause();
+          video.removeAttribute("src");
+          video.load();
+        } catch {
+          // Best-effort cleanup; React removes the element next.
+        }
+      }
       emit("unmount", "component cleanup", videoRef.current);
     };
   }, [activeVisible, emit]);
@@ -858,6 +888,9 @@ function InstrumentedVideo({
           }, watchdogMs);
         }
       }}
+      onLoadedData={(event) => {
+        emit("loadeddata", undefined, event.currentTarget);
+      }}
       onPause={(event) => {
         emit("pause", undefined, event.currentTarget);
       }}
@@ -865,6 +898,7 @@ function InstrumentedVideo({
         emit("play event", undefined, event.currentTarget);
       }}
       onPlaying={(event) => {
+        clearVideoReadinessTimer();
         emit("playing", undefined, event.currentTarget);
 
         if (item.durationMode === "clip" && typeof item.duration === "number") {
@@ -876,6 +910,12 @@ function InstrumentedVideo({
             onAdvance(sessionKey, "video clip timer fired");
           }, clipDurationMs);
         }
+      }}
+      onStalled={(event) => {
+        emit("stalled", "video stalled", event.currentTarget);
+      }}
+      onWaiting={(event) => {
+        emit("waiting", "video waiting for data", event.currentTarget);
       }}
       playsInline
       preload="auto"
@@ -1008,6 +1048,19 @@ export function PlayerApp() {
       const nextCycleId = cycleId + 1;
       programCycleIdRef.current = nextCycleId;
       return nextCycleId;
+    });
+  }, []);
+
+  const beginNextPlaybackSession = useCallback((reason: string) => {
+    setPlaybackSessionKey((key) => {
+      const nextKey = key + 1;
+      playbackSessionKeyRef.current = nextKey;
+      console.info("playback session advanced", {
+        nextKey,
+        previousKey: key,
+        reason
+      });
+      return nextKey;
     });
   }, []);
 
@@ -1637,6 +1690,7 @@ export function PlayerApp() {
       });
       bumpProgramCycle();
       setPlaybackEpoch((epoch) => epoch + 1);
+      beginNextPlaybackSession(reason);
       return;
     }
 
@@ -1666,9 +1720,11 @@ export function PlayerApp() {
 
       return nextIndex;
     });
+    beginNextPlaybackSession(reason);
   }, [
     activeItem,
     appendPlaybackDebugEvent,
+    beginNextPlaybackSession,
     bumpProgramCycle,
     emitPlaybackDebug,
     playbackEpoch,
