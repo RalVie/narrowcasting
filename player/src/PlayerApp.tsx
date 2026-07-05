@@ -185,6 +185,25 @@ function getItemKey(
   return `${playbackSessionKey}-${schedule.version}-${schedule.updatedAt}-${activeIndex}-${playbackEpoch}-${item.id}-${file}`;
 }
 
+function getDebugStack() {
+  return new Error().stack?.split("\n").slice(2, 8).join("\n") ?? null;
+}
+
+function getScheduleItemDebugSummary(item: ScheduleItem | null) {
+  if (!item) {
+    return null;
+  }
+
+  return {
+    duration: typeof item.duration === "number" ? item.duration : null,
+    file: item.type === "image" || item.type === "video" ? item.file : null,
+    id: item.id,
+    title: "title" in item && typeof item.title === "string" ? item.title : null,
+    type: item.type,
+    url: item.type === "web_url" ? item.url : null
+  };
+}
+
 function getWebUrlRenderData(item: ScheduleItem | null) {
   if (!item || typeof item !== "object") {
     return null;
@@ -1078,6 +1097,7 @@ export function PlayerApp() {
   const programCycleIdRef = useRef(0);
   const failureTimerRef = useRef<number | null>(null);
   const activeItemRef = useRef<ScheduleItem | null>(null);
+  const activeIndexRef = useRef(0);
   const scheduleRef = useRef<Schedule | null>(null);
   const scheduleSignatureRef = useRef<string | null>(null);
   const lastScheduleSyncRef = useRef<string | null>(null);
@@ -1564,6 +1584,16 @@ export function PlayerApp() {
               newShortSignature: getShortSignature(nextSignature),
               itemCount: body.items.length
             });
+            sendPlayerDebugLog("playlist-index", "player document reload requested", {
+              activeIndex: activeIndexRef.current,
+              itemCount: body.items.length,
+              newSignatureShort: getShortSignature(nextSignature),
+              oldSignatureShort: getShortSignature(currentSignature),
+              reason: "schedule signature changed",
+              sessionKey: playbackSessionKeyRef.current,
+              source: "loadSchedule",
+              stack: getDebugStack()
+            }, "warn");
             reloadPlayerForSchedule(nextSignature, debugEnabled);
             return;
           }
@@ -1597,6 +1627,21 @@ export function PlayerApp() {
             }));
             clearFailureTimer();
             setSchedule(body);
+            sendPlayerDebugLog("playlist-index", "playlist index transition", {
+              fromItem: getScheduleItemDebugSummary(
+                scheduleRef.current?.items[activeIndexRef.current % Math.max(scheduleRef.current.items.length, 1)] ?? null
+              ),
+              itemCount: body.items.length,
+              newIndex: 0,
+              newSignatureShort: getShortSignature(nextSignature),
+              oldIndex: activeIndexRef.current,
+              oldSignatureShort: getShortSignature(currentSignature),
+              reason: "schedule signature applied",
+              sessionKey: playbackSessionKeyRef.current,
+              source: "loadSchedule",
+              stack: getDebugStack(),
+              toItem: getScheduleItemDebugSummary(body.items[0] ?? null)
+            });
             setActiveIndex(0);
             setProgramCycleId(0);
             programCycleIdRef.current = 0;
@@ -1674,6 +1719,10 @@ export function PlayerApp() {
   useEffect(() => {
     activeItemRef.current = activeItem;
   }, [activeItem]);
+
+  useEffect(() => {
+    activeIndexRef.current = activeIndex;
+  }, [activeIndex]);
 
   useEffect(() => {
     const webUrlItem = getWebUrlRenderData(activeItem);
@@ -1817,6 +1866,8 @@ export function PlayerApp() {
 
     setActiveIndex((index) => {
       const nextIndex = (index + 1) % schedule.items.length;
+      const fromItem = schedule.items[index % schedule.items.length] ?? null;
+      const toItem = schedule.items[nextIndex] ?? null;
 
       appendPlaybackDebugEvent({
         time: new Date().toLocaleTimeString(),
@@ -1833,6 +1884,18 @@ export function PlayerApp() {
         playbackSessionKeyRef: playbackSessionKeyRef.current,
         scheduledSessionKey: sessionKey,
         nextIndex
+      });
+      sendPlayerDebugLog("playlist-index", "playlist index transition", {
+        fromItem: getScheduleItemDebugSummary(fromItem),
+        itemCount: schedule.items.length,
+        newIndex: nextIndex,
+        oldIndex: index,
+        reason,
+        sessionKey,
+        source: "advanceToNextItem",
+        stack: getDebugStack(),
+        toItem: getScheduleItemDebugSummary(toItem),
+        wrappedToStart: nextIndex === 0
       });
 
       if (nextIndex === 0) {
@@ -1880,6 +1943,18 @@ export function PlayerApp() {
         console.info("browser session closed", {
           nextIndex: resume.nextIndex,
           sessionSignature: browserRun.sessionSignature
+        });
+        sendPlayerDebugLog("playlist-index", "playlist index transition", {
+          fromItem: getScheduleItemDebugSummary(schedule.items[activeIndexRef.current % schedule.items.length] ?? null),
+          itemCount: schedule.items.length,
+          newIndex: resume.nextIndex,
+          oldIndex: activeIndexRef.current,
+          reason: "browser renderer resume",
+          sessionKey: playbackSessionKeyRef.current,
+          source: "browserRendererResume",
+          stack: getDebugStack(),
+          toItem: getScheduleItemDebugSummary(schedule.items[resume.nextIndex % schedule.items.length] ?? null),
+          wrappedToStart: resume.nextIndex === 0
         });
         setActiveIndex(resume.nextIndex);
         if (resume.nextIndex === activeIndex) {
@@ -2039,6 +2114,23 @@ export function PlayerApp() {
         return;
       }
 
+      sendPlayerDebugLog("playlist-index", "media failure will advance", {
+        activeIndex: activeIndexRef.current,
+        fromItem: getScheduleItemDebugSummary(
+          schedule.items[activeIndexRef.current % schedule.items.length] ?? null
+        ),
+        itemCount: schedule.items.length,
+        message,
+        nextIndex: (activeIndexRef.current + 1) % schedule.items.length,
+        reason: "media failure",
+        sessionKey,
+        source: "handleActiveItemFailure",
+        stack: getDebugStack(),
+        toItem: getScheduleItemDebugSummary(
+          schedule.items[(activeIndexRef.current + 1) % schedule.items.length] ?? null
+        ),
+        wrappedToStart: (activeIndexRef.current + 1) % schedule.items.length === 0
+      }, "warn");
       emitPlaybackDebug("failure timer scheduled", {
         reason: "media failure",
         scheduledSessionKey: sessionKey,
