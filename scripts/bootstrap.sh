@@ -170,6 +170,7 @@ prepare_repository() {
 
 start_appliance_manager() {
   local installer="$TARGET_DIR/scripts/install.sh"
+  local -a installer_args=()
 
   [ -f "$installer" ] || fatal "Appliance Manager not found after checkout: $installer"
 
@@ -179,10 +180,15 @@ start_appliance_manager() {
   cd "$TARGET_DIR"
 
   if [ "$PASS_YES" -eq 1 ]; then
-    exec "$installer" --yes
+    installer_args+=(--yes)
   fi
 
-  exec "$installer"
+  if [ -r /dev/tty ]; then
+    exec "$installer" "${installer_args[@]}" < /dev/tty
+  fi
+
+  log_warning "/dev/tty is not available; continuing with current stdin."
+  exec "$installer" "${installer_args[@]}"
 }
 
 main() {
