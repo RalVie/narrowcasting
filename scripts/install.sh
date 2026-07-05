@@ -86,9 +86,30 @@ installer_summary_ip() {
   fi
 }
 
+service_or_config_detected() {
+  local service_name="$1"
+  local env_file="$2"
+
+  if command -v systemctl >/dev/null 2>&1 && systemctl cat "$service_name.service" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  [ -f "$CONFIG_DIR/$env_file" ]
+}
+
+local_server_detected() {
+  service_or_config_detected narrowcasting-server server.env
+}
+
+local_player_detected() {
+  service_or_config_detected narrowcasting-player player.env || service_or_config_detected narrowcasting-agent agent.env
+}
+
 show_environment_summary() {
   local ip_address
   ip_address="$(installer_summary_ip)"
+  local configured_server
+  configured_server="$(read_existing_agent_server_url 2>/dev/null || true)"
 
   cat <<SUMMARY
 ----------------------------------------------------
@@ -110,14 +131,27 @@ IP address:
 $ip_address
 SUMMARY
 
-  if [ "$ip_address" != "unknown" ]; then
+  if [ "$ip_address" != "unknown" ] && local_server_detected; then
     cat <<SUMMARY
 
-Server dashboard:
+Local Server dashboard:
 http://$ip_address:3000
+SUMMARY
+  fi
 
-Player URL:
+  if [ "$ip_address" != "unknown" ] && local_player_detected; then
+    cat <<SUMMARY
+
+Local Player URL:
 http://$ip_address:4174/player
+SUMMARY
+  fi
+
+  if [ -n "$configured_server" ]; then
+    cat <<SUMMARY
+
+Configured Server:
+$configured_server
 SUMMARY
   fi
 
