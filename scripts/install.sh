@@ -11,6 +11,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/systemd.sh
 . "$SCRIPT_DIR/lib/systemd.sh"
 
+TTY_WARNING_SHOWN=0
+
 usage() {
   cat <<'USAGE'
 Usage: scripts/install.sh [options]
@@ -162,11 +164,40 @@ SUMMARY
 
 prompt_choice() {
   local prompt="$1"
-  local answer
+  local answer=""
 
-  printf '%s' "$prompt" >&2
-  read -r answer
+  read_prompt answer "$prompt"
   printf '%s' "$answer"
+}
+
+read_prompt() {
+  local result_var="$1"
+  local prompt="${2:-}"
+  local answer=""
+
+  [ -n "$prompt" ] && printf '%s' "$prompt" >&2
+
+  if { exec 3</dev/tty; } 2>/dev/null; then
+    if IFS= read -r answer <&3; then
+      :
+    else
+      answer=""
+    fi
+    exec 3<&-
+  else
+    if [ "$TTY_WARNING_SHOWN" -eq 0 ]; then
+      printf 'WARNING /dev/tty is not available; interactive prompts will read from current stdin.\n' >&2
+      TTY_WARNING_SHOWN=1
+    fi
+
+    if IFS= read -r answer; then
+      :
+    else
+      answer=""
+    fi
+  fi
+
+  printf -v "$result_var" '%s' "$answer"
 }
 
 get_active_ipv4_address() {
@@ -261,8 +292,7 @@ manual_server_url_prompt() {
   local default_url="${1:-http://localhost:3000}"
   local answer
 
-  printf 'Enter Narrowcasting server URL for this player [%s]: ' "$default_url" >&2
-  read -r answer
+  read_prompt answer "Enter Narrowcasting server URL for this player [$default_url]: "
 
   if [ -n "$answer" ]; then
     printf '%s' "$answer"
@@ -294,8 +324,7 @@ select_discovered_server_url() {
       return
     fi
 
-    printf 'Use this server? [Y/n] ' >&2
-    read -r answer
+    read_prompt answer "Use this server? [Y/n] "
     case "$answer" in
       n|N|no|NO)
         manual_server_url_prompt "${candidates[0]}"
@@ -321,8 +350,7 @@ select_discovered_server_url() {
   printf 'm) Enter manually\n' >&2
 
   while true; do
-    printf 'Choose server [1-%s/m]: ' "$count" >&2
-    read -r answer
+    read_prompt answer "Choose server [1-$count/m]: "
 
     if [ "$answer" = "m" ] || [ "$answer" = "M" ]; then
       manual_server_url_prompt "${candidates[0]}"
@@ -394,8 +422,7 @@ prompt_repair_server_url() {
       fi
 
       local answer
-      printf 'Keep this server? [Y/n] ' >&2
-      read -r answer
+      read_prompt answer "Keep this server? [Y/n] "
       case "$answer" in
         n|N|no|NO)
           ;;
@@ -430,8 +457,7 @@ prompt_start_after_install() {
     return 0
   fi
 
-  printf 'Start services after install? [Y/n] ' >&2
-  read -r answer
+  read_prompt answer "Start services after install? [Y/n] "
 
   case "$answer" in
     n|N|no|NO)
@@ -456,8 +482,7 @@ explicit_confirm() {
   local prompt="$1"
   local answer
 
-  printf '%s [y/N] ' "$prompt" >&2
-  read -r answer
+  read_prompt answer "$prompt [y/N] "
 
   case "$answer" in
     y|Y|yes|YES)
@@ -576,8 +601,7 @@ update_player() {
 confirm_reboot_if_requested() {
   local answer
 
-  printf 'Reboot this appliance now? [y/N] ' >&2
-  read -r answer
+  read_prompt answer "Reboot this appliance now? [y/N] "
 
   case "$answer" in
     y|Y|yes|YES)
@@ -601,8 +625,8 @@ What should be updated?
 4) Cancel
 MENU
 
-  local update_choice
-  update_choice="$(prompt_choice "Choose option [1-4]: ")"
+  local update_choice=""
+  read_prompt update_choice "Choose option [1-4]: "
 
   case "$update_choice" in
     1|2|3)
@@ -674,8 +698,8 @@ What should be repaired?
 4) Cancel
 MENU
 
-  local repair_choice
-  repair_choice="$(prompt_choice "Choose option [1-4]: ")"
+  local repair_choice=""
+  read_prompt repair_choice "Choose option [1-4]: "
 
   case "$repair_choice" in
     1|2|3)
@@ -785,15 +809,13 @@ full_uninstall_player_data() {
 confirm_full_uninstall() {
   local answer
 
-  printf 'Remove all application data as well? Type YES to continue: ' >&2
-  read -r answer
+  read_prompt answer "Remove all application data as well? Type YES to continue: "
 
   if [ "$answer" != "YES" ]; then
     return 1
   fi
 
-  printf 'Type REMOVE to confirm full uninstall: ' >&2
-  read -r answer
+  read_prompt answer "Type REMOVE to confirm full uninstall: "
   [ "$answer" = "REMOVE" ]
 }
 
@@ -882,8 +904,8 @@ What should be uninstalled?
 4) Cancel
 MENU
 
-  local uninstall_choice
-  uninstall_choice="$(prompt_choice "Choose option [1-4]: ")"
+  local uninstall_choice=""
+  read_prompt uninstall_choice "Choose option [1-4]: "
 
   case "$uninstall_choice" in
     1|2|3)
@@ -930,8 +952,8 @@ main() {
 
   show_environment_summary
   show_menu
-  local choice
-  choice="$(prompt_choice "Choose option [1-6]: ")"
+  local choice=""
+  read_prompt choice "Choose option [1-6]: "
 
   case "$choice" in
     1)
