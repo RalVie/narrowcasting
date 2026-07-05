@@ -290,7 +290,7 @@ discover_narrowcasting_servers() {
 
 manual_server_url_prompt() {
   local default_url="${1:-http://localhost:3000}"
-  local answer
+  local answer=""
 
   read_prompt answer "Enter Narrowcasting server URL for this player [$default_url]: "
 
@@ -304,7 +304,7 @@ manual_server_url_prompt() {
 select_discovered_server_url() {
   local -a candidates=("$@")
   local count="${#candidates[@]}"
-  local answer
+  local answer=""
 
   if [ "$count" -eq 0 ]; then
     if [ "$YES" -eq 1 ]; then
@@ -421,7 +421,7 @@ prompt_repair_server_url() {
         return
       fi
 
-      local answer
+      local answer=""
       read_prompt answer "Keep this server? [Y/n] "
       case "$answer" in
         n|N|no|NO)
@@ -451,7 +451,7 @@ prompt_repair_server_url() {
 }
 
 prompt_start_after_install() {
-  local answer
+  local answer=""
 
   if [ "$YES" -eq 1 ]; then
     return 0
@@ -480,7 +480,7 @@ run_existing_installer() {
 
 explicit_confirm() {
   local prompt="$1"
-  local answer
+  local answer=""
 
   read_prompt answer "$prompt [y/N] "
 
@@ -599,7 +599,7 @@ update_player() {
 }
 
 confirm_reboot_if_requested() {
-  local answer
+  local answer=""
 
   read_prompt answer "Reboot this appliance now? [y/N] "
 
@@ -807,7 +807,7 @@ full_uninstall_player_data() {
 }
 
 confirm_full_uninstall() {
-  local answer
+  local answer=""
 
   read_prompt answer "Remove all application data as well? Type YES to continue: "
 
