@@ -13,6 +13,10 @@ interface BrowserRenderPayload {
 let activeRender: Promise<void> | null = null;
 let activeRenderController: AbortController | null = null;
 
+export function isBrowserRendererActive() {
+  return activeRender !== null;
+}
+
 export function cancelActiveBrowserRenderer(reason: string) {
   if (!activeRenderController) {
     return;
