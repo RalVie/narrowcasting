@@ -63,6 +63,69 @@ require_installer_scripts() {
   [ -f "$ROOT_DIR/scripts/update-production.sh" ] || fatal "Missing updater: scripts/update-production.sh"
 }
 
+git_branch_or_unknown() {
+  git -C "$ROOT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || printf 'unknown\n'
+}
+
+git_commit_or_unknown() {
+  git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || printf 'unknown\n'
+}
+
+hostname_or_unknown() {
+  hostname 2>/dev/null || printf 'unknown\n'
+}
+
+installer_summary_ip() {
+  local ip_address
+  ip_address="$(get_active_ipv4_address 2>/dev/null || true)"
+
+  if [ -n "$ip_address" ]; then
+    printf '%s' "$ip_address"
+  else
+    printf 'unknown'
+  fi
+}
+
+show_environment_summary() {
+  local ip_address
+  ip_address="$(installer_summary_ip)"
+
+  cat <<SUMMARY
+----------------------------------------------------
+Narrowcasting Appliance Manager
+
+Repository:
+$ROOT_DIR
+
+Branch:
+$(git_branch_or_unknown)
+
+Commit:
+$(git_commit_or_unknown)
+
+Hostname:
+$(hostname_or_unknown)
+
+IP address:
+$ip_address
+SUMMARY
+
+  if [ "$ip_address" != "unknown" ]; then
+    cat <<SUMMARY
+
+Server dashboard:
+http://$ip_address:3000
+
+Player URL:
+http://$ip_address:4174/player
+SUMMARY
+  fi
+
+  cat <<'SUMMARY'
+----------------------------------------------------
+SUMMARY
+}
+
 prompt_choice() {
   local prompt="$1"
   local answer
@@ -831,6 +894,7 @@ main() {
   parse_args "$@"
   require_installer_scripts
 
+  show_environment_summary
   show_menu
   local choice
   choice="$(prompt_choice "Choose option [1-6]: ")"
