@@ -149,21 +149,38 @@ RSS Feed media stores:
 - maximum item count
 - optional title
 
-RSS fetching and parsing happens on the server. The Player receives only resolved schedule items and never fetches RSS feeds directly.
+RSS fetching and parsing always happens on the server. RSS Feed media is expanded into concrete resolved `rss_item` schedule items before the Player receives the schedule. The Player receives title, summary, link, optional image and published date data, and never fetches RSS feeds directly.
 
 Embedded iframe is the default Web URL render mode. It works only when the remote website allows iframe embedding.
 
-Browser renderer is a Product 1.2 MVP mode for dedicated Player appliances. It uses the local Chromium kiosk to temporarily navigate to a Web URL that blocks iframe embedding, then returns to the Player after the configured duration. The external website is still only rendered content; it does not become the scheduler.
+Browser renderer is a Product 1.2 mode for dedicated Player appliances. It uses the local Chromium kiosk, controlled by the Agent through local-only Chromium DevTools Protocol, to temporarily navigate to a Web URL that blocks iframe embedding, then returns to the Player after the configured duration. The external website is still only rendered content; it does not become the scheduler.
 
 Narrowcasting suppresses browser-owned kiosk UI where technically possible. Website-owned cookie consent dialogs, language selectors, or modal overlays remain the responsibility of the website or customer configuration.
 
-Product 1.3 adds optional Browser automation for Web URL media using Browser renderer mode. Automation is stored as configuration on the Media object and is copied into the resolved schedule. Supported MVP actions are:
+Product 1.3 adds optional Browser Automation for Web URL media using Browser renderer mode. Automation is stored as configuration on the Media object and copied into the resolved schedule. The Agent executes Browser Automation in the local Chromium kiosk. Supported actions are:
 
 - WAIT: pause for a configured number of milliseconds.
 - CLICK: click a configured CSS selector with an optional timeout.
 - REFRESH: refresh the active browser page at a configured interval while the Web URL item remains active.
 
-Automation is generic configuration, not website-specific code. Narrowcasting does not execute operator-provided JavaScript, store passwords, bypass website security, or automatically accept cookies.
+Persistent Browser Sessions are a Product 1.3 optimization. Consecutive identical Browser Renderer Web URL schedule items reuse the active browser session instead of reloading the same page and rerunning automation. Navigation occurs again only when URL, render mode, or Browser Automation actions change, or when playback leaves Browser Renderer mode.
+
+Automation is generic configuration, not website-specific code. Narrowcasting does not execute operator-provided JavaScript, store passwords, bypass website security, bypass website frame restrictions, or automatically accept cookies.
+
+## 4.2 Dynamic Media Limitations
+
+Current Product 1.3 limitations:
+
+- Embedded iframe depends on the remote website allowing iframe embedding through CSP and X-Frame-Options.
+- Browser Renderer is intended for Raspberry Pi or Linux dedicated Player appliance mode with local Chromium kiosk and local-only CDP.
+- Browser Renderer requires the Agent and Chromium kiosk to run on the same appliance.
+- CDP must remain bound to localhost and must not be exposed on the network.
+- Website-owned cookie banners, language selectors, login prompts and modal overlays cannot be generically removed by Narrowcasting.
+- Browser Automation supports WAIT, CLICK and REFRESH only.
+- CLICK uses CSS selectors and may interact with document, open shadow roots and CDP-accessible frames, but cannot bypass browser or website security boundaries.
+- Browser Inspector, site-specific automation policies and managed credential workflows are future work.
+- Web URL content is online-only at playback time.
+- RSS text content is resolved server-side into the schedule; remote RSS item images are not guaranteed offline in the MVP.
 
 ## 5. Media States
 

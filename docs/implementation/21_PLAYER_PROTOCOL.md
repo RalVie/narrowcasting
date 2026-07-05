@@ -23,6 +23,10 @@ This contract covers:
 - Player configuration retrieval.
 - Resolved Schedule synchronization.
 - Media synchronization.
+- Dynamic content rendering semantics.
+- Agent Browser Renderer control.
+- Agent Browser Automation execution.
+- Agent runtime watchdog recovery.
 - Offline cache behaviour.
 - Playback expectations.
 - Heartbeat, status, health, diagnostics, and version reporting.
@@ -68,6 +72,9 @@ The following architecture rules are binding:
 - The Scheduler Resolver is the single authority for answering: "What should this screen display right now?"
 - The Player consumes only a Resolved Schedule and local media references.
 - The Player must not evaluate Campaigns, Assignments, priorities, time windows, Screen Groups, or conflict rules.
+- The Agent may support local runtime execution by synchronizing schedules, controlling the local Browser Renderer, executing Browser Automation, and recovering local appliance failures.
+- RSS Feed content is resolved server-side before it reaches the Player.
+- Browser Renderer is a rendering mechanism only and must not become a scheduling authority.
 - Diagnostics may explain behaviour but must not become an alternate scheduling path.
 
 ## 5. Relationship To Product Specification
@@ -272,6 +279,23 @@ The Player:
 - Continues playback offline using the last valid local state.
 
 The Player does not own Campaigns, Assignments, scheduling rules, or operator workflows.
+
+### 11.7.1 Agent
+
+The Agent is part of the Player Layer.
+
+The Agent:
+
+- registers and maintains device identity where applicable;
+- synchronizes Resolved Schedules;
+- downloads and verifies required local image, video and theme media before activation;
+- sends heartbeat and status information;
+- exposes local-only Browser Renderer control for the Player;
+- controls Chromium through local-only CDP for Browser Renderer items;
+- executes configured Browser Automation actions;
+- monitors and recovers local appliance runtime health through the watchdog.
+
+The Agent must not own scheduling logic, campaign conflict resolution, assignment selection, priority evaluation or business object mutation.
 
 ### 11.8 Offline Cache
 
@@ -497,6 +521,18 @@ A Schedule Item may describe:
 - Display metadata.
 - Required assets.
 - Future playback constraints.
+
+Current Product 1.3 Schedule Item types include:
+
+- `image`;
+- `video`;
+- `web_url`;
+- `rss_item`;
+- future-compatible text or diagnostic item types where explicitly defined.
+
+`rss_item` entries are concrete resolved content produced server-side from RSS Feed Media. The Player must never fetch or parse RSS feeds.
+
+`web_url` entries may specify iframe render mode or Browser Renderer mode. Browser Renderer mode delegates local Chromium navigation to the Agent, but schedule timing and item order still come from the Resolved Schedule.
 
 The Player must treat Schedule Items as resolved instructions, not as raw business objects.
 
@@ -763,8 +799,73 @@ The Player must define how each media type advances:
 - Natural-duration media may advance on native end events.
 - Explicit clip durations override natural media length where specified.
 - Empty schedules show a clear empty state.
+- Web URL iframe items advance according to resolved item duration.
+- Web URL Browser Renderer items hand off rendering to the Agent and return to the Player according to resolved item duration.
+- Consecutive identical Browser Renderer sessions may be optimized by preserving the active Chromium session, as long as the Player still follows resolved item transitions.
+- RSS items render resolved server-provided content and advance according to resolved item duration.
 
 The Player must not use fallback durations to cut off video unless the schedule explicitly indicates that duration is operator-configured for that video item.
+
+### 17.8 Browser Renderer
+
+Browser Renderer is a rendering mechanism for Web URL schedule items.
+
+Rules:
+
+- iframe mode remains the default Web URL rendering mode.
+- Browser Renderer mode is intended for dedicated Player appliances with local Chromium kiosk.
+- The Agent controls Chromium through local-only CDP.
+- CDP must remain bound to localhost and must not be exposed on the network.
+- The external web page never becomes the scheduler.
+- Browser Renderer must return to the Player after the resolved duration or on recovery.
+- Sites may still show website-owned cookie banners, language selectors, login prompts or modal overlays.
+
+### 17.9 Browser Automation
+
+Browser Automation is optional configuration for Web URL Media using Browser Renderer mode.
+
+Supported actions:
+
+- WAIT;
+- CLICK;
+- REFRESH.
+
+Automation is executed by the Agent against the local Chromium page. Operators configure selectors and timing, not arbitrary JavaScript.
+
+Automation must not:
+
+- bypass website security;
+- execute operator-provided JavaScript;
+- store or inject credentials;
+- automatically accept cookies generically;
+- alter schedule resolution.
+
+### 17.10 Runtime Watchdog
+
+The Agent runtime watchdog monitors local Player appliance health.
+
+It may check:
+
+- Chromium process availability;
+- Chromium CDP availability;
+- Player static server availability;
+- whether Chromium has returned to the Player URL when Browser Renderer is inactive.
+
+The recovery ladder is:
+
+```text
+Return Chromium to /player
+->
+Restart Chromium/kiosk
+->
+Restart narrowcasting-player
+->
+Restart narrowcasting-agent
+->
+Optional reboot when explicitly enabled
+```
+
+Watchdog recovery is local runtime recovery only. It must not change Business Objects, Assignments, Scheduler Resolver decisions, publishing state or Resolved Schedule contents.
 
 ---
 

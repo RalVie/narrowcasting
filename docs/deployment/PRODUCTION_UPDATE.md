@@ -5,13 +5,22 @@ This document describes the production update script for Raspberry Pi/Linux depl
 ## Script
 
 ```text
+scripts/install.sh
 scripts/update-production.sh
 ```
+
+`scripts/install.sh` is the recommended interactive entry point for operators. Choose `Update existing installation`, then select Server, Player, or Both.
 
 Example:
 
 ```bash
 cd /opt/narrowcasting
+./scripts/install.sh
+```
+
+Advanced/manual full update:
+
+```bash
 chmod +x scripts/update-production.sh
 scripts/update-production.sh --yes --start
 ```

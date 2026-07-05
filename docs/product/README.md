@@ -66,6 +66,8 @@ Implementation
 
 The Scheduler Resolver remains the runtime authority. Product workflows may explain scheduling behaviour, but they must not bypass or duplicate resolver logic.
 
+Product 1.1 through Product 1.3 add Dynamic Content, Browser Renderer, Browser Automation and Agent runtime watchdog recovery. These features extend the Player Layer and Media model without changing the Product 1.0 authority boundaries: Scheduler Resolver resolves, Agent synchronizes and supports local runtime health, Player renders resolved output.
+
 ## Relationship With Implementation
 
 Implementation work should begin only after the relevant product behaviour is defined. Significant features should identify:

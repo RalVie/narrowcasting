@@ -248,9 +248,16 @@ The Player Layer consumes resolved schedules. It must not resolve campaigns, ass
 
 ### Purpose
 
-Media represents a reusable asset that can be shown by the player or used inside a Theme region.
+Media represents a reusable asset or external content source that can be shown by the player or used inside a Theme region.
 
-Supported current media classes include images and videos. Future media classes may include generated assets, remote-source assets, templates, or transcoded variants.
+Supported current media classes are:
+
+- image;
+- video;
+- Web URL;
+- RSS Feed.
+
+Future media classes may include generated assets, templates, transcoded variants, weather feeds or other external content sources.
 
 ### Owner
 
@@ -286,6 +293,10 @@ Typical mutable properties:
 - size;
 - duration;
 - dimensions;
+- URL for external Web URL or RSS Feed media;
+- Web URL render mode;
+- Browser Automation actions;
+- RSS maximum item count;
 - tags;
 - folder or collection references;
 - archive state;
@@ -311,6 +322,9 @@ Media validation must confirm:
 - readable file;
 - known size;
 - safe filename/path reference;
+- valid http/https URL for Web URL and RSS Feed media;
+- valid Browser Automation action shape for Web URL media;
+- valid RSS item count bounds;
 - usable image or video metadata where available.
 
 Future validation may add checksums, transcoding, duplicate detection, and integrity verification.
@@ -324,6 +338,10 @@ Deletion APIs must validate references before removing or archiving media.
 ### Scheduler Implications
 
 The Scheduler Resolver may include Media in a Resolved Schedule only after expanding Programs and Playlists. It must not treat Media as an independently schedulable target.
+
+RSS Feed media must be resolved server-side into concrete `rss_item` Schedule Items before the Player receives the schedule. The Player must never fetch RSS feeds directly.
+
+Web URL media may resolve to `web_url` Schedule Items using either iframe render mode or Browser Renderer mode. Browser Renderer remains a rendering mechanism and does not alter scheduling authority.
 
 ---
 
@@ -1089,6 +1107,10 @@ Properties may include:
 - source Media reference;
 - media type;
 - file reference;
+- URL for Web URL items;
+- resolved RSS title, summary, link, image and published date for RSS items;
+- Web URL render mode;
+- Browser Automation action list;
 - duration;
 - duration mode;
 - source Playlist item metadata;
@@ -1110,6 +1132,8 @@ Schedule Item validation must confirm:
 
 - media type is supported by Player;
 - file reference is safe;
+- URL is valid for Web URL items;
+- Browser Automation actions are valid and bounded;
 - duration semantics are valid;
 - video clip mode is explicit when applicable;
 - missing media can be handled safely.
@@ -1296,6 +1320,74 @@ Synchronization State must not change Resolver output.
 
 ---
 
+## 11.4 Agent Runtime Support
+
+### Purpose
+
+Agent Runtime Support describes local appliance responsibilities that support playback without owning playback or scheduling logic.
+
+### Owner
+
+Player Layer.
+
+### Lifecycle
+
+```text
+Starting -> Discovering -> Synchronizing -> Reporting -> Recovering -> Healthy
+```
+
+### Immutable Identity
+
+The Agent uses the stable Player identity and approved Screen/device credentials. It does not create a separate business identity.
+
+### Mutable Properties
+
+Typical mutable properties:
+
+- registration file state;
+- last successful sync;
+- sync readiness;
+- heartbeat status;
+- Browser Renderer control state;
+- Browser Automation execution state;
+- runtime watchdog status;
+- last recovery reason and recovery count.
+
+### Relationships
+
+Agent Runtime Support relates to:
+
+- Screen registration;
+- Resolved Schedule synchronization;
+- Offline Cache;
+- Player heartbeat;
+- Browser Renderer;
+- local Chromium kiosk;
+- runtime watchdog status.
+
+### Validation Responsibilities
+
+The Agent validates local execution readiness:
+
+- schedule shape;
+- required local media files;
+- device identity validity;
+- Browser Renderer control requests;
+- local CDP availability;
+- runtime recovery limits.
+
+It must not validate or evaluate Campaigns, Assignments, priorities, time windows or group conflicts.
+
+### API Implications
+
+Agent-facing APIs must preserve the separation between management authentication and device authentication. Browser Renderer control is local-only and must not be exposed as a network management API.
+
+### Scheduler Implications
+
+Agent Runtime Support has no scheduler authority. It consumes the Resolved Schedule and reports operational state.
+
+---
+
 ## 12. Complete Relationship Graph
 
 ```text
@@ -1303,6 +1395,8 @@ Media
   referenced by Playlist Item
   referenced by Theme Region
   included in Schedule Item after resolution
+  Web URL resolves to web_url Schedule Item
+  RSS Feed resolves server-side to rss_item Schedule Items
   cached by Offline Cache
 
 Playlist
@@ -1354,10 +1448,18 @@ Resolved Schedule
 
 Schedule Item
   references playable Media
+  may contain local file reference, Web URL, or resolved RSS item content
   is consumed by Player
 
 Offline Cache
   stores Resolved Schedule and Media locally
+
+Agent
+  synchronizes Resolved Schedule
+  downloads local media files
+  controls Browser Renderer
+  executes Browser Automation
+  monitors local runtime health
 
 Playback State
   reports local playback status
@@ -1373,6 +1475,7 @@ Media -> Playlist -> Program -> Campaign
 Campaign + Assignment + Screen Context + Time
 -> Scheduler Resolver
 -> Resolved Schedule
+-> Agent Synchronization
 -> Offline Cache
 -> Player Playback
 ```

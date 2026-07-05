@@ -158,6 +158,18 @@ Product 1.0 implementation note:
 
 The Monitoring workspace is implemented as a read-oriented operational view with Health Overview, Deployment, Synchronization, Publishing, Storage, and Recent Activity sections. It uses compact health cards, attention filters, and links back to Screens, Campaigns, Media Library, and Support-oriented views.
 
+Product 1.3 implementation note:
+
+Dedicated Player appliances include an Agent runtime watchdog. Monitoring should treat watchdog output as operational health data, not scheduling data. Future Monitoring views may display:
+
+- last successful runtime health check;
+- last recovery action;
+- recovery reason;
+- recovery count;
+- whether Chromium, CDP and the Player URL are healthy.
+
+Runtime recovery does not change campaigns, assignments, scheduler decisions or publishing state.
+
 ## 6. Player Health
 
 Every player reports:
@@ -187,6 +199,8 @@ Network Quality
 Screenshot
 
 Current Media
+
+Runtime Recovery History
 
 ## 7. Screen Health
 

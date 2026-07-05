@@ -523,6 +523,9 @@ Validation categories:
 - identity;
 - file type;
 - file availability;
+- URL validity;
+- Browser Automation action validity;
+- RSS resolution readiness;
 - metadata extraction;
 - reference usage;
 - deletion/archive safety.
@@ -534,8 +537,12 @@ Example rules:
 | VAL-MEDIA-001 | Media ID Required | API, Domain | Blocking Error | Media must have stable `mediaId`. |
 | VAL-MEDIA-002 | Supported Media Type | API, Domain | Blocking Error | Media type must be supported by platform policy. |
 | VAL-MEDIA-003 | File Readable | Domain | Blocking Error | Media file must be readable before it becomes Available. |
-| VAL-MEDIA-004 | Safe Deletion | Domain | Blocking Error | Referenced Media cannot be deleted without explicit valid policy. |
-| VAL-MEDIA-005 | Cacheable Reference | Runtime, Player | Blocking Error | Schedule media reference must be local-cacheable. |
+| VAL-MEDIA-004 | External URL Valid | UI, API, Domain | Blocking Error | Web URL and RSS Feed media must use valid http/https URLs. |
+| VAL-MEDIA-005 | Web URL Render Mode Valid | UI, API, Domain | Blocking Error | Web URL render mode must be iframe or browser. |
+| VAL-MEDIA-006 | Browser Automation Valid | UI, API, Domain, Agent | Blocking Error | Browser Automation supports bounded WAIT, CLICK and REFRESH actions only. |
+| VAL-MEDIA-007 | Safe Deletion | Domain | Blocking Error | Referenced Media cannot be deleted without explicit valid policy. |
+| VAL-MEDIA-008 | Cacheable Reference | Runtime, Player | Blocking Error | Uploaded image/video schedule media references must be local-cacheable. Dynamic Web URL and remote RSS images are online-dependent unless later cached by an explicit cache phase. |
+| VAL-RSS-001 | RSS Feed Reachability | Publishing, Runtime | Warning | RSS Feed resolution failure must be reported clearly and must not crash publishing or schedule generation. |
 
 ## 11.2 Playlist
 

@@ -430,6 +430,10 @@ Player owns:
 
 Playback.
 
+Agent owns:
+
+Synchronization, Browser Renderer control, Browser Automation execution and local runtime recovery.
+
 Diagnostics owns:
 
 Explanation.

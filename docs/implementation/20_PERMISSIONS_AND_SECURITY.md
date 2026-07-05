@@ -255,7 +255,11 @@ Player Layer contains:
 - Offline Cache;
 - Playback State;
 - Synchronization State;
-- heartbeat/status.
+- heartbeat/status;
+- Agent synchronization;
+- Agent Browser Renderer control;
+- Agent Browser Automation execution;
+- Agent runtime watchdog recovery.
 
 Security expectations:
 
@@ -263,6 +267,10 @@ Security expectations:
 - Player may report status and heartbeat.
 - Player may retrieve media needed for local playback.
 - Player must not edit business, deployment, or runtime source objects.
+- Agent device access must remain separate from human administrator access.
+- Browser Renderer control and Chromium CDP must remain local-only on the Player appliance.
+- Browser Automation must not execute operator-provided JavaScript, store credentials, bypass website security, or expose CDP on the network.
+- Runtime watchdog recovery may restart local services, but it must not mutate schedules, campaigns, assignments or publishing state.
 
 ## 9.5 API Layer
 

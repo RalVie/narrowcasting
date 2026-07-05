@@ -5,9 +5,28 @@ This document describes the production installation scripts for Raspberry Pi/Lin
 ## Scripts
 
 ```text
+scripts/install.sh
 scripts/install-server.sh
 scripts/install-player.sh
 ```
+
+`scripts/install.sh` is the recommended interactive entry point. It shows a menu for:
+
+1. Server appliance
+2. Player appliance
+3. Update existing installation
+4. Exit
+
+The unified installer does not replace the existing installers. It guides the operator and then calls the existing authoritative scripts.
+
+Recommended interactive start:
+
+```bash
+cd /opt/narrowcasting
+./scripts/install.sh
+```
+
+Direct scripts remain available for advanced/manual installs and automation.
 
 ## Server Install
 
@@ -33,7 +52,13 @@ Example:
 
 ```bash
 cd /opt/narrowcasting
-chmod +x scripts/install-server.sh scripts/install-player.sh scripts/update-production.sh
+chmod +x scripts/install.sh scripts/install-server.sh scripts/install-player.sh scripts/update-production.sh
+./scripts/install.sh
+```
+
+Advanced/manual server install:
+
+```bash
 scripts/install-server.sh --yes --start
 ```
 
@@ -75,7 +100,14 @@ Example:
 
 ```bash
 cd /opt/narrowcasting
-chmod +x scripts/install-player.sh
+./scripts/install.sh
+```
+
+The interactive installer asks for the server URL and whether services should start after installation.
+
+Advanced/manual player install:
+
+```bash
 ./scripts/install-player.sh --server-url http://SERVER-IP:3000 --start
 ```
 

@@ -152,6 +152,49 @@ Dynamic content has different offline behavior:
 
 If a remote Web URL or RSS image is unavailable during playback, the Player should fail safely and continue with the next resolved item where possible.
 
+## 6.1 Agent Runtime Responsibilities
+
+The Agent is part of the Player Layer. It owns local runtime support tasks, not scheduling.
+
+The Agent is responsible for:
+
+- synchronizing Resolved Schedules from the server;
+- downloading and verifying required local image, video and theme media before schedule activation;
+- preserving the active local schedule when media readiness fails;
+- sending heartbeat and status updates;
+- controlling Browser Renderer handoff through local-only Chromium CDP;
+- executing Browser Automation actions for Browser Renderer Web URL items;
+- monitoring local Chromium and Player runtime health through the runtime watchdog.
+
+The Agent must not evaluate Campaigns, Assignments, Screen Groups, priorities or time windows. Those remain Scheduler Resolver responsibilities.
+
+## 6.2 Runtime Watchdog
+
+Product 1.3 includes a lightweight Player appliance runtime watchdog inside the Agent.
+
+The watchdog checks local runtime health on a regular interval. It verifies:
+
+- Chromium process availability;
+- Chromium DevTools Protocol availability;
+- Player static server availability;
+- whether Chromium has returned to the Player URL when Browser Renderer is not active.
+
+Recovery follows a ladder:
+
+```text
+Return Chromium to /player
+->
+Restart Chromium/kiosk
+->
+Restart narrowcasting-player
+->
+Restart narrowcasting-agent
+->
+Optional reboot only when explicitly enabled
+```
+
+The watchdog is operational recovery only. It does not change schedules, campaigns, assignments, publishing, or playback rules.
+
 ## 7. Cache Health
 
 Every player reports:

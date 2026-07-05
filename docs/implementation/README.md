@@ -1,19 +1,10 @@
 ﻿# Narrowcasting Implementation Documentation
 
-This folder is reserved for future engineering contracts.
+This folder contains canonical engineering contracts.
 
-Implementation contracts will translate the Architecture and Product Specification into concrete build-level agreements.
+Implementation contracts translate the Architecture and Product Specification into concrete build-level agreements. They are technology-conscious but avoid prescribing database, framework, or transport details unless the product contract requires them.
 
-Planned documents include:
-
-- `DOMAIN_MODEL.md`
-- `API_CONTRACTS.md`
-- `VALIDATION_CATALOG.md`
-- `PERMISSIONS_AND_SECURITY.md`
-- `PLAYER_PROTOCOL.md`
-- `ENTERPRISE_SCALE.md`
-
-Do not add feature implementation notes here until the corresponding contract is intentionally authored.
+The current contracts cover the Product 1.0 core platform and the additive Product 1.1-1.3 runtime extensions: Dynamic Content, Browser Renderer, Browser Automation, and Agent runtime watchdog recovery.
 
 ## Documents
 

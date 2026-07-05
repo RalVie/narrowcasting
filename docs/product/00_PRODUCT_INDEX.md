@@ -136,6 +136,17 @@ Every future feature shall satisfy the following principles.
 - Predictable user experience.
 - No technical debt.
 
+## Product Version History
+
+| Product version | Name | Scope |
+| --- | --- | --- |
+| Product 1.0 | Core Narrowcasting Platform | Media Library, playlists, programs, themes, campaigns, publishing, assignments, Scheduler Resolver, screen registration, synchronization, offline cache, monitoring, support diagnostics and deployment tooling. |
+| Product 1.1 | Dynamic Content | Web URL Media, RSS Feed Media, server-side RSS resolution, resolved RSS schedule items and Web URL iframe rendering. |
+| Product 1.2 | Browser Renderer | Browser Renderer mode for Web URL Media on dedicated Player appliances using local Chromium kiosk and local-only CDP control through the Agent. |
+| Product 1.3 | Browser Automation & Runtime Reliability | WAIT, CLICK and REFRESH Browser Automation, persistent Browser Sessions, Browser Renderer experience hardening and Agent runtime watchdog recovery. |
+
+Product 1.1, Product 1.2 and Product 1.3 are additive extensions. They do not replace the Product 1.0 architecture. Scheduler Resolver remains the runtime authority. Player remains runtime only. Agent owns synchronization, Browser Renderer control, Browser Automation execution and runtime recovery.
+
 ## Change Management
 
 Every change to the platform should answer:

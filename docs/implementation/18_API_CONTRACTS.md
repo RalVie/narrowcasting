@@ -397,13 +397,25 @@ Action endpoints should represent domain language, not implementation details.
 Use consistent terminology:
 
 - `media`, not files, for business media assets;
+- `web_url` and `rss_feed` for dynamic Media types;
+- `rss_item` for server-resolved RSS schedule output;
+- `browserActions` for Browser Automation configuration on Web URL Media;
 - `playlist`, not list, for ordered media;
 - `program`, not schedule, for ordered playlists;
 - `campaign`, not assignment, for publishing intent;
 - `screen`, not player, for deployment endpoint;
 - `player`, only for runtime software/status;
+- `agent`, for local synchronization, Browser Renderer control, Browser Automation execution and runtime recovery;
 - `screen-group`, not group, when ambiguity is possible;
 - `resolved-schedule`, not campaign schedule, for Scheduler Resolver output.
+
+Dynamic Media APIs must preserve the boundary between business configuration and runtime output:
+
+- Web URL Media stores URL, duration, optional title, render mode and optional Browser Automation actions.
+- RSS Feed Media stores feed URL, duration per resolved item, max items and optional title.
+- RSS fetching/parsing is server-side.
+- Resolved schedules contain concrete `web_url` or `rss_item` instructions.
+- Player/Agent APIs must not expose raw Campaigns, Assignments or unresolved RSS rules to the Player.
 
 ---
 

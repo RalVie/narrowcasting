@@ -13,18 +13,37 @@ Management is optional.
 
 ## Media
 
-All media is cached locally before playback.
+Uploaded image and video media is cached locally before playback.
+
+Dynamic media may have different runtime requirements:
+
+- Web URL content is resolved into schedule items and rendered by iframe or Browser Renderer.
+- RSS Feed content is fetched and resolved server-side before reaching the Player.
+- Remote Web URLs and RSS item images may require network access at playback time.
 
 ## Content Flow
 
 ```text
-Media -> Playlist -> Program -> Theme -> Scheduler Block -> Screen -> Player
+Business Layer
+Media -> Playlist -> Program -> Campaign -> Theme
+
+Deployment Layer
+Screen -> Screen Group
+
+Runtime Layer
+Assignment -> Scheduler Resolver -> Resolved Schedule
+
+Player Layer
+Agent -> Offline Cache -> Player
 ```
 
 Playlists define ordered media.
 Programs define ordered playlists.
+Campaigns express business publishing intent.
 Themes define a virtual canvas and layout regions.
-Scheduler blocks choose the active program and optional theme.
+Assignments bind business intent to deployment targets.
+The Scheduler Resolver is the only runtime authority that produces the Resolved Schedule consumed by the Player.
+The Agent owns synchronization, Browser Renderer control, Browser Automation execution, and local runtime recovery/watchdog behavior.
 
 ## Themes
 
@@ -49,7 +68,7 @@ Supported region types:
 - Text: renders static text.
 - Clock: renders local player time and updates live without server access.
 
-Future region types such as ticker, weather, RSS, QR code, video regions, and emergency overlays remain extension points.
+Future region types such as ticker, weather, QR code, video regions, emergency overlays, or dedicated feed/ticker regions remain extension points.
 
 Player rendering order is:
 
