@@ -77,6 +77,8 @@ interface VideoDebugEvent {
   readyState: number | null;
   networkState: number | null;
   note?: string;
+  activeVideoTimers?: string[];
+  timerId?: number | null;
 }
 
 interface PlaybackDebugEvent {
@@ -96,12 +98,32 @@ interface PlaybackDebugEvent {
   scheduledSessionKey?: number;
   nextIndex?: number;
   note?: string;
+  activeElementSummary?: string;
 }
 
 interface BrowserRendererState {
   itemKey: string | null;
   message: string;
   status: "idle" | "starting" | "active" | "failed";
+}
+
+function getElementSummary(selector: string) {
+  const element = document.querySelector(selector) as HTMLElement | null;
+
+  if (!element) {
+    return "missing";
+  }
+
+  const rect = element.getBoundingClientRect();
+  const style = window.getComputedStyle(element);
+
+  return JSON.stringify({
+    display: style.display,
+    height: Math.round(rect.height),
+    opacity: style.opacity,
+    visibility: style.visibility,
+    width: Math.round(rect.width)
+  });
 }
 
 function getViewportSize() {
@@ -534,6 +556,36 @@ function isDebugEnabled() {
   return new URLSearchParams(window.location.search).get("debug") === "1";
 }
 
+function sendPlayerDebugLog(
+  category: string,
+  event: string,
+  details: object,
+  level: "error" | "info" | "warn" = "info"
+) {
+  if (!isDebugEnabled()) {
+    return;
+  }
+
+  const body = JSON.stringify({
+    category,
+    details,
+    event,
+    level,
+    url: window.location.href
+  });
+
+  void fetch("/api/debug-log", {
+    body,
+    headers: {
+      "Content-Type": "application/json"
+    },
+    keepalive: true,
+    method: "POST"
+  }).catch(() => {
+    // Debug transport must never affect playback.
+  });
+}
+
 function hasReloadMarker() {
   return new URLSearchParams(window.location.search).has("reload");
 }
@@ -651,6 +703,12 @@ function InstrumentedVideo({
 
   function clearVideoClipTimer() {
     if (clipTimerRef.current !== null) {
+      sendPlayerDebugLog("video", "video timer cleared", {
+        itemId: item.id,
+        sessionKey,
+        timerId: clipTimerRef.current,
+        timerType: "clip"
+      });
       window.clearTimeout(clipTimerRef.current);
       clipTimerRef.current = null;
     }
@@ -658,6 +716,12 @@ function InstrumentedVideo({
 
   function clearVideoWatchdog() {
     if (watchdogTimerRef.current !== null) {
+      sendPlayerDebugLog("video", "video timer cleared", {
+        itemId: item.id,
+        sessionKey,
+        timerId: watchdogTimerRef.current,
+        timerType: "watchdog"
+      });
       window.clearTimeout(watchdogTimerRef.current);
       watchdogTimerRef.current = null;
     }
@@ -665,6 +729,12 @@ function InstrumentedVideo({
 
   function clearVideoReadinessTimer() {
     if (readinessTimerRef.current !== null) {
+      sendPlayerDebugLog("video", "video timer cleared", {
+        itemId: item.id,
+        sessionKey,
+        timerId: readinessTimerRef.current,
+        timerType: "readiness"
+      });
       window.clearTimeout(readinessTimerRef.current);
       readinessTimerRef.current = null;
     }
@@ -682,9 +752,14 @@ function InstrumentedVideo({
       note?: string,
       video: HTMLVideoElement | null = videoRef.current,
       options: Partial<
-        Pick<VideoDebugEvent, "loadCalled" | "playCalled" | "playSkippedReason">
+        Pick<VideoDebugEvent, "loadCalled" | "playCalled" | "playSkippedReason" | "timerId">
       > = {}
     ) => {
+      const activeVideoTimers = [
+        clipTimerRef.current !== null ? `clip:${clipTimerRef.current}` : null,
+        readinessTimerRef.current !== null ? `readiness:${readinessTimerRef.current}` : null,
+        watchdogTimerRef.current !== null ? `watchdog:${watchdogTimerRef.current}` : null
+      ].filter((value): value is string => value !== null);
       const debugEvent: VideoDebugEvent = {
         time: new Date().toLocaleTimeString(),
         event,
@@ -704,13 +779,13 @@ function InstrumentedVideo({
         loadCalled: options.loadCalled ?? false,
         playCalled: options.playCalled ?? false,
         playSkippedReason: options.playSkippedReason,
+        activeVideoTimers,
+        timerId: options.timerId ?? null,
         ...getVideoElementState(video),
         note
       };
 
-      if (debugEnabled) {
-        console.info("video lifecycle", debugEvent);
-      }
+      sendPlayerDebugLog("video", "video lifecycle", debugEvent);
 
       onDebugEvent(debugEvent);
     },
@@ -810,6 +885,13 @@ function InstrumentedVideo({
         onFailure(sessionKey, `Video did not become playable: ${item.file}`);
       }
     }, 12_000);
+    sendPlayerDebugLog("video", "video timer created", {
+      itemId: item.id,
+      sessionKey,
+      timeoutMs: 12_000,
+      timerId: readinessTimerRef.current,
+      timerType: "readiness"
+    });
 
     const animationFrame = window.requestAnimationFrame(() => {
       emit("post-mount animation frame", "checking DOM state after paint", videoRef.current, {
@@ -886,7 +968,17 @@ function InstrumentedVideo({
             emit("video watchdog fired", undefined, event.currentTarget);
             onAdvance(sessionKey, "video watchdog fired");
           }, watchdogMs);
+          sendPlayerDebugLog("video", "video timer created", {
+            itemId: item.id,
+            sessionKey,
+            timeoutMs: watchdogMs,
+            timerId: watchdogTimerRef.current,
+            timerType: "watchdog"
+          });
         }
+      }}
+      onLoadStart={(event) => {
+        emit("loadstart", undefined, event.currentTarget);
       }}
       onLoadedData={(event) => {
         emit("loadeddata", undefined, event.currentTarget);
@@ -909,10 +1001,23 @@ function InstrumentedVideo({
             emit("video clip timer fired", undefined, event.currentTarget);
             onAdvance(sessionKey, "video clip timer fired");
           }, clipDurationMs);
+          sendPlayerDebugLog("video", "video timer created", {
+            itemId: item.id,
+            sessionKey,
+            timeoutMs: clipDurationMs,
+            timerId: clipTimerRef.current,
+            timerType: "clip"
+          });
         }
+      }}
+      onEmptied={(event) => {
+        emit("emptied", undefined, event.currentTarget);
       }}
       onStalled={(event) => {
         emit("stalled", "video stalled", event.currentTarget);
+      }}
+      onSuspend={(event) => {
+        emit("suspend", "video loading suspended", event.currentTarget);
       }}
       onWaiting={(event) => {
         emit("waiting", "video waiting for data", event.currentTarget);
@@ -1609,7 +1714,7 @@ export function PlayerApp() {
       options: Partial<
         Pick<
           PlaybackDebugEvent,
-          "reason" | "computedDurationMs" | "scheduledSessionKey" | "nextIndex" | "note"
+          "reason" | "computedDurationMs" | "scheduledSessionKey" | "nextIndex" | "note" | "activeElementSummary"
         >
       > = {}
     ) => {
@@ -1629,12 +1734,11 @@ export function PlayerApp() {
         playbackSessionKeyRef: playbackSessionKeyRef.current,
         scheduledSessionKey: options.scheduledSessionKey,
         nextIndex: options.nextIndex,
+        activeElementSummary: options.activeElementSummary,
         note: options.note
       };
 
-      if (debugInfo.enabled) {
-        console.info("playback lifecycle", debugEvent);
-      }
+      sendPlayerDebugLog("playback", "playback lifecycle", debugEvent);
 
       appendPlaybackDebugEvent(debugEvent);
     },
@@ -1656,7 +1760,24 @@ export function PlayerApp() {
         ? `active ${activeItem.type} ${activeItem.id}`
         : "no active item"
     });
-  }, [activeItem, emitPlaybackDebug]);
+
+    const frame = window.requestAnimationFrame(() => {
+      sendPlayerDebugLog("render", "player render state", {
+        activeIndex,
+        activeItemDuration: typeof activeItem?.duration === "number" ? activeItem.duration : null,
+        activeItemId: activeItem?.id ?? null,
+        activeItemType: activeItem?.type ?? null,
+        imageElement: getElementSummary(".media-image, .themed-media"),
+        missingMessage: getElementSummary(".missing-media-message"),
+        playbackSessionKey,
+        videoElement: getElementSummary(".media-video, video.themed-media")
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [activeIndex, activeItem, emitPlaybackDebug, playbackSessionKey]);
 
   const advanceToNextItem = useCallback((sessionKey = playbackSessionKeyRef.current, reason = "unknown") => {
     emitPlaybackDebug("advance called", {
@@ -1960,6 +2081,13 @@ export function PlayerApp() {
             className={className}
             key={getItemKey(activeItem, schedule, activeIndex, playbackEpoch, playbackSessionKey)}
             onLoad={() => {
+              sendPlayerDebugLog("image", "image lifecycle", {
+                activeIndex,
+                file: activeItem.file,
+                itemId: activeItem.id,
+                playbackSessionKey,
+                reason: "load"
+              });
               if (sessionKey !== playbackSessionKeyRef.current) {
                 return;
               }
@@ -1968,6 +2096,14 @@ export function PlayerApp() {
               setMissingItemMessage(null);
             }}
             onError={(event) => {
+              sendPlayerDebugLog("image", "image lifecycle", {
+                activeIndex,
+                file: activeItem.file,
+                itemId: activeItem.id,
+                playbackSessionKey,
+                reason: "error",
+                src: event.currentTarget.currentSrc || event.currentTarget.src
+              }, "warn");
               if (sessionKey !== playbackSessionKeyRef.current) {
                 return;
               }
@@ -2286,9 +2422,28 @@ export function PlayerApp() {
       });
       advanceToNextItem(scheduledSessionKey, "duration timer fired");
     }, durationMs);
+    sendPlayerDebugLog("playback", "playback timer created", {
+      activeIndex,
+      durationMs,
+      itemId: activeItem.id,
+      itemType: activeItem.type,
+      playbackSessionKey,
+      scheduledSessionKey,
+      timerId: rotationTimer,
+      timerType: "duration"
+    });
 
     return () => {
       window.clearTimeout(rotationTimer);
+      sendPlayerDebugLog("playback", "playback timer cleared", {
+        activeIndex,
+        itemId: activeItem.id,
+        itemType: activeItem.type,
+        playbackSessionKey,
+        scheduledSessionKey,
+        timerId: rotationTimer,
+        timerType: "duration"
+      });
       emitPlaybackDebug("advance timer cleared", {
         reason: "duration timer",
         computedDurationMs: durationMs,

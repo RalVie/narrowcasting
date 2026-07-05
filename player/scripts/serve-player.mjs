@@ -220,8 +220,13 @@ async function discoverServer(knownUrl) {
 
 async function readRequestJson(request) {
   const chunks = [];
+  let size = 0;
 
   for await (const chunk of request) {
+    size += chunk.length;
+    if (size > 64 * 1024) {
+      throw new Error("request body too large");
+    }
     chunks.push(chunk);
   }
 
@@ -244,6 +249,31 @@ async function savePlayerRegistration(body) {
     "utf8"
   );
   return registration;
+}
+
+function logPlayerDebug(body, request) {
+  const payload = body && typeof body === "object" ? body : {};
+  const event = typeof payload.event === "string" ? payload.event : "unknown";
+  const level = typeof payload.level === "string" ? payload.level : "info";
+  const category = typeof payload.category === "string" ? payload.category : "player";
+  const details = payload.details && typeof payload.details === "object" ? payload.details : {};
+
+  const entry = {
+    at: new Date().toISOString(),
+    category,
+    details,
+    event,
+    level,
+    remoteAddress: request.socket.remoteAddress ?? null
+  };
+
+  if (level === "warn") {
+    console.warn("player debug", entry);
+  } else if (level === "error") {
+    console.error("player debug", entry);
+  } else {
+    console.log("player debug", entry);
+  }
 }
 
 const server = createServer(async (request, response) => {
@@ -276,6 +306,17 @@ const server = createServer(async (request, response) => {
       sendJson(response, 200, registration);
     } catch {
       sendJson(response, 400, { error: "invalid registration payload" });
+    }
+    return;
+  }
+
+  if (path === "/api/debug-log" && request.method === "POST") {
+    try {
+      const body = await readRequestJson(request);
+      logPlayerDebug(body, request);
+      sendJson(response, 200, { ok: true });
+    } catch {
+      sendJson(response, 400, { error: "invalid debug log payload" });
     }
     return;
   }
