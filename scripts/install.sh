@@ -173,15 +173,15 @@ prompt_choice() {
 read_prompt() {
   local result_var="$1"
   local prompt="${2:-}"
-  local answer=""
+  local prompt_answer=""
 
   [ -n "$prompt" ] && printf '%s' "$prompt" >&2
 
   if { exec 3</dev/tty; } 2>/dev/null; then
-    if IFS= read -r answer <&3; then
+    if IFS= read -r prompt_answer <&3; then
       :
     else
-      answer=""
+      prompt_answer=""
     fi
     exec 3<&-
   else
@@ -190,14 +190,15 @@ read_prompt() {
       TTY_WARNING_SHOWN=1
     fi
 
-    if IFS= read -r answer; then
+    if IFS= read -r prompt_answer; then
       :
     else
-      answer=""
+      prompt_answer=""
     fi
   fi
 
-  printf -v "$result_var" '%s' "$answer"
+  prompt_answer="${prompt_answer%$'\r'}"
+  printf -v "$result_var" '%s' "$prompt_answer"
 }
 
 get_active_ipv4_address() {
@@ -605,11 +606,15 @@ confirm_reboot_if_requested() {
 
   case "$answer" in
     y|Y|yes|YES)
-    log_warning "Rebooting appliance by operator request."
-    sudo_cmd reboot
+      log_info "Reboot initiated."
+      if sudo_cmd reboot; then
+        return
+      fi
+      log_error "Unable to reboot: reboot command failed."
+      return 1
       ;;
     *)
-    log_info "Reboot skipped."
+      log_info "User chose not to reboot."
       ;;
   esac
 }
