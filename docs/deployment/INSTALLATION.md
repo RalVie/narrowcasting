@@ -6,9 +6,12 @@ This document describes the production installation scripts for Raspberry Pi/Lin
 
 ```text
 scripts/install.sh
+scripts/bootstrap.sh
 scripts/install-server.sh
 scripts/install-player.sh
 ```
+
+`scripts/bootstrap.sh` is the smallest fresh-device entry point. It installs minimal prerequisites, clones or updates the repository, marks `scripts/install.sh` executable, and starts the Appliance Manager. It does not contain server/player install logic.
 
 `scripts/install.sh` is the recommended interactive appliance manager. It shows a menu for:
 
@@ -21,7 +24,24 @@ scripts/install-player.sh
 
 The unified installer does not replace the existing installers. It guides the operator and then calls the existing authoritative scripts.
 
-Recommended interactive start:
+Recommended one-command fresh install:
+
+```bash
+sudo apt update
+sudo apt install -y curl
+curl -fsSL https://raw.githubusercontent.com/RalVie/narrowcasting/main/scripts/bootstrap.sh | bash
+```
+
+Manual fallback:
+
+```bash
+sudo apt install -y git
+git clone https://github.com/RalVie/narrowcasting.git
+cd narrowcasting
+./scripts/install.sh
+```
+
+Recommended interactive start from an existing checkout:
 
 ```bash
 cd /opt/narrowcasting
@@ -43,6 +63,26 @@ Use `scripts/install.sh` for the normal appliance lifecycle:
 Repair is intended for broken or incomplete installations. It must not remove media, campaigns, playlists, programs, assignments, configuration, screen registrations, schedule cache, player identity or browser cache.
 
 When repairing a Player appliance, the Appliance Manager first reads the existing `SERVER_URL` from `/etc/narrowcasting/agent.env` when available. If that configured server is reachable and validates as a Narrowcasting Server, the operator can keep it. If it is missing or unreachable, the manager runs the same local network discovery used by Player install, then falls back to manual entry when needed. In non-interactive mode, `--server-url` takes priority; otherwise a reachable existing server or exactly one discovered server is required.
+
+## Bootstrap Options
+
+The bootstrap script supports:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/RalVie/narrowcasting/main/scripts/bootstrap.sh | bash -s -- \
+  --target ~/narrowcasting \
+  --repo https://github.com/RalVie/narrowcasting.git \
+  --branch main
+```
+
+Options:
+
+- `--repo <url>` changes the git repository.
+- `--target <path>` changes the checkout directory. The default is `~/narrowcasting`.
+- `--branch <branch>` checks out a specific branch.
+- `--yes` passes `--yes` through to `scripts/install.sh`.
+
+If the target already exists and is a git repository, bootstrap runs `git pull`. If it exists but is not a git repository, bootstrap stops and asks the operator to move or remove it. Bootstrap never removes data and never decides whether the appliance should be Server or Player.
 
 ## Server Install
 
