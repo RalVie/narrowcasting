@@ -52,7 +52,7 @@ const imageExtensions = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 const videoExtensions = new Set([".mp4", ".webm"]);
 const execFileAsync = promisify(execFile);
 let videoProcessingActive = false;
-const videoProcessingQueue: string[] = [];
+const videoProcessingQueue: VideoProcessingJob[] = [];
 
 export function getMediaRoot() {
   return mediaRoot;
@@ -153,14 +153,6 @@ function getMediaType(filename: string): MediaItem["type"] | null {
   return null;
 }
 
-function getPlaybackFilename(item: MediaItem) {
-  return item.playbackFilename && item.processingStatus === "ready" ? item.playbackFilename : item.filename;
-}
-
-export function getMediaPlaybackFilename(item: MediaItem) {
-  return getPlaybackFilename(item);
-}
-
 function isVideoReady(item: MediaItem) {
   return item.type !== "video" || item.processingStatus === undefined || item.processingStatus === "ready";
 }
@@ -169,8 +161,29 @@ export function isMediaReadyForPlaylist(item: MediaItem) {
   return isVideoReady(item);
 }
 
-function createNormalizedFilename(mediaId: string) {
-  return `normalized-${mediaId.replace(/[^a-zA-Z0-9_-]+/g, "-")}.mp4`;
+interface VideoProcessingJob {
+  mediaId: string;
+  uploadFilename?: string;
+}
+
+function createTempPrefix(filename: string, mediaId: string) {
+  const safeMediaId = mediaId.replace(/[^a-zA-Z0-9_-]+/g, "-");
+  const extension = extname(filename);
+  const base = basename(filename, extension);
+
+  return `${base}.${safeMediaId}`;
+}
+
+function createUploadTempFilename(filename: string, mediaId: string) {
+  return `${createTempPrefix(filename, mediaId)}.upload.tmp`;
+}
+
+function createNormalizedTempFilename(filename: string, mediaId: string) {
+  return `${createTempPrefix(filename, mediaId)}.normalized.tmp.mp4`;
+}
+
+function isTemporaryMediaFilename(filename: string) {
+  return filename.endsWith(".upload.tmp") || filename.includes(".normalized.tmp.");
 }
 
 function parseNullableNumber(value: unknown) {
@@ -624,49 +637,79 @@ async function updateMediaItem(mediaId: string, patch: Partial<MediaItem>) {
   return nextItem;
 }
 
-async function processVideo(mediaId: string) {
+async function removeFileIfPresent(filename: string) {
+  try {
+    await unlink(getMediaPath(filename));
+  } catch {
+    // Temporary cleanup is best effort.
+  }
+}
+
+async function assertNonEmptyFile(filePath: string) {
+  const fileStat = await stat(filePath);
+
+  if (!fileStat.isFile() || fileStat.size <= 0) {
+    throw new Error("normalized video output was empty");
+  }
+
+  return fileStat;
+}
+
+async function processVideo(job: VideoProcessingJob) {
   const items = await readMetadataFile();
-  const item = items.find((candidate) => candidate.mediaId === mediaId);
+  const item = items.find((candidate) => candidate.mediaId === job.mediaId);
 
   if (!item || item.type !== "video") {
     return;
   }
 
-  const sourceFilename = item.originalFilename ?? item.filename;
+  const mediaId = job.mediaId;
+  const sourceFilename = job.uploadFilename ?? item.filename;
   const sourcePath = getMediaPath(sourceFilename);
+  const normalizedTempFilename = createNormalizedTempFilename(item.filename, mediaId);
+  const normalizedTempPath = getMediaPath(normalizedTempFilename);
+  const finalPath = getMediaPath(item.filename);
 
   try {
     console.log("video normalization analyzing", { filename: sourceFilename, mediaId });
     await updateMediaItem(mediaId, {
+      originalFilename: undefined,
+      playbackFilename: undefined,
       processingError: undefined,
       processingStatus: "analyzing"
     });
     const profile = await analyzeVideo(sourcePath);
 
-    const normalizedFilename = createNormalizedFilename(mediaId);
-    const normalizedPath = getMediaPath(normalizedFilename);
     console.log("video normalization transcoding", {
       filename: sourceFilename,
       mediaId,
-      normalizedFilename,
+      outputFilename: item.filename,
       probePiSafe: profile.piSafe
     });
     await updateMediaItem(mediaId, {
-      playbackFilename: normalizedFilename,
+      originalFilename: undefined,
+      playbackFilename: undefined,
       processingError: undefined,
       processingStatus: "processing",
       videoProfile: profile
     });
-    await transcodeVideo(sourcePath, normalizedPath);
-    const normalizedProfile = await analyzeVideo(normalizedPath);
+    await transcodeVideo(sourcePath, normalizedTempPath);
+    await assertNonEmptyFile(normalizedTempPath);
+    await rename(normalizedTempPath, finalPath);
+    const [normalizedProfile, finalStat] = await Promise.all([
+      analyzeVideo(finalPath),
+      assertNonEmptyFile(finalPath)
+    ]);
     await updateMediaItem(mediaId, {
-      playbackFilename: normalizedFilename,
+      originalFilename: undefined,
+      playbackFilename: undefined,
       processedAt: new Date().toISOString(),
       processingError: undefined,
       processingStatus: "ready",
+      size: finalStat.size,
       videoProfile: normalizedProfile
     });
-    console.log("video normalization complete", { filename: sourceFilename, mediaId, normalizedFilename });
+    console.log("video normalization complete", { filename: sourceFilename, mediaId, outputFilename: item.filename });
   } catch (error) {
     console.error("video normalization failed", {
       error: error instanceof Error ? error.message : String(error),
@@ -679,12 +722,19 @@ async function processVideo(mediaId: string) {
       processingError: error instanceof Error ? error.message : String(error),
       processingStatus: "failed"
     });
+  } finally {
+    if (job.uploadFilename) {
+      await removeFileIfPresent(job.uploadFilename);
+    }
+
+    await removeFileIfPresent(normalizedTempFilename);
+    await removeFileIfPresent(`${normalizedTempFilename}.tmp`);
   }
 }
 
-function enqueueVideoProcessing(mediaId: string) {
-  if (!videoProcessingQueue.includes(mediaId)) {
-    videoProcessingQueue.push(mediaId);
+function enqueueVideoProcessing(job: VideoProcessingJob) {
+  if (!videoProcessingQueue.some((queuedJob) => queuedJob.mediaId === job.mediaId)) {
+    videoProcessingQueue.push(job);
   }
 
   void drainVideoProcessingQueue();
@@ -699,10 +749,10 @@ async function drainVideoProcessingQueue() {
 
   try {
     while (videoProcessingQueue.length > 0) {
-      const mediaId = videoProcessingQueue.shift();
+      const job = videoProcessingQueue.shift();
 
-      if (mediaId) {
-        await processVideo(mediaId);
+      if (job) {
+        await processVideo(job);
       }
     }
   } finally {
@@ -723,6 +773,17 @@ function getStableMediaId(existingItem: MediaItem | undefined, usedMediaIds: Set
   }
 
   usedMediaIds.add(mediaId);
+  return mediaId;
+}
+
+function createUniqueMediaId(items: MediaItem[]) {
+  const usedMediaIds = new Set(items.map((item) => item.mediaId));
+  let mediaId = createStableMediaId();
+
+  while (usedMediaIds.has(mediaId)) {
+    mediaId = createStableMediaId();
+  }
+
   return mediaId;
 }
 
@@ -781,13 +842,24 @@ export async function listMedia(): Promise<MediaItem[]> {
   const fileItems = (
     await Promise.all(
       filenames
+        .filter((filename) => !isTemporaryMediaFilename(filename))
         .filter((filename) => !playbackAssets.has(filename))
         .map((filename) => itemFromFile(filename, metadataByFilename.get(filename), usedMediaIds))
     )
   )
     .filter((item): item is MediaItem => item !== null)
     .sort((first, second) => first.filename.localeCompare(second.filename));
-  const items = [...fileItems, ...externalItems].sort((first, second) =>
+  const fileItemNames = new Set(fileItems.map((item) => item.filename));
+  const metadataOnlyFileItems = metadata.filter(
+    (item) =>
+      (item.type === "image" || item.type === "video") &&
+      !fileItemNames.has(item.filename) &&
+      (item.processingStatus === "uploaded" ||
+        item.processingStatus === "analyzing" ||
+        item.processingStatus === "processing" ||
+        item.processingStatus === "failed")
+  );
+  const items = [...fileItems, ...metadataOnlyFileItems, ...externalItems].sort((first, second) =>
     (first.title ?? first.filename).localeCompare(second.title ?? second.filename)
   );
 
@@ -812,33 +884,56 @@ export async function createMedia(filename: string, content: Buffer): Promise<Me
   }
 
   await mkdir(mediaRoot, { recursive: true });
-  const filePath = getMediaPath(safeFilename);
-  await writeFile(filePath, content);
-
-  const items = await listMedia();
-  const item = items.find((mediaItem) => mediaItem.filename === safeFilename);
-
-  if (!item) {
-    throw new Error("media metadata could not be created");
-  }
 
   if (mediaType === "image") {
+    const filePath = getMediaPath(safeFilename);
+    await writeFile(filePath, content);
+    const items = await listMedia();
+    const item = items.find((mediaItem) => mediaItem.filename === safeFilename);
+
+    if (!item) {
+      throw new Error("media metadata could not be created");
+    }
+
     const readyImage = await updateMediaItem(item.mediaId, {
       processingStatus: "ready"
     });
     return readyImage ?? item;
   }
 
-  const queuedVideo = await updateMediaItem(item.mediaId, {
-    originalFilename: safeFilename,
+  const items = await listMedia();
+  const existingItem = items.find((mediaItem) => mediaItem.filename === safeFilename);
+  const mediaId = existingItem?.mediaId ?? createUniqueMediaId(items);
+  const uploadTempFilename = createUploadTempFilename(safeFilename, mediaId);
+  const uploadTempPath = getMediaPath(uploadTempFilename);
+  await writeFile(uploadTempPath, content);
+
+  const queuedVideo: MediaItem = {
+    id: existingItem?.id ?? toLegacyMediaId(safeFilename),
+    mediaId,
+    filename: safeFilename,
+    type: "video",
+    size: existingItem?.size ?? content.length,
+    title: existingItem?.title,
+    url: existingItem?.url,
+    duration: existingItem?.duration,
+    maxItems: existingItem?.maxItems,
+    webUrlRenderMode: existingItem?.webUrlRenderMode,
+    browserActions: existingItem?.browserActions,
+    originalFilename: undefined,
     playbackFilename: undefined,
     processedAt: undefined,
     processingError: undefined,
     processingStatus: "uploaded",
     videoProfile: undefined
-  });
-  enqueueVideoProcessing(item.mediaId);
-  return queuedVideo ?? item;
+  };
+  const nextItems = existingItem
+    ? items.map((item) => (item.mediaId === mediaId ? queuedVideo : item))
+    : [...items, queuedVideo];
+
+  await writeMetadataFile(nextItems);
+  enqueueVideoProcessing({ mediaId, uploadFilename: uploadTempFilename });
+  return queuedVideo;
 }
 
 export async function createExternalMedia(input: unknown): Promise<MediaItem> {

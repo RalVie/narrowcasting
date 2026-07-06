@@ -602,9 +602,6 @@ export function MediaLibraryPage() {
                             {item.processingError ?? "Video normalization failed."}
                           </p>
                         ) : null}
-                        {item.playbackFilename && item.playbackFilename !== item.filename ? (
-                          <p>Playback asset: {item.playbackFilename}</p>
-                        ) : null}
                       </>
                     ) : null}
                     {item.type === "web_url" ? <p>Render mode: {item.webUrlRenderMode ?? "iframe"}</p> : null}

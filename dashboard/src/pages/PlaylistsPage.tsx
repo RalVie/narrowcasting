@@ -24,9 +24,7 @@ function isMediaReadyForPlaylist(media: MediaItem) {
 }
 
 function getMediaPlaybackFile(media: MediaItem) {
-  return media.type === "video" && media.playbackFilename && media.processingStatus === "ready"
-    ? media.playbackFilename
-    : media.filename;
+  return media.filename;
 }
 
 function getPlaylistItemLabel(item: PlaylistItem, media?: MediaItem) {
@@ -606,9 +604,6 @@ export function PlaylistsPage() {
             {playlist.items.length === 0 ? <p className="operator-empty">No media yet. Drag media into this playlist.</p> : null}
             {playlist.items.map((item, index) => {
               const media = getMediaById(item.mediaId) ?? getMediaById(item.file);
-              const originalFile = media?.filename ?? item.file;
-              const playbackFile = media ? getMediaPlaybackFile(media) : item.file;
-              const showPlaybackFile = item.type === "video" && playbackFile !== originalFile;
 
               return (
                 <article
@@ -623,12 +618,6 @@ export function PlaylistsPage() {
                   <div className="operator-item-main">
                     <strong>{getPlaylistItemLabel(item, media)}</strong>
                     <span>{item.type}{item.type === "video" ? " - video duration from file" : ""}</span>
-                    {showPlaybackFile ? (
-                      <>
-                        <span>Original: {originalFile}</span>
-                        <span>Playback: {playbackFile}</span>
-                      </>
-                    ) : null}
                   </div>
                   {item.type === "video" ? (
                     <fieldset className="operator-duration-options">
