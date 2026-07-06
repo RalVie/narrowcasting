@@ -338,6 +338,67 @@ function getMediaUrl(file: string) {
   return `/media/${encodeURIComponent(file)}`;
 }
 
+function getMediaUrlDiagnostics(file: string) {
+  const requestedUrl = getMediaUrl(file);
+  let absoluteUrl = requestedUrl;
+
+  try {
+    absoluteUrl = new URL(requestedUrl, window.location.href).toString();
+  } catch {
+    // Keep the relative URL if URL construction fails in a hardened browser.
+  }
+
+  return {
+    absoluteUrl,
+    filename: file,
+    requestedUrl,
+    resolvedUrl: requestedUrl
+  };
+}
+
+function inspectMediaHttpStatus(
+  file: string,
+  context: Record<string, unknown>,
+  level: "error" | "info" | "warn" = "warn"
+) {
+  const diagnostics = getMediaUrlDiagnostics(file);
+  const diagnosticUrl = `${diagnostics.requestedUrl}${diagnostics.requestedUrl.includes("?") ? "&" : "?"}diagnostic=${Date.now()}`;
+
+  sendPlayerDebugLog("media", "media availability fetch started", {
+    ...context,
+    ...diagnostics,
+    diagnosticUrl,
+    stack: getDebugStack()
+  }, level);
+
+  void fetch(diagnosticUrl, {
+    cache: "no-store",
+    method: "GET"
+  })
+    .then((response) => {
+      sendPlayerDebugLog(response.ok ? "media" : "media", "media availability fetch completed", {
+        ...context,
+        ...diagnostics,
+        contentLength: response.headers.get("content-length"),
+        contentType: response.headers.get("content-type"),
+        diagnosticUrl,
+        ok: response.ok,
+        redirected: response.redirected,
+        status: response.status,
+        statusText: response.statusText,
+        url: response.url
+      }, response.ok ? "info" : "warn");
+    })
+    .catch((error: unknown) => {
+      sendPlayerDebugLog("media", "media availability fetch failed", {
+        ...context,
+        ...diagnostics,
+        diagnosticUrl,
+        error: error instanceof Error ? error.message : String(error)
+      }, "error");
+    });
+}
+
 function getVideoElementState(video: HTMLVideoElement | null) {
   if (!video) {
     return {
@@ -362,16 +423,31 @@ function probeImage(file: string) {
   return new Promise<boolean>((resolve) => {
     const image = new Image();
     const timer = window.setTimeout(() => resolve(false), mediaProbeTimeoutMs);
+    const diagnostics = getMediaUrlDiagnostics(file);
 
     image.onload = () => {
       window.clearTimeout(timer);
+      sendPlayerDebugLog("media", "image probe loaded", {
+        ...diagnostics,
+        currentSrc: image.currentSrc,
+        naturalHeight: image.naturalHeight,
+        naturalWidth: image.naturalWidth
+      });
       resolve(true);
     };
     image.onerror = () => {
       window.clearTimeout(timer);
+      sendPlayerDebugLog("media", "image probe failed", {
+        ...diagnostics,
+        currentSrc: image.currentSrc,
+        stack: getDebugStack()
+      }, "warn");
+      inspectMediaHttpStatus(file, {
+        reason: "image probe onerror"
+      });
       resolve(false);
     };
-    image.src = `${getMediaUrl(file)}?probe=${Date.now()}`;
+    image.src = `${diagnostics.requestedUrl}?probe=${Date.now()}`;
   });
 }
 
@@ -379,18 +455,34 @@ function probeVideo(file: string) {
   return new Promise<boolean>((resolve) => {
     const video = document.createElement("video");
     const timer = window.setTimeout(() => resolve(false), mediaProbeTimeoutMs);
+    const diagnostics = getMediaUrlDiagnostics(file);
 
     video.onloadedmetadata = () => {
       window.clearTimeout(timer);
+      sendPlayerDebugLog("media", "video probe loadedmetadata", {
+        ...diagnostics,
+        currentSrc: video.currentSrc,
+        duration: Number.isFinite(video.duration) ? video.duration : null
+      });
       resolve(true);
     };
     video.onerror = () => {
       window.clearTimeout(timer);
+      sendPlayerDebugLog("media", "video probe failed", {
+        ...diagnostics,
+        currentSrc: video.currentSrc,
+        errorCode: video.error?.code ?? null,
+        errorMessage: video.error?.message ?? null,
+        stack: getDebugStack()
+      }, "warn");
+      inspectMediaHttpStatus(file, {
+        reason: "video probe onerror"
+      });
       resolve(false);
     };
     video.preload = "metadata";
     video.muted = true;
-    video.src = `${getMediaUrl(file)}?probe=${Date.now()}`;
+    video.src = `${diagnostics.requestedUrl}?probe=${Date.now()}`;
     video.load();
   });
 }
@@ -973,7 +1065,23 @@ function InstrumentedVideo({
       onError={(event) => {
         clearVideoTimers();
         event.currentTarget.dataset.missing = "true";
-        emit("error", "media element error", event.currentTarget);
+        emit(
+          "error",
+          `media element error: ${event.currentTarget.error?.message ?? "unknown"}`,
+          event.currentTarget
+        );
+        inspectMediaHttpStatus(item.file, {
+          activeIndex,
+          currentSrc: event.currentTarget.currentSrc,
+          errorCode: event.currentTarget.error?.code ?? null,
+          errorMessage: event.currentTarget.error?.message ?? null,
+          item: getScheduleItemDebugSummary(item),
+          playbackEpoch,
+          reason: "video element onerror",
+          sessionKey,
+          src,
+          videoKey
+        }, "error");
         onFailure(sessionKey, `Media unavailable: ${item.file}`);
       }}
       onLoadedMetadata={(event) => {
@@ -2094,6 +2202,16 @@ export function PlayerApp() {
         scheduledSessionKey: sessionKey,
         note: "cleared before scheduling/handling failure"
       });
+      sendPlayerDebugLog("media", "missing media state set", {
+        activeIndex: activeIndexRef.current,
+        activeItem: getScheduleItemDebugSummary(activeItemRef.current),
+        itemCount: schedule?.items.length ?? 0,
+        message,
+        playbackSessionKey: playbackSessionKeyRef.current,
+        sessionKey,
+        source: "handleActiveItemFailure",
+        stack: getDebugStack()
+      }, "warn");
       setMissingItemMessage(message);
 
       if (!schedule || schedule.items.length === 0) {
@@ -2166,19 +2284,27 @@ export function PlayerApp() {
     const sessionKey = playbackSessionKey;
 
     if (activeItem.type === "image") {
+      const urlDiagnostics = getMediaUrlDiagnostics(activeItem.file);
+
       return (
         <>
           <img
             alt=""
             className={className}
             key={getItemKey(activeItem, schedule, activeIndex, playbackEpoch, playbackSessionKey)}
-            onLoad={() => {
+            onLoad={(event) => {
+              const image = event.currentTarget;
               sendPlayerDebugLog("image", "image lifecycle", {
                 activeIndex,
+                currentSrc: image.currentSrc,
                 file: activeItem.file,
+                imageElement: getElementSummary(".media-image, .themed-media"),
                 itemId: activeItem.id,
+                naturalHeight: image.naturalHeight,
+                naturalWidth: image.naturalWidth,
                 playbackSessionKey,
-                reason: "load"
+                reason: "load",
+                ...urlDiagnostics
               });
               if (sessionKey !== playbackSessionKeyRef.current) {
                 return;
@@ -2188,22 +2314,41 @@ export function PlayerApp() {
               setMissingItemMessage(null);
             }}
             onError={(event) => {
+              const image = event.currentTarget;
               sendPlayerDebugLog("image", "image lifecycle", {
                 activeIndex,
+                absoluteUrl: urlDiagnostics.absoluteUrl,
+                currentSrc: image.currentSrc,
                 file: activeItem.file,
+                imageElement: getElementSummary(".media-image, .themed-media"),
+                item: getScheduleItemDebugSummary(activeItem),
                 itemId: activeItem.id,
+                naturalHeight: image.naturalHeight,
+                naturalWidth: image.naturalWidth,
                 playbackSessionKey,
                 reason: "error",
-                src: event.currentTarget.currentSrc || event.currentTarget.src
+                requestedUrl: urlDiagnostics.requestedUrl,
+                resolvedUrl: urlDiagnostics.resolvedUrl,
+                src: image.currentSrc || image.src,
+                stack: getDebugStack()
               }, "warn");
               if (sessionKey !== playbackSessionKeyRef.current) {
                 return;
               }
 
-              event.currentTarget.dataset.missing = "true";
+              inspectMediaHttpStatus(activeItem.file, {
+                activeIndex,
+                currentSrc: image.currentSrc,
+                item: getScheduleItemDebugSummary(activeItem),
+                playbackSessionKey,
+                reason: "image element onerror",
+                sessionKey,
+                src: image.src
+              }, "error");
+              image.dataset.missing = "true";
               handleActiveItemFailure(sessionKey, `Media unavailable: ${activeItem.file}`);
             }}
-            src={getMediaUrl(activeItem.file)}
+            src={urlDiagnostics.requestedUrl}
           />
           <p className="missing-media-message">{missingItemMessage ?? `Media unavailable: ${activeItem.file}`}</p>
         </>
