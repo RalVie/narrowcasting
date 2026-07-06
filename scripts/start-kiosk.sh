@@ -6,7 +6,11 @@ if [ -f /etc/narrowcasting/kiosk.env ]; then
   . /etc/narrowcasting/kiosk.env
 fi
 
-KIOSK_URL="${KIOSK_URL:-http://localhost:4174/player}"
+if [ "${NARROWCASTING_PLAYER_DEBUG:-0}" = "1" ]; then
+  KIOSK_URL="${KIOSK_DEBUG_URL:-http://localhost:4174/player?debug=1}"
+else
+  KIOSK_URL="${KIOSK_URL:-http://localhost:4174/player}"
+fi
 RESTART_DELAY_SECONDS="${RESTART_DELAY_SECONDS:-10}"
 CHROMIUM_PROFILE_DIR="${CHROMIUM_PROFILE_DIR:-${HOME:-/tmp}/.config/narrowcasting/chromium-kiosk}"
 CHROMIUM_REMOTE_DEBUGGING_ADDRESS="${CHROMIUM_REMOTE_DEBUGGING_ADDRESS:-127.0.0.1}"
