@@ -269,6 +269,8 @@ async function transcodeVideo(inputPath: string, outputPath: string) {
     "2",
     "-movflags",
     "+faststart",
+    "-f",
+    "mp4",
     pendingPath
   ], {
     maxBuffer: 8 * 1024 * 1024
