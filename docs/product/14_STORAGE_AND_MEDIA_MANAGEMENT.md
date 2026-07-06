@@ -182,6 +182,43 @@ Current Product 1.3 limitations:
 - Web URL content is online-only at playback time.
 - RSS text content is resolved server-side into the schedule; remote RSS item images are not guaranteed offline in the MVP.
 
+## 4.3 Video Compatibility Guidance
+
+Uploaded videos are rendered by the local Chromium kiosk on the Player appliance. For Raspberry Pi deployments, customer-provided MP4 files should be encoded conservatively:
+
+- MP4 container
+- H.264 video
+- `yuv420p` pixel format
+- AAC audio, or no audio
+- `faststart` enabled
+- reasonable bitrate and resolution for the target Raspberry Pi and display
+
+If a video causes Chromium to hang during media initialization or never reaches `canplay`, re-encode it before treating the issue as a scheduling or Player runtime defect.
+
+Recommended stabilization command:
+
+```bash
+ffmpeg -i input.mp4 \
+  -c:v libx264 -profile:v high -level 4.1 -pix_fmt yuv420p \
+  -preset medium -crf 23 -maxrate 8000k -bufsize 16000k \
+  -vf "scale='min(1920,iw)':-2" \
+  -c:a aac -b:a 128k -ac 2 \
+  -movflags +faststart \
+  output-pi-safe.mp4
+```
+
+For silent output:
+
+```bash
+ffmpeg -i input.mp4 \
+  -c:v libx264 -profile:v high -level 4.1 -pix_fmt yuv420p \
+  -preset medium -crf 23 -maxrate 8000k -bufsize 16000k \
+  -vf "scale='min(1920,iw)':-2" \
+  -an \
+  -movflags +faststart \
+  output-pi-safe.mp4
+```
+
 ## 5. Media States
 
 A media object can be:
