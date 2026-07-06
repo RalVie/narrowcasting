@@ -641,21 +641,14 @@ async function processVideo(mediaId: string) {
     });
     const profile = await analyzeVideo(sourcePath);
 
-    if (profile.piSafe) {
-      await updateMediaItem(mediaId, {
-        playbackFilename: sourceFilename,
-        processedAt: new Date().toISOString(),
-        processingError: undefined,
-        processingStatus: "ready",
-        videoProfile: profile
-      });
-      console.log("video normalization ready without transcode", { filename: sourceFilename, mediaId });
-      return;
-    }
-
     const normalizedFilename = createNormalizedFilename(mediaId);
     const normalizedPath = getMediaPath(normalizedFilename);
-    console.log("video normalization transcoding", { filename: sourceFilename, mediaId, normalizedFilename });
+    console.log("video normalization transcoding", {
+      filename: sourceFilename,
+      mediaId,
+      normalizedFilename,
+      probePiSafe: profile.piSafe
+    });
     await updateMediaItem(mediaId, {
       playbackFilename: normalizedFilename,
       processingError: undefined,
