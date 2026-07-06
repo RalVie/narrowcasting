@@ -28,4 +28,22 @@ export interface MediaItem {
   maxItems?: number;
   webUrlRenderMode?: "iframe" | "browser";
   browserActions?: BrowserAction[];
+  originalFilename?: string;
+  playbackFilename?: string;
+  processedAt?: string;
+  processingError?: string;
+  processingStatus?: "uploaded" | "analyzing" | "processing" | "ready" | "failed";
+  videoProfile?: {
+    audioCodec?: string | null;
+    bitrate?: number | null;
+    container?: string | null;
+    durationSeconds?: number | null;
+    height?: number | null;
+    level?: number | null;
+    piSafe?: boolean;
+    pixelFormat?: string | null;
+    profile?: string | null;
+    videoCodec?: string | null;
+    width?: number | null;
+  };
 }

@@ -19,6 +19,16 @@ function createPlaylistItem(media: MediaItem): PlaylistItem {
   };
 }
 
+function isMediaReadyForPlaylist(media: MediaItem) {
+  return media.type !== "video" || !media.processingStatus || media.processingStatus === "ready";
+}
+
+function getMediaPlaybackFile(media: MediaItem) {
+  return media.type === "video" && media.playbackFilename && media.processingStatus === "ready"
+    ? media.playbackFilename
+    : media.filename;
+}
+
 function formatBytes(size: number) {
   if (size < 1024) {
     return `${size} B`;
@@ -146,6 +156,15 @@ export function PlaylistsPage() {
   }
 
   function addMediaItem(media: MediaItem, index = playlist.items.length) {
+    if (!isMediaReadyForPlaylist(media)) {
+      setStatus(
+        media.processingStatus === "failed"
+          ? `Cannot add ${media.filename}: video normalization failed.`
+          : `Cannot add ${media.filename}: video is still processing.`
+      );
+      return;
+    }
+
     setPlaylist((currentPlaylist) => {
       const items = [...currentPlaylist.items];
       items.splice(index, 0, createPlaylistItem(media));
@@ -343,6 +362,11 @@ export function PlaylistsPage() {
   }
 
   function handleMediaDragStart(event: DragEvent<HTMLElement>, media: MediaItem) {
+    if (!isMediaReadyForPlaylist(media)) {
+      event.preventDefault();
+      return;
+    }
+
     event.dataTransfer.effectAllowed = "copy";
     event.dataTransfer.setData("application/x-media-id", media.mediaId);
   }
@@ -480,8 +504,8 @@ export function PlaylistsPage() {
           <div className="operator-media-grid">
             {filteredMedia.map((media) => (
               <article
-                className="operator-media-card"
-                draggable
+                className={isMediaReadyForPlaylist(media) ? "operator-media-card" : "operator-media-card disabled"}
+                draggable={isMediaReadyForPlaylist(media)}
                 key={media.mediaId}
                 onDragStart={(event) => handleMediaDragStart(event, media)}
                 onMouseEnter={() => media.type === "video" && startVideoPreview(media.mediaId)}
@@ -491,7 +515,7 @@ export function PlaylistsPage() {
                   {media.type === "image" ? (
                     <img alt="" src={apiUrl(`/media/${encodeURIComponent(media.filename)}`)} />
                   ) : previewingVideoId === media.mediaId ? (
-                    <video autoPlay muted playsInline src={apiUrl(`/media/${encodeURIComponent(media.filename)}`)} />
+                    <video autoPlay muted playsInline src={apiUrl(`/media/${encodeURIComponent(getMediaPlaybackFile(media))}`)} />
                   ) : (
                     <div className="operator-video-mark">Play</div>
                   )}
@@ -500,6 +524,9 @@ export function PlaylistsPage() {
                 <span>
                   {media.type} · {formatBytes(media.size)}
                 </span>
+                {media.type === "video" && !isMediaReadyForPlaylist(media) ? (
+                  <span>{media.processingStatus === "failed" ? "Normalization failed" : "Processing video"}</span>
+                ) : null}
               </article>
             ))}
           </div>

@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
+  isMediaReadyForPlaylist,
   listMedia,
   resolveMediaReferenceFromList,
   type MediaItem
@@ -228,6 +229,15 @@ function validatePlaylistItemsInput(
         field: `${field}.type`,
         severity: "blocking_error",
         message: "Playlist item type must match the referenced media type."
+      });
+    }
+
+    if (referencedMedia && !isMediaReadyForPlaylist(referencedMedia)) {
+      issues.push({
+        ruleId: "VAL-MEDIA-009",
+        field: `${field}.mediaId`,
+        severity: "blocking_error",
+        message: "Video media is still processing or failed normalization and cannot be used in playlists yet."
       });
     }
 

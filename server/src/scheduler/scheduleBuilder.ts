@@ -1,5 +1,5 @@
 import { listPlaylists } from "../playlist/playlistStore.js";
-import { listMedia, resolveMediaReferenceFromList } from "../media/mediaStore.js";
+import { getMediaPlaybackFilename, listMedia, resolveMediaReferenceFromList } from "../media/mediaStore.js";
 import type { Program } from "../program/programStore.js";
 import { staticSchedule, type Schedule } from "../schedule/staticSchedule.js";
 import { getThemeOrDefault } from "../theme/themeStore.js";
@@ -110,7 +110,7 @@ export async function getScheduleForProgram(program: Program, themeId?: string):
             id: baseId,
             mediaId: item.mediaId,
             type: item.type,
-            file: item.file,
+            file: media ? getMediaPlaybackFilename(media) : item.file,
             duration: item.duration,
             durationMode: item.durationMode
           }

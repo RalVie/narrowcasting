@@ -592,6 +592,7 @@ restart_kiosk_if_available() {
 
 update_server() {
   log_step "Updating server components"
+  install_server_media_packages
   npm_install_part server
   npm_install_part dashboard
   build_part server

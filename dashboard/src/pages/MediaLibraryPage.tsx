@@ -59,6 +59,40 @@ function serializeBrowserActions(actions: BrowserAction[]) {
   });
 }
 
+function getVideoProcessingStatus(item: MediaItem) {
+  if (item.type !== "video") {
+    return null;
+  }
+
+  return item.processingStatus ?? "ready";
+}
+
+function getVideoProcessingLabel(item: MediaItem) {
+  const status = getVideoProcessingStatus(item);
+
+  if (!status) {
+    return null;
+  }
+
+  if (status === "ready") {
+    return "Ready";
+  }
+
+  if (status === "failed") {
+    return "Failed";
+  }
+
+  if (status === "processing") {
+    return "Processing";
+  }
+
+  if (status === "analyzing") {
+    return "Analyzing";
+  }
+
+  return "Uploaded";
+}
+
 export function MediaLibraryPage() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [items, setItems] = useState<MediaItem[]>([]);
@@ -555,6 +589,24 @@ export function MediaLibraryPage() {
                         ? `${item.type} | ${formatFileSize(item.size)}`
                         : `${item.type} | ${item.url ?? ""}`}
                     </p>
+                    {item.type === "video" ? (
+                      <>
+                        <span className={`media-processing-badge ${getVideoProcessingStatus(item) ?? "ready"}`}>
+                          {getVideoProcessingLabel(item)}
+                        </span>
+                        {item.processingStatus && item.processingStatus !== "ready" && item.processingStatus !== "failed" ? (
+                          <p>Preparing video for Player playback...</p>
+                        ) : null}
+                        {item.processingStatus === "failed" ? (
+                          <p className="media-processing-error">
+                            {item.processingError ?? "Video normalization failed."}
+                          </p>
+                        ) : null}
+                        {item.playbackFilename && item.playbackFilename !== item.filename ? (
+                          <p>Playback asset: {item.playbackFilename}</p>
+                        ) : null}
+                      </>
+                    ) : null}
                     {item.type === "web_url" ? <p>Render mode: {item.webUrlRenderMode ?? "iframe"}</p> : null}
                     {item.type === "web_url" && item.browserActions && item.browserActions.length > 0 ? (
                       <p>Automation actions: {item.browserActions.length}</p>

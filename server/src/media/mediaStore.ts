@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { access, mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { access, mkdir, readdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, extname, resolve } from "node:path";
+import { promisify } from "node:util";
 import { assertValid, type DomainValidationIssue } from "../validation/domainValidation.js";
 import type { BrowserAction } from "../../../shared/runtime.js";
 
@@ -20,6 +22,26 @@ export interface MediaItem {
   maxItems?: number;
   webUrlRenderMode?: "iframe" | "browser";
   browserActions?: BrowserAction[];
+  originalFilename?: string;
+  playbackFilename?: string;
+  processedAt?: string;
+  processingError?: string;
+  processingStatus?: "uploaded" | "analyzing" | "processing" | "ready" | "failed";
+  videoProfile?: VideoProfile;
+}
+
+export interface VideoProfile {
+  audioCodec?: string | null;
+  bitrate?: number | null;
+  container?: string | null;
+  durationSeconds?: number | null;
+  height?: number | null;
+  level?: number | null;
+  piSafe?: boolean;
+  pixelFormat?: string | null;
+  profile?: string | null;
+  videoCodec?: string | null;
+  width?: number | null;
 }
 
 type MediaReference = string | undefined;
@@ -28,6 +50,9 @@ const mediaRoot = resolve(process.cwd(), "public", "media");
 const metadataPath = resolve(process.cwd(), "data", "media.json");
 const imageExtensions = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 const videoExtensions = new Set([".mp4", ".webm"]);
+const execFileAsync = promisify(execFile);
+let videoProcessingActive = false;
+const videoProcessingQueue: string[] = [];
 
 export function getMediaRoot() {
   return mediaRoot;
@@ -126,6 +151,129 @@ function getMediaType(filename: string): MediaItem["type"] | null {
   }
 
   return null;
+}
+
+function getPlaybackFilename(item: MediaItem) {
+  return item.playbackFilename && item.processingStatus === "ready" ? item.playbackFilename : item.filename;
+}
+
+export function getMediaPlaybackFilename(item: MediaItem) {
+  return getPlaybackFilename(item);
+}
+
+function isVideoReady(item: MediaItem) {
+  return item.type !== "video" || item.processingStatus === undefined || item.processingStatus === "ready";
+}
+
+export function isMediaReadyForPlaylist(item: MediaItem) {
+  return isVideoReady(item);
+}
+
+function createNormalizedFilename(mediaId: string) {
+  return `normalized-${mediaId.replace(/[^a-zA-Z0-9_-]+/g, "-")}.mp4`;
+}
+
+function parseNullableNumber(value: unknown) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+function parseFfprobeProfile(value: unknown): VideoProfile {
+  const probe = value && typeof value === "object" ? (value as { format?: Record<string, unknown>; streams?: unknown[] }) : {};
+  const streams = Array.isArray(probe.streams) ? probe.streams.filter((stream): stream is Record<string, unknown> => Boolean(stream && typeof stream === "object")) : [];
+  const video = streams.find((stream) => stream.codec_type === "video");
+  const audio = streams.find((stream) => stream.codec_type === "audio");
+  const formatName = typeof probe.format?.format_name === "string" ? probe.format.format_name : null;
+  const duration = parseNullableNumber(probe.format?.duration ?? video?.duration);
+  const bitrate = parseNullableNumber(probe.format?.bit_rate ?? video?.bit_rate);
+  const level = parseNullableNumber(video?.level);
+  const width = parseNullableNumber(video?.width);
+  const height = parseNullableNumber(video?.height);
+  const profile = typeof video?.profile === "string" ? video.profile : null;
+  const videoCodec = typeof video?.codec_name === "string" ? video.codec_name : null;
+  const pixelFormat = typeof video?.pix_fmt === "string" ? video.pix_fmt : null;
+  const audioCodec = typeof audio?.codec_name === "string" ? audio.codec_name : null;
+  const containerIsMp4 = typeof formatName === "string" && /(^|,)mov,mp4,m4a,3gp,3g2,mj2(,|$)/.test(formatName);
+  const piSafe =
+    containerIsMp4 &&
+    videoCodec === "h264" &&
+    pixelFormat === "yuv420p" &&
+    (width === null || width <= 1920) &&
+    (level === null || level <= 41) &&
+    (audioCodec === null || audioCodec === "aac");
+
+  return {
+    audioCodec,
+    bitrate,
+    container: formatName,
+    durationSeconds: duration,
+    height,
+    level,
+    piSafe,
+    pixelFormat,
+    profile,
+    videoCodec,
+    width
+  };
+}
+
+async function analyzeVideo(filePath: string): Promise<VideoProfile> {
+  const { stdout } = await execFileAsync("ffprobe", [
+    "-v",
+    "error",
+    "-print_format",
+    "json",
+    "-show_format",
+    "-show_streams",
+    filePath
+  ], {
+    maxBuffer: 8 * 1024 * 1024
+  });
+
+  return parseFfprobeProfile(JSON.parse(stdout));
+}
+
+async function transcodeVideo(inputPath: string, outputPath: string) {
+  const pendingPath = `${outputPath}.tmp`;
+  await execFileAsync("ffmpeg", [
+    "-y",
+    "-i",
+    inputPath,
+    "-map",
+    "0:v:0",
+    "-map",
+    "0:a?",
+    "-c:v",
+    "libx264",
+    "-profile:v",
+    "high",
+    "-level",
+    "4.1",
+    "-pix_fmt",
+    "yuv420p",
+    "-preset",
+    "medium",
+    "-crf",
+    "23",
+    "-maxrate",
+    "8000k",
+    "-bufsize",
+    "16000k",
+    "-vf",
+    "scale=min(1920\\,iw):-2",
+    "-c:a",
+    "aac",
+    "-b:a",
+    "128k",
+    "-ac",
+    "2",
+    "-movflags",
+    "+faststart",
+    pendingPath
+  ], {
+    maxBuffer: 8 * 1024 * 1024
+  });
+  await rename(pendingPath, outputPath);
 }
 
 function isExternalMediaType(type: unknown): type is "web_url" | "rss_feed" {
@@ -388,6 +536,14 @@ function normalizeMetadataItem(value: unknown): MediaItem | null {
   }
 
   const filename = candidate.filename;
+  const processingStatus =
+    candidate.processingStatus === "uploaded" ||
+    candidate.processingStatus === "analyzing" ||
+    candidate.processingStatus === "processing" ||
+    candidate.processingStatus === "ready" ||
+    candidate.processingStatus === "failed"
+      ? candidate.processingStatus
+      : undefined;
 
   return {
     id:
@@ -400,7 +556,28 @@ function normalizeMetadataItem(value: unknown): MediaItem | null {
         : createStableMediaId(),
     filename,
     type: candidate.type,
-    size: typeof candidate.size === "number" && Number.isFinite(candidate.size) ? candidate.size : 0
+    size: typeof candidate.size === "number" && Number.isFinite(candidate.size) ? candidate.size : 0,
+    originalFilename:
+      typeof candidate.originalFilename === "string" && candidate.originalFilename.trim()
+        ? candidate.originalFilename
+        : undefined,
+    playbackFilename:
+      typeof candidate.playbackFilename === "string" && candidate.playbackFilename.trim()
+        ? candidate.playbackFilename
+        : undefined,
+    processedAt:
+      typeof candidate.processedAt === "string" && candidate.processedAt.trim()
+        ? candidate.processedAt
+        : undefined,
+    processingError:
+      typeof candidate.processingError === "string" && candidate.processingError.trim()
+        ? candidate.processingError
+        : undefined,
+    processingStatus,
+    videoProfile:
+      candidate.videoProfile && typeof candidate.videoProfile === "object"
+        ? (candidate.videoProfile as VideoProfile)
+        : undefined
   };
 }
 
@@ -425,6 +602,117 @@ async function writeMetadataFile(items: MediaItem[]) {
   validateMediaCollection(items);
   await mkdir(resolve(process.cwd(), "data"), { recursive: true });
   await writeFile(metadataPath, `${JSON.stringify(items, null, 2)}\n`, "utf8");
+}
+
+async function updateMediaItem(mediaId: string, patch: Partial<MediaItem>) {
+  const items = await readMetadataFile();
+  const index = items.findIndex((item) => item.mediaId === mediaId);
+
+  if (index === -1) {
+    return null;
+  }
+
+  const nextItem = {
+    ...items[index],
+    ...patch
+  };
+  const nextItems = [...items];
+  nextItems[index] = nextItem;
+  await writeMetadataFile(nextItems);
+  return nextItem;
+}
+
+async function processVideo(mediaId: string) {
+  const items = await readMetadataFile();
+  const item = items.find((candidate) => candidate.mediaId === mediaId);
+
+  if (!item || item.type !== "video") {
+    return;
+  }
+
+  const sourceFilename = item.originalFilename ?? item.filename;
+  const sourcePath = getMediaPath(sourceFilename);
+
+  try {
+    console.log("video normalization analyzing", { filename: sourceFilename, mediaId });
+    await updateMediaItem(mediaId, {
+      processingError: undefined,
+      processingStatus: "analyzing"
+    });
+    const profile = await analyzeVideo(sourcePath);
+
+    if (profile.piSafe) {
+      await updateMediaItem(mediaId, {
+        playbackFilename: sourceFilename,
+        processedAt: new Date().toISOString(),
+        processingError: undefined,
+        processingStatus: "ready",
+        videoProfile: profile
+      });
+      console.log("video normalization ready without transcode", { filename: sourceFilename, mediaId });
+      return;
+    }
+
+    const normalizedFilename = createNormalizedFilename(mediaId);
+    const normalizedPath = getMediaPath(normalizedFilename);
+    console.log("video normalization transcoding", { filename: sourceFilename, mediaId, normalizedFilename });
+    await updateMediaItem(mediaId, {
+      playbackFilename: normalizedFilename,
+      processingError: undefined,
+      processingStatus: "processing",
+      videoProfile: profile
+    });
+    await transcodeVideo(sourcePath, normalizedPath);
+    const normalizedProfile = await analyzeVideo(normalizedPath);
+    await updateMediaItem(mediaId, {
+      playbackFilename: normalizedFilename,
+      processedAt: new Date().toISOString(),
+      processingError: undefined,
+      processingStatus: "ready",
+      videoProfile: normalizedProfile
+    });
+    console.log("video normalization complete", { filename: sourceFilename, mediaId, normalizedFilename });
+  } catch (error) {
+    console.error("video normalization failed", {
+      error: error instanceof Error ? error.message : String(error),
+      filename: sourceFilename,
+      mediaId
+    });
+    await updateMediaItem(mediaId, {
+      playbackFilename: undefined,
+      processedAt: new Date().toISOString(),
+      processingError: error instanceof Error ? error.message : String(error),
+      processingStatus: "failed"
+    });
+  }
+}
+
+function enqueueVideoProcessing(mediaId: string) {
+  if (!videoProcessingQueue.includes(mediaId)) {
+    videoProcessingQueue.push(mediaId);
+  }
+
+  void drainVideoProcessingQueue();
+}
+
+async function drainVideoProcessingQueue() {
+  if (videoProcessingActive) {
+    return;
+  }
+
+  videoProcessingActive = true;
+
+  try {
+    while (videoProcessingQueue.length > 0) {
+      const mediaId = videoProcessingQueue.shift();
+
+      if (mediaId) {
+        await processVideo(mediaId);
+      }
+    }
+  } finally {
+    videoProcessingActive = false;
+  }
 }
 
 function getStableMediaId(existingItem: MediaItem | undefined, usedMediaIds: Set<string>) {
@@ -466,7 +754,13 @@ async function itemFromFile(
     mediaId: getStableMediaId(existingItem, usedMediaIds),
     filename,
     type: mediaType,
-    size: fileStat.size
+    size: fileStat.size,
+    originalFilename: existingItem?.originalFilename,
+    playbackFilename: existingItem?.playbackFilename,
+    processedAt: existingItem?.processedAt,
+    processingError: existingItem?.processingError,
+    processingStatus: existingItem?.processingStatus,
+    videoProfile: existingItem?.videoProfile
   };
 }
 
@@ -483,10 +777,17 @@ export async function listMedia(): Promise<MediaItem[]> {
       .filter((item) => item.type === "image" || item.type === "video")
       .map((item) => [item.filename, item])
   );
+  const playbackAssets = new Set(
+    metadata
+      .filter((item) => item.type === "video" && item.playbackFilename && item.playbackFilename !== item.filename)
+      .map((item) => item.playbackFilename as string)
+  );
   const usedMediaIds = new Set<string>();
   const fileItems = (
     await Promise.all(
-      filenames.map((filename) => itemFromFile(filename, metadataByFilename.get(filename), usedMediaIds))
+      filenames
+        .filter((filename) => !playbackAssets.has(filename))
+        .map((filename) => itemFromFile(filename, metadataByFilename.get(filename), usedMediaIds))
     )
   )
     .filter((item): item is MediaItem => item !== null)
@@ -526,7 +827,23 @@ export async function createMedia(filename: string, content: Buffer): Promise<Me
     throw new Error("media metadata could not be created");
   }
 
-  return item;
+  if (mediaType === "image") {
+    const readyImage = await updateMediaItem(item.mediaId, {
+      processingStatus: "ready"
+    });
+    return readyImage ?? item;
+  }
+
+  const queuedVideo = await updateMediaItem(item.mediaId, {
+    originalFilename: safeFilename,
+    playbackFilename: undefined,
+    processedAt: undefined,
+    processingError: undefined,
+    processingStatus: "uploaded",
+    videoProfile: undefined
+  });
+  enqueueVideoProcessing(item.mediaId);
+  return queuedVideo ?? item;
 }
 
 export async function createExternalMedia(input: unknown): Promise<MediaItem> {
@@ -635,12 +952,16 @@ export async function deleteMedia(id: string): Promise<boolean> {
   }
 
   if (item.type === "image" || item.type === "video") {
-    try {
-      const filePath = getMediaPath(item.filename);
-      await access(filePath);
-      await unlink(filePath);
-    } catch {
-      // Metadata is still removed even if the file is already gone.
+    const filenames = new Set([item.filename, item.originalFilename, item.playbackFilename].filter((value): value is string => Boolean(value)));
+
+    for (const filename of filenames) {
+      try {
+        const filePath = getMediaPath(filename);
+        await access(filePath);
+        await unlink(filePath);
+      } catch {
+        // Metadata is still removed even if a file is already gone.
+      }
     }
   }
 

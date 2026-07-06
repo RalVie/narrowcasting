@@ -140,6 +140,7 @@ require_systemd
 backup_runtime_data
 pull_latest_code
 install_system_packages
+install_server_media_packages
 npm_install_all
 build_all
 refresh_installed_services

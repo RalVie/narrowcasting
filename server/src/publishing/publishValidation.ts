@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { listMedia, resolveMediaReferenceFromList } from "../media/mediaStore.js";
+import { isMediaReadyForPlaylist, listMedia, resolveMediaReferenceFromList } from "../media/mediaStore.js";
 import { listPlaylists } from "../playlist/playlistStore.js";
 import { getProgramsOrDefault } from "../program/programStore.js";
 import { listScreenGroups } from "../screens/screenGroupStore.js";
@@ -942,6 +942,19 @@ export async function validatePublishIntent(intent: PublishValidationIntent): Pr
               message: "Playlist item media type does not match the referenced media.",
               affectedObject: { type: "Media", id: media.mediaId, name: media.filename },
               suggestedFix: "Refresh the playlist item or replace the media reference."
+            })
+          );
+        }
+
+        if (!isMediaReadyForPlaylist(media)) {
+          messages.push(
+            message({
+              severity: "blocking_error",
+              category: "media",
+              ruleId: "VAL-MEDIA-009",
+              message: "Video media is still processing or failed normalization.",
+              affectedObject: { type: "Media", id: media.mediaId, name: media.filename },
+              suggestedFix: "Wait for video processing to finish or replace the video."
             })
           );
         }

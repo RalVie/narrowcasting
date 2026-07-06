@@ -173,6 +173,7 @@ warn_if_not_raspberry_pi
 require_repo_root
 require_systemd
 install_system_packages
+install_server_media_packages
 install_node_runtime_if_needed
 require_node_runtime
 npm_install_all

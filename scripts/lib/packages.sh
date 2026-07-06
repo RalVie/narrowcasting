@@ -69,6 +69,27 @@ install_player_system_packages() {
   fi
 }
 
+install_server_media_packages() {
+  if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1; then
+    log_info "ffmpeg and ffprobe already installed."
+    return
+  fi
+
+  if [ "$SKIP_SYSTEM_PACKAGES" -eq 1 ]; then
+    log_warning "ffmpeg/ffprobe installation skipped by --skip-system-packages. Video normalization will fail until they are installed."
+    return
+  fi
+
+  if ! command -v apt-get >/dev/null 2>&1; then
+    log_warning "apt-get not found. Cannot install ffmpeg/ffprobe automatically."
+    return
+  fi
+
+  log_step "Installing ffmpeg for server-side video normalization"
+  sudo_cmd apt-get update
+  sudo_cmd apt-get install -y ffmpeg
+}
+
 npm_install_part() {
   local part="$1"
   log_step "Installing npm dependencies for $part"
