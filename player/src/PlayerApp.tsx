@@ -76,6 +76,18 @@ interface VideoDebugEvent {
   ended: boolean | null;
   readyState: number | null;
   networkState: number | null;
+  buffered: Array<{ end: number; start: number }>;
+  duration: number | null;
+  errorCode: number | null;
+  errorObject: {
+    code: number | null;
+    message: string | null;
+    name: string | null;
+  } | null;
+  errorMessage: string | null;
+  errorName: string | null;
+  resolvedSrcProperty: string | null;
+  seekable: Array<{ end: number; start: number }>;
   note?: string;
   activeVideoTimers?: string[];
   timerId?: number | null;
@@ -402,21 +414,75 @@ function inspectMediaHttpStatus(
 function getVideoElementState(video: HTMLVideoElement | null) {
   if (!video) {
     return {
+      buffered: [],
       currentTime: null,
+      duration: null,
+      errorCode: null,
+      errorObject: null,
+      errorMessage: null,
+      errorName: null,
       paused: null,
       ended: null,
       readyState: null,
-      networkState: null
+      networkState: null,
+      resolvedSrcProperty: null,
+      seekable: []
     };
   }
 
+  const errorObject = serializeMediaError(video.error);
+
   return {
+    buffered: getTimeRanges(video.buffered),
     currentTime: Number.isFinite(video.currentTime) ? Number(video.currentTime.toFixed(3)) : null,
+    duration: Number.isFinite(video.duration) ? Number(video.duration.toFixed(3)) : null,
+    errorCode: errorObject?.code ?? null,
+    errorObject,
+    errorMessage: errorObject?.message ?? null,
+    errorName: errorObject?.name ?? null,
     paused: video.paused,
     ended: video.ended,
     readyState: video.readyState,
-    networkState: video.networkState
+    networkState: video.networkState,
+    resolvedSrcProperty: video.src || null,
+    seekable: getTimeRanges(video.seekable)
   };
+}
+
+function serializeMediaError(error: MediaError | null) {
+  if (!error) {
+    return null;
+  }
+
+  return {
+    code: error.code,
+    message: error.message || null,
+    name: getMediaErrorName(error.code)
+  };
+}
+
+function getMediaErrorName(code: number | null) {
+  switch (code) {
+    case MediaError.MEDIA_ERR_ABORTED:
+      return "MEDIA_ERR_ABORTED";
+    case MediaError.MEDIA_ERR_NETWORK:
+      return "MEDIA_ERR_NETWORK";
+    case MediaError.MEDIA_ERR_DECODE:
+      return "MEDIA_ERR_DECODE";
+    case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+      return "MEDIA_ERR_SRC_NOT_SUPPORTED";
+    case null:
+      return null;
+    default:
+      return `UNKNOWN_MEDIA_ERR_${code}`;
+  }
+}
+
+function getTimeRanges(ranges: TimeRanges) {
+  return Array.from({ length: ranges.length }, (_, index) => ({
+    end: Number(ranges.end(index).toFixed(3)),
+    start: Number(ranges.start(index).toFixed(3))
+  }));
 }
 
 function probeImage(file: string) {
@@ -938,12 +1004,34 @@ function InstrumentedVideo({
       playSkippedReason: "waiting for canplay handler"
     });
 
+    const srcObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.type !== "attributes" || mutation.attributeName !== "src") {
+          continue;
+        }
+
+        emit(
+          "src attribute mutation",
+          "video src attribute changed while component was mounted",
+          videoRef.current,
+          {
+            playSkippedReason: "tracking src mutation before canplay/error"
+          }
+        );
+      }
+    });
+    srcObserver.observe(videoRef.current, {
+      attributeFilter: ["src"],
+      attributes: true
+    });
+
     if (!activeVisible) {
       emit("init early return", "video is not active/visible", videoRef.current, {
         playSkippedReason: "video not active/visible"
       });
 
       return () => {
+        srcObserver.disconnect();
         emit("unmount", "cleanup after inactive/hidden init path", videoRef.current);
       };
     }
@@ -1012,16 +1100,22 @@ function InstrumentedVideo({
 
     return () => {
       clearVideoTimers();
+      srcObserver.disconnect();
       window.clearTimeout(snapshotTimer);
       window.cancelAnimationFrame(animationFrame);
       const video = videoRef.current;
       if (video) {
+        emit("cleanup before src removal", "component cleanup is about to pause/remove src/load", video);
         try {
           video.pause();
           video.removeAttribute("src");
           video.load();
+          emit("cleanup after src removal", "component cleanup removed src and called load()", video, {
+            loadCalled: true
+          });
         } catch {
           // Best-effort cleanup; React removes the element next.
+          emit("cleanup src removal failed", "component cleanup could not remove src/load", video);
         }
       }
       emit("unmount", "component cleanup", videoRef.current);
@@ -1216,6 +1310,20 @@ export function PlayerApp() {
   const waitingForRegistration =
     registration.status === "pending" ||
     ((registration.status === "discovering" || registration.status === "error") && registration.serverUrl !== null);
+
+  useEffect(() => {
+    if (!debugInfo.enabled) {
+      return;
+    }
+
+    sendPlayerDebugLog("debug", "Player debug forwarding ENABLED", {
+      href: window.location.href,
+      origin: window.location.origin,
+      path: window.location.pathname,
+      search: window.location.search,
+      userAgent: window.navigator.userAgent
+    });
+  }, [debugInfo.enabled]);
 
   useEffect(() => {
     const activeItemType = activeItem ? activeItem.type : null;

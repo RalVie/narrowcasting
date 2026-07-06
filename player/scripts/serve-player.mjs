@@ -315,7 +315,12 @@ const server = createServer(async (request, response) => {
       const body = await readRequestJson(request);
       logPlayerDebug(body, request);
       sendJson(response, 200, { ok: true });
-    } catch {
+    } catch (error) {
+      console.warn("player debug endpoint rejected payload", {
+        at: new Date().toISOString(),
+        error: error instanceof Error ? error.message : String(error),
+        remoteAddress: request.socket.remoteAddress ?? null
+      });
       sendJson(response, 400, { error: "invalid debug log payload" });
     }
     return;
@@ -337,4 +342,5 @@ const server = createServer(async (request, response) => {
 
 server.listen(port, host, () => {
   console.log(`narrowcasting player available at http://${host}:${port}/player`);
+  console.log("player debug endpoint available at /api/debug-log");
 });
