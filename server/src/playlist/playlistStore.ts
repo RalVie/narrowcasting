@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
+  getMediaPlaybackFilename,
   isMediaReadyForPlaylist,
   listMedia,
   resolveMediaReferenceFromList,
@@ -51,6 +52,32 @@ const timePattern = /^\d{2}:\d{2}$/;
 
 export type DayOfWeek = (typeof dayNames)[number];
 
+function resolvePlaylistItemMedia(mediaItems: MediaItem[], item: Partial<PlaylistItem>) {
+  const mediaById = resolveMediaReferenceFromList(
+    mediaItems,
+    typeof item.mediaId === "string" ? item.mediaId : undefined
+  );
+
+  if (mediaById) {
+    return mediaById;
+  }
+
+  const mediaByLegacyFile = resolveMediaReferenceFromList(
+    mediaItems,
+    typeof item.file === "string" ? item.file : undefined
+  );
+
+  if (mediaByLegacyFile) {
+    console.warn("playlist item resolved through legacy file fallback", {
+      mediaId: item.mediaId,
+      file: item.file,
+      resolvedMediaId: mediaByLegacyFile.mediaId
+    });
+  }
+
+  return mediaByLegacyFile;
+}
+
 function isPlaylist(value: unknown): value is Playlist {
   if (!value || typeof value !== "object") {
     return false;
@@ -87,9 +114,7 @@ function normalizePlaylistItems(
     .map((item, index): PlaylistItem | null => {
       const candidate = item as Partial<PlaylistItem>;
 
-      const referencedMedia =
-        resolveMediaReferenceFromList(mediaItems, candidate.mediaId) ??
-        resolveMediaReferenceFromList(mediaItems, candidate.file);
+      const referencedMedia = resolvePlaylistItemMedia(mediaItems, candidate);
       const mediaId =
         referencedMedia?.mediaId ??
         (typeof candidate.mediaId === "string" && candidate.mediaId.trim() ? candidate.mediaId.trim() : undefined);
@@ -195,9 +220,7 @@ function validatePlaylistItemsInput(
       return;
     }
 
-    const referencedMedia =
-      resolveMediaReferenceFromList(mediaItems, typeof item.mediaId === "string" ? item.mediaId : undefined) ??
-      resolveMediaReferenceFromList(mediaItems, typeof item.file === "string" ? item.file : undefined);
+    const referencedMedia = resolvePlaylistItemMedia(mediaItems, item as Partial<PlaylistItem>);
 
     if (!referencedMedia) {
       issues.push({
@@ -519,7 +542,7 @@ export async function deletePlaylist(id: string): Promise<boolean> {
 }
 
 export async function getScheduleFromPlaylist(): Promise<Schedule> {
-  const existingPlaylistFile = await readPlaylist();
+  const [existingPlaylistFile, mediaItems] = await Promise.all([readPlaylist(), listMedia()]);
 
   if (!existingPlaylistFile) {
     return staticSchedule;
@@ -538,7 +561,10 @@ export async function getScheduleFromPlaylist(): Promise<Schedule> {
               id: item.id,
               mediaId: item.mediaId,
               type: item.type,
-              file: item.file,
+              file: (() => {
+                const media = resolvePlaylistItemMedia(mediaItems, item);
+                return media ? getMediaPlaybackFilename(media) : item.file;
+              })(),
               duration: item.duration,
               durationMode: item.durationMode
             }

@@ -26,6 +26,29 @@ export function getLatestUpdatedAt(values: string[]) {
   return latestTime > 0 ? new Date(latestTime).toISOString() : staticSchedule.updatedAt;
 }
 
+function resolveScheduleMedia(
+  mediaItems: Awaited<ReturnType<typeof listMedia>>,
+  item: { mediaId?: string; file?: string }
+) {
+  const mediaById = resolveMediaReferenceFromList(mediaItems, item.mediaId);
+
+  if (mediaById) {
+    return mediaById;
+  }
+
+  const mediaByLegacyFile = resolveMediaReferenceFromList(mediaItems, item.file);
+
+  if (mediaByLegacyFile) {
+    console.warn("schedule item resolved through legacy file fallback", {
+      mediaId: item.mediaId,
+      file: item.file,
+      resolvedMediaId: mediaByLegacyFile.mediaId
+    });
+  }
+
+  return mediaByLegacyFile;
+}
+
 export async function getScheduleForProgram(program: Program, themeId?: string): Promise<Schedule> {
   const [playlists, theme, mediaItems] = await Promise.all([
     listPlaylists(),
@@ -42,7 +65,7 @@ export async function getScheduleForProgram(program: Program, themeId?: string):
 
     const playlistItems = await Promise.all(
       playlist.items.map(async (item) => {
-        const media = resolveMediaReferenceFromList(mediaItems, item.mediaId) ?? resolveMediaReferenceFromList(mediaItems, item.file);
+        const media = resolveScheduleMedia(mediaItems, item);
         const baseId = `${program.id}-${playlist.id}-${item.id}`;
 
         if (item.type === "web_url") {

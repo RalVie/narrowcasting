@@ -29,6 +29,10 @@ function getMediaPlaybackFile(media: MediaItem) {
     : media.filename;
 }
 
+function getPlaylistItemLabel(item: PlaylistItem, media?: MediaItem) {
+  return media?.title ?? media?.filename ?? item.file;
+}
+
 function formatBytes(size: number) {
   if (size < 1024) {
     return `${size} B`;
@@ -522,7 +526,7 @@ export function PlaylistsPage() {
                 </div>
                 <strong>{media.filename}</strong>
                 <span>
-                  {media.type} · {formatBytes(media.size)}
+                  {media.type} Â· {formatBytes(media.size)}
                 </span>
                 {media.type === "video" && !isMediaReadyForPlaylist(media) ? (
                   <span>{media.processingStatus === "failed" ? "Normalization failed" : "Processing video"}</span>
@@ -600,66 +604,79 @@ export function PlaylistsPage() {
           </div>
           <div className="operator-timeline">
             {playlist.items.length === 0 ? <p className="operator-empty">No media yet. Drag media into this playlist.</p> : null}
-            {playlist.items.map((item, index) => (
-              <article
-                className="operator-timeline-row"
-                draggable
-                key={item.id}
-                onDragOver={(event) => event.preventDefault()}
-                onDragStart={(event) => handlePlaylistItemDragStart(event, index)}
-                onDrop={(event) => handlePlaylistDrop(event, index)}
-              >
-                <span className="operator-drag-handle">Drag</span>
-                <div className="operator-item-main">
-                  <strong>{item.file}</strong>
-                  <span>{item.type}{item.type === "video" ? " · video duration from file" : ""}</span>
-                </div>
-                {item.type === "video" ? (
-                  <fieldset className="operator-duration-options">
-                    <legend>Afspeelduur</legend>
+            {playlist.items.map((item, index) => {
+              const media = getMediaById(item.mediaId) ?? getMediaById(item.file);
+              const originalFile = media?.filename ?? item.file;
+              const playbackFile = media ? getMediaPlaybackFile(media) : item.file;
+              const showPlaybackFile = item.type === "video" && playbackFile !== originalFile;
+
+              return (
+                <article
+                  className="operator-timeline-row"
+                  draggable
+                  key={item.id}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDragStart={(event) => handlePlaylistItemDragStart(event, index)}
+                  onDrop={(event) => handlePlaylistDrop(event, index)}
+                >
+                  <span className="operator-drag-handle">Drag</span>
+                  <div className="operator-item-main">
+                    <strong>{getPlaylistItemLabel(item, media)}</strong>
+                    <span>{item.type}{item.type === "video" ? " - video duration from file" : ""}</span>
+                    {showPlaybackFile ? (
+                      <>
+                        <span>Original: {originalFile}</span>
+                        <span>Playback: {playbackFile}</span>
+                      </>
+                    ) : null}
+                  </div>
+                  {item.type === "video" ? (
+                    <fieldset className="operator-duration-options">
+                      <legend>Afspeelduur</legend>
+                      <label>
+                        <input
+                          checked={item.durationMode !== "clip"}
+                          name={`duration-mode-${item.id}`}
+                          onChange={() => updateVideoDurationMode(item.id, "auto")}
+                          type="radio"
+                        />
+                        Volledige video
+                      </label>
+                      <label>
+                        <input
+                          checked={item.durationMode === "clip"}
+                          name={`duration-mode-${item.id}`}
+                          onChange={() => updateVideoDurationMode(item.id, "clip")}
+                          type="radio"
+                        />
+                        Aangepaste duur:
+                        <input
+                          disabled={item.durationMode !== "clip"}
+                          min="1"
+                          onChange={(event) => updateDuration(item.id, Number(event.target.value))}
+                          type="number"
+                          value={item.duration}
+                        />
+                        seconden
+                      </label>
+                    </fieldset>
+                  ) : (
                     <label>
+                      Duration
                       <input
-                        checked={item.durationMode !== "clip"}
-                        name={`duration-mode-${item.id}`}
-                        onChange={() => updateVideoDurationMode(item.id, "auto")}
-                        type="radio"
-                      />
-                      Volledige video
-                    </label>
-                    <label>
-                      <input
-                        checked={item.durationMode === "clip"}
-                        name={`duration-mode-${item.id}`}
-                        onChange={() => updateVideoDurationMode(item.id, "clip")}
-                        type="radio"
-                      />
-                      Aangepaste duur:
-                      <input
-                        disabled={item.durationMode !== "clip"}
                         min="1"
                         onChange={(event) => updateDuration(item.id, Number(event.target.value))}
                         type="number"
                         value={item.duration}
                       />
-                      seconden
                     </label>
-                  </fieldset>
-                ) : (
-                  <label>
-                    Duration
-                    <input
-                      min="1"
-                      onChange={(event) => updateDuration(item.id, Number(event.target.value))}
-                      type="number"
-                      value={item.duration}
-                    />
-                  </label>
-                )}
-                <button disabled={isBusy} onClick={() => removeItem(item.id)} type="button">
-                  Remove
-                </button>
-              </article>
-            ))}
+                  )}
+                  <button disabled={isBusy} onClick={() => removeItem(item.id)} type="button">
+                    Remove
+                  </button>
+                </article>
+              );
+            })}
           </div>
         </section>
       </div>
