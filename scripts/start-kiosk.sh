@@ -6,10 +6,12 @@ if [ -f /etc/narrowcasting/kiosk.env ]; then
   . /etc/narrowcasting/kiosk.env
 fi
 
-if [ "${NARROWCASTING_PLAYER_DEBUG:-0}" = "1" ]; then
-  KIOSK_URL="${KIOSK_DEBUG_URL:-http://localhost:4174/player?debug=1}"
-else
-  KIOSK_URL="${KIOSK_URL:-http://localhost:4174/player}"
+DEFAULT_KIOSK_URL="http://localhost:4174/player"
+DEFAULT_KIOSK_DEBUG_URL="http://localhost:4174/player?debug=1"
+KIOSK_URL="${KIOSK_URL:-$DEFAULT_KIOSK_URL}"
+
+if [ "${NARROWCASTING_PLAYER_DEBUG:-0}" = "1" ] && [ "$KIOSK_URL" = "$DEFAULT_KIOSK_URL" ]; then
+  KIOSK_URL="${KIOSK_DEBUG_URL:-$DEFAULT_KIOSK_DEBUG_URL}"
 fi
 RESTART_DELAY_SECONDS="${RESTART_DELAY_SECONDS:-10}"
 CHROMIUM_PROFILE_DIR="${CHROMIUM_PROFILE_DIR:-${HOME:-/tmp}/.config/narrowcasting/chromium-kiosk}"
@@ -117,6 +119,7 @@ log_kiosk_startup() {
   echo "chromium: $("$CHROMIUM_BIN" --version 2>/dev/null || echo unknown)" >&2
   echo "profile: $CHROMIUM_PROFILE_DIR" >&2
   echo "kiosk url: $KIOSK_URL" >&2
+  echo "player debug: ${NARROWCASTING_PLAYER_DEBUG:-0}" >&2
   echo "browser renderer control: $BROWSER_RENDERER_CONTROL_URL" >&2
   echo "remote debugging: $CHROMIUM_REMOTE_DEBUGGING_ADDRESS:$CHROMIUM_REMOTE_DEBUGGING_PORT" >&2
   echo "flags: ${CHROMIUM_FLAGS[*]}" >&2
