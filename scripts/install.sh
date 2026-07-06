@@ -570,6 +570,16 @@ restart_services() {
   done
 }
 
+refresh_services_if_installed() {
+  local service
+
+  for service in "$@"; do
+    refresh_installed_systemd_service "$service"
+  done
+
+  reload_systemd
+}
+
 restart_kiosk_if_available() {
   if systemctl cat narrowcasting-kiosk.service >/dev/null 2>&1; then
     start_or_restart_service narrowcasting-kiosk
@@ -586,6 +596,7 @@ update_server() {
   npm_install_part dashboard
   build_part server
   build_part dashboard
+  refresh_services_if_installed narrowcasting-server
   restart_services narrowcasting-server
 }
 
@@ -595,6 +606,7 @@ update_player() {
   npm_install_part player
   build_part agent
   build_part player
+  refresh_services_if_installed narrowcasting-agent narrowcasting-player narrowcasting-kiosk
   restart_services narrowcasting-agent narrowcasting-player
   restart_kiosk_if_available
 }

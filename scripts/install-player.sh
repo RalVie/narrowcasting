@@ -215,6 +215,15 @@ install_player_services() {
   fi
 }
 
+refresh_legacy_kiosk_service_if_present() {
+  if systemctl cat narrowcasting-kiosk.service >/dev/null 2>&1; then
+    log_step "Refreshing legacy kiosk systemd service"
+    refresh_installed_systemd_service narrowcasting-kiosk
+    reload_systemd
+    verify_service narrowcasting-kiosk
+  fi
+}
+
 verify_player_installation() {
   log_step "Verifying player installation"
   verify_service narrowcasting-agent
@@ -247,6 +256,7 @@ create_player_config
 prepare_runtime_scripts
 install_player_services
 install_kiosk_autostart
+refresh_legacy_kiosk_service_if_present
 verify_player_installation
 
 log_success "Narrowcasting player installation complete"

@@ -33,6 +33,17 @@ install_systemd_service() {
   log_success "Installed $service_name.service"
 }
 
+refresh_installed_systemd_service() {
+  local service_name="$1"
+
+  if ! systemctl cat "$service_name.service" >/dev/null 2>&1; then
+    log_info "$service_name.service is not installed; refresh skipped."
+    return
+  fi
+
+  install_systemd_service "$service_name"
+}
+
 reload_systemd() {
   sudo_cmd systemctl daemon-reload
 }

@@ -9,7 +9,6 @@ User=pi
 WorkingDirectory=/opt/narrowcasting
 Environment=NARROWCASTING_ROOT=/opt/narrowcasting
 EnvironmentFile=-/etc/narrowcasting/kiosk.env
-Environment=KIOSK_URL=http://localhost:4174/player
 ExecStart=/opt/narrowcasting/scripts/start-kiosk.sh
 Restart=on-failure
 RestartSec=30

@@ -112,6 +112,13 @@ restart_known_services() {
   done
 }
 
+refresh_installed_services() {
+  log_step "Refreshing installed systemd service definitions"
+  for service in narrowcasting-server narrowcasting-agent narrowcasting-player narrowcasting-kiosk; do
+    refresh_installed_systemd_service "$service"
+  done
+}
+
 verify_known_services() {
   log_step "Verifying installed services"
   for service in narrowcasting-server narrowcasting-agent narrowcasting-player narrowcasting-kiosk; do
@@ -135,6 +142,7 @@ pull_latest_code
 install_system_packages
 npm_install_all
 build_all
+refresh_installed_services
 reload_systemd
 restart_known_services
 verify_known_services
