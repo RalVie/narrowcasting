@@ -9,6 +9,7 @@ import {
   getMediaContentType,
   getMediaPath,
   listMedia,
+  retryVideoNormalization,
   updateExternalMedia
 } from "../../media/mediaStore.js";
 import { badRequest, badRequestForError, conflict, notFound, payloadTooLarge } from "../apiErrors.js";
@@ -58,6 +59,20 @@ export const mediaRoutes: FastifyPluginAsync = async (app) => {
       return item;
     } catch (error) {
       return badRequestForError(reply, error, "external media update failed");
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/api/media/:id/retry-normalization", async (request, reply) => {
+    try {
+      const item = await retryVideoNormalization(request.params.id);
+
+      if (!item) {
+        return notFound(reply, "media item not found", "MEDIA_NOT_FOUND");
+      }
+
+      return item;
+    } catch (error) {
+      return badRequestForError(reply, error, "video normalization retry failed");
     }
   });
 

@@ -190,6 +190,11 @@ function isLegacyNormalizedMediaFilename(filename: string) {
   return /^normalized-[a-zA-Z0-9_-]+\.mp4$/.test(filename);
 }
 
+function getMediaIdFromUploadTempFilename(filename: string) {
+  const match = /^.+\.([a-f0-9-]{36})\.upload\.tmp$/i.exec(filename);
+  return match?.[1] ?? null;
+}
+
 function parseNullableNumber(value: unknown) {
   const numberValue = Number(value);
   return Number.isFinite(numberValue) ? numberValue : null;
@@ -641,6 +646,15 @@ async function updateMediaItem(mediaId: string, patch: Partial<MediaItem>) {
   return nextItem;
 }
 
+async function fileExists(filename: string) {
+  try {
+    await access(getMediaPath(filename));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function removeFileIfPresent(filename: string) {
   try {
     await unlink(getMediaPath(filename));
@@ -673,6 +687,8 @@ async function processVideo(job: VideoProcessingJob) {
   const normalizedTempFilename = createNormalizedTempFilename(item.filename, mediaId);
   const normalizedTempPath = getMediaPath(normalizedTempFilename);
   const finalPath = getMediaPath(item.filename);
+  const finalExistedBefore = await fileExists(item.filename);
+  let uploadSourcePreservedForRetry = false;
 
   try {
     console.log("video normalization analyzing", { filename: sourceFilename, mediaId });
@@ -715,6 +731,19 @@ async function processVideo(job: VideoProcessingJob) {
     });
     console.log("video normalization complete", { filename: sourceFilename, mediaId, outputFilename: item.filename });
   } catch (error) {
+    let failedSize = item.size;
+
+    if (job.uploadFilename && !finalExistedBefore) {
+      try {
+        await rename(sourcePath, finalPath);
+        const failedSourceStat = await stat(finalPath);
+        failedSize = failedSourceStat.size;
+        uploadSourcePreservedForRetry = true;
+      } catch {
+        // If preserving the failed upload is impossible, the error below remains authoritative.
+      }
+    }
+
     console.error("video normalization failed", {
       error: error instanceof Error ? error.message : String(error),
       filename: sourceFilename,
@@ -724,10 +753,11 @@ async function processVideo(job: VideoProcessingJob) {
       playbackFilename: undefined,
       processedAt: new Date().toISOString(),
       processingError: error instanceof Error ? error.message : String(error),
-      processingStatus: "failed"
+      processingStatus: "failed",
+      size: failedSize
     });
   } finally {
-    if (job.uploadFilename) {
+    if (job.uploadFilename && !uploadSourcePreservedForRetry) {
       await removeFileIfPresent(job.uploadFilename);
     }
 
@@ -1036,6 +1066,96 @@ export async function updateExternalMedia(id: string, input: unknown): Promise<M
   updatedItems[index] = updatedItem;
   await writeMetadataFile(updatedItems);
   return updatedItem;
+}
+
+export async function retryVideoNormalization(id: string): Promise<MediaItem | null> {
+  const items = await listMedia();
+  const item = items.find((mediaItem) => mediaItem.id === id || mediaItem.mediaId === id);
+
+  if (!item) {
+    return null;
+  }
+
+  if (item.type !== "video" || item.processingStatus !== "failed") {
+    assertValid([
+      {
+        ruleId: "VAL-MEDIA-007",
+        field: "processingStatus",
+        severity: "blocking_error",
+        message: "Only failed video normalization can be retried."
+      }
+    ]);
+  }
+
+  if (!(await fileExists(item.filename))) {
+    assertValid([
+      {
+        ruleId: "VAL-MEDIA-008",
+        field: "filename",
+        severity: "blocking_error",
+        message: "The uploaded video file is no longer available for retry."
+      }
+    ]);
+  }
+
+  const queuedItem = await updateMediaItem(item.mediaId, {
+    originalFilename: undefined,
+    playbackFilename: undefined,
+    processedAt: undefined,
+    processingError: undefined,
+    processingStatus: "uploaded"
+  });
+
+  enqueueVideoProcessing({ mediaId: item.mediaId });
+  return queuedItem ?? item;
+}
+
+export async function cleanupTemporaryMediaFiles() {
+  await mkdir(mediaRoot, { recursive: true });
+  const [filenames, metadata] = await Promise.all([
+    readdir(mediaRoot),
+    readMetadataFile()
+  ]);
+  const metadataByMediaId = new Map(metadata.map((item) => [item.mediaId, item]));
+
+  for (const filename of filenames) {
+    if (filename.includes(".normalized.tmp.")) {
+      await removeFileIfPresent(filename);
+      continue;
+    }
+
+    if (!filename.endsWith(".upload.tmp")) {
+      continue;
+    }
+
+    const mediaId = getMediaIdFromUploadTempFilename(filename);
+    const item = mediaId ? metadataByMediaId.get(mediaId) : undefined;
+
+    if (!item || item.type !== "video") {
+      await removeFileIfPresent(filename);
+      continue;
+    }
+
+    if (!(await fileExists(item.filename))) {
+      try {
+        await rename(getMediaPath(filename), getMediaPath(item.filename));
+        const fileStat = await stat(getMediaPath(item.filename));
+        await updateMediaItem(item.mediaId, {
+          originalFilename: undefined,
+          playbackFilename: undefined,
+          processedAt: new Date().toISOString(),
+          processingError: "Video normalization was interrupted before completion. Retry normalization to prepare this video.",
+          processingStatus: "failed",
+          size: fileStat.size
+        });
+        continue;
+      } catch {
+        // Fall through to temp cleanup if the interrupted upload cannot be preserved.
+      }
+    }
+
+    await removeFileIfPresent(filename);
+  }
 }
 
 export async function deleteMedia(id: string): Promise<boolean> {

@@ -79,18 +79,18 @@ function getVideoProcessingLabel(item: MediaItem) {
   }
 
   if (status === "failed") {
-    return "Failed";
+    return "Normalization failed";
   }
 
   if (status === "processing") {
-    return "Processing";
+    return "Normalizing...";
   }
 
   if (status === "analyzing") {
-    return "Analyzing";
+    return "Analyzing...";
   }
 
-  return "Uploaded";
+  return "Uploading...";
 }
 
 export function MediaLibraryPage() {
@@ -155,7 +155,7 @@ export function MediaLibraryPage() {
         throw new Error(await readApiError(response));
       }
 
-      setStatus(`${file.name} uploaded.`);
+      setStatus(`${file.name} uploaded. Video normalization will continue in the background.`);
       await loadMedia();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Upload failed.");
@@ -182,6 +182,28 @@ export function MediaLibraryPage() {
       await loadMedia();
     } catch (error) {
       setStatus(error instanceof Error ? `Delete failed: ${error.message}` : "Delete failed.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function retryNormalization(item: MediaItem) {
+    setIsBusy(true);
+    setStatus(`Retrying normalization for ${item.filename}...`);
+
+    try {
+      const response = await fetch(apiUrl(`/api/media/${encodeURIComponent(item.mediaId)}/retry-normalization`), {
+        method: "POST"
+      });
+
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+
+      setStatus(`Normalization restarted for ${item.filename}.`);
+      await loadMedia();
+    } catch (error) {
+      setStatus(error instanceof Error ? `Retry failed: ${error.message}` : "Retry failed.");
     } finally {
       setIsBusy(false);
     }
@@ -595,12 +617,17 @@ export function MediaLibraryPage() {
                           {getVideoProcessingLabel(item)}
                         </span>
                         {item.processingStatus && item.processingStatus !== "ready" && item.processingStatus !== "failed" ? (
-                          <p>Preparing video for Player playback...</p>
+                          <p>{getVideoProcessingLabel(item)}</p>
                         ) : null}
                         {item.processingStatus === "failed" ? (
-                          <p className="media-processing-error">
-                            {item.processingError ?? "Video normalization failed."}
-                          </p>
+                          <>
+                            <p className="media-processing-error">
+                              {item.processingError ?? "Normalization failed."}
+                            </p>
+                            <button disabled={isBusy} onClick={() => void retryNormalization(item)} type="button">
+                              Retry normalization
+                            </button>
+                          </>
                         ) : null}
                       </>
                     ) : null}

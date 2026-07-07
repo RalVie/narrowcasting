@@ -7,6 +7,7 @@ import { registerAuditHooks } from "./audit/auditHooks.js";
 import { mediaRoutes } from "./api/routes/media.js";
 import { registerDashboardStatic } from "./dashboard/dashboardStatic.js";
 import { createDatabaseContext } from "./db/context.js";
+import { cleanupTemporaryMediaFiles } from "./media/mediaStore.js";
 import { registerAdminAuth } from "./security/adminAuth.js";
 
 function getAllowedCorsOrigins() {
@@ -68,6 +69,9 @@ export function buildServer() {
   });
   registerAdminAuth(app);
   registerAuditHooks(app);
+  app.addHook("onReady", async () => {
+    await cleanupTemporaryMediaFiles();
+  });
   app.register(healthRoutes);
   app.register(mediaRoutes);
   app.register(registerApi, { prefix: "/api" });
