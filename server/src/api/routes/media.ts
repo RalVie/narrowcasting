@@ -14,6 +14,7 @@ import {
 } from "../../media/mediaStore.js";
 import { badRequest, badRequestForError, conflict, notFound, payloadTooLarge } from "../apiErrors.js";
 import { validateMediaDelete } from "../../validation/referenceIntegrity.js";
+import { fetchRssFeed } from "../../rss/rssFetcher.js";
 
 const imageUploadLimitBytes = 20 * 1024 * 1024;
 const videoUploadLimitBytes = 500 * 1024 * 1024;
@@ -29,6 +30,20 @@ function isMultipartSizeLimitError(error: unknown) {
   return errorCode === "FST_REQ_FILE_TOO_LARGE" || error.message.toLowerCase().includes("too large");
 }
 
+function parsePreviewMaxItems(value: unknown) {
+  const parsedValue = typeof value === "number" ? value : Number(value);
+
+  if (!Number.isFinite(parsedValue)) {
+    return 5;
+  }
+
+  return Math.min(Math.max(Math.floor(parsedValue), 1), 20);
+}
+
+function parsePreviewUrl(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 export const mediaRoutes: FastifyPluginAsync = async (app) => {
   app.register(multipart, {
     limits: {
@@ -38,6 +53,14 @@ export const mediaRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.get("/api/media", async () => listMedia());
+
+  app.post("/api/media/rss-preview", async (request) => {
+    const body = (request.body ?? {}) as { url?: unknown; maxItems?: unknown };
+    const url = parsePreviewUrl(body.url);
+    const maxItems = parsePreviewMaxItems(body.maxItems);
+
+    return fetchRssFeed(url, maxItems);
+  });
 
   app.post("/api/media/external", async (request, reply) => {
     try {

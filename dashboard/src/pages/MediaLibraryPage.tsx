@@ -93,6 +93,42 @@ function getVideoProcessingLabel(item: MediaItem) {
   return "Uploading...";
 }
 
+interface RssPreviewItem {
+  title: string;
+  summary: string | null;
+  link: string | null;
+  image: string | null;
+  publishedAt: string | null;
+}
+
+interface RssPreviewState {
+  status: "idle" | "loading" | "ready" | "error";
+  message?: string;
+  items: RssPreviewItem[];
+}
+
+const emptyRssPreview: RssPreviewState = {
+  status: "idle",
+  items: []
+};
+
+function formatPreviewDate(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? new Date(time).toLocaleString() : value;
+}
+
+function getSummaryExcerpt(value: string | null) {
+  if (!value) {
+    return "No description available.";
+  }
+
+  return value.length > 180 ? `${value.slice(0, 177).trim()}...` : value;
+}
+
 export function MediaLibraryPage() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [items, setItems] = useState<MediaItem[]>([]);
@@ -105,6 +141,7 @@ export function MediaLibraryPage() {
   const [externalMaxItems, setExternalMaxItems] = useState(5);
   const [externalWebUrlRenderMode, setExternalWebUrlRenderMode] = useState<"iframe" | "browser">("iframe");
   const [externalBrowserActions, setExternalBrowserActions] = useState<BrowserAction[]>([]);
+  const [externalRssPreview, setExternalRssPreview] = useState<RssPreviewState>(emptyRssPreview);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editUrl, setEditUrl] = useState("");
@@ -112,6 +149,7 @@ export function MediaLibraryPage() {
   const [editMaxItems, setEditMaxItems] = useState(5);
   const [editWebUrlRenderMode, setEditWebUrlRenderMode] = useState<"iframe" | "browser">("iframe");
   const [editBrowserActions, setEditBrowserActions] = useState<BrowserAction[]>([]);
+  const [editRssPreview, setEditRssPreview] = useState<RssPreviewState>(emptyRssPreview);
 
   async function loadMedia() {
     setIsBusy(true);
@@ -242,6 +280,7 @@ export function MediaLibraryPage() {
       setExternalMaxItems(5);
       setExternalWebUrlRenderMode("iframe");
       setExternalBrowserActions([]);
+      setExternalRssPreview(emptyRssPreview);
       setStatus("External media created.");
       await loadMedia();
     } catch (error) {
@@ -259,6 +298,7 @@ export function MediaLibraryPage() {
     setEditMaxItems(item.maxItems ?? 5);
     setEditWebUrlRenderMode(item.webUrlRenderMode ?? "iframe");
     setEditBrowserActions(item.browserActions ?? []);
+    setEditRssPreview(emptyRssPreview);
   }
 
   async function saveExternalMedia(item: MediaItem) {
@@ -288,6 +328,7 @@ export function MediaLibraryPage() {
       }
 
       setEditingItemId(null);
+      setEditRssPreview(emptyRssPreview);
       setStatus("External media saved.");
       await loadMedia();
     } catch (error) {
@@ -429,6 +470,81 @@ export function MediaLibraryPage() {
     );
   }
 
+  async function previewRssFeed(url: string, maxItems: number, setPreview: (preview: RssPreviewState) => void) {
+    const trimmedUrl = url.trim();
+
+    if (!trimmedUrl) {
+      setPreview({
+        status: "error",
+        message: "Enter an RSS feed URL before previewing.",
+        items: []
+      });
+      return;
+    }
+
+    setPreview({
+      status: "loading",
+      message: "Loading feed preview...",
+      items: []
+    });
+
+    try {
+      const response = await fetch(apiUrl("/api/media/rss-preview"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          url: trimmedUrl,
+          maxItems
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+
+      const body = (await response.json()) as { ok: boolean; items: RssPreviewItem[]; message?: string };
+      setPreview({
+        status: body.ok ? "ready" : "error",
+        message: body.message ?? (body.ok ? `${body.items.length} item(s) found.` : "The feed could not be loaded."),
+        items: body.items ?? []
+      });
+    } catch (error) {
+      setPreview({
+        status: "error",
+        message: error instanceof Error ? error.message : "The feed could not be loaded.",
+        items: []
+      });
+    }
+  }
+
+  function renderRssPreview(preview: RssPreviewState) {
+    if (preview.status === "idle") {
+      return null;
+    }
+
+    return (
+      <div className={`rss-preview-panel ${preview.status}`}>
+        {preview.message ? <p>{preview.message}</p> : null}
+        {preview.items.length > 0 ? (
+          <div className="rss-preview-list">
+            {preview.items.map((item, index) => (
+              <article className="rss-preview-item" key={`${item.link ?? item.title}-${index}`}>
+                {item.image ? <img alt="" src={item.image} /> : <div className="rss-preview-image-fallback">RSS</div>}
+                <div>
+                  <strong>{item.title}</strong>
+                  <span>{formatPreviewDate(item.publishedAt) ?? item.link ?? "RSS item"}</span>
+                  <p>{getSummaryExcerpt(item.summary)}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   useEffect(() => {
     void loadMedia();
     const timer = window.setInterval(() => {
@@ -472,7 +588,13 @@ export function MediaLibraryPage() {
         <div className="playlist-schedule-fields">
           <label>
             Type
-            <select value={externalType} onChange={(event) => setExternalType(event.target.value as "web_url" | "rss_feed")}>
+            <select
+              value={externalType}
+              onChange={(event) => {
+                setExternalType(event.target.value as "web_url" | "rss_feed");
+                setExternalRssPreview(emptyRssPreview);
+              }}
+            >
               <option value="web_url">Web URL</option>
               <option value="rss_feed">RSS Feed</option>
             </select>
@@ -483,10 +605,17 @@ export function MediaLibraryPage() {
           </label>
           <label>
             URL
-            <input value={externalUrl} onChange={(event) => setExternalUrl(event.target.value)} placeholder="https://example.com" />
+            <input
+              value={externalUrl}
+              onChange={(event) => {
+                setExternalUrl(event.target.value);
+                setExternalRssPreview(emptyRssPreview);
+              }}
+              placeholder={externalType === "rss_feed" ? "https://example.com/feed.xml" : "https://example.com"}
+            />
           </label>
           <label>
-            Duration
+            {externalType === "rss_feed" ? "Duration per item" : "Duration"}
             <input
               min={1}
               type="number"
@@ -502,8 +631,12 @@ export function MediaLibraryPage() {
                 max={20}
                 type="number"
                 value={externalMaxItems}
-                onChange={(event) => setExternalMaxItems(Math.max(Math.min(Number(event.target.value), 20), 1))}
+                onChange={(event) => {
+                  setExternalMaxItems(Math.max(Math.min(Number(event.target.value), 20), 1));
+                  setExternalRssPreview(emptyRssPreview);
+                }}
               />
+              <small>The server resolves RSS into concrete player cards. The Player never fetches the feed.</small>
             </label>
           ) : null}
           {externalType === "web_url" ? (
@@ -525,6 +658,18 @@ export function MediaLibraryPage() {
           {externalType === "web_url" && externalWebUrlRenderMode === "browser"
             ? renderBrowserActionsEditor(externalBrowserActions, setExternalBrowserActions)
             : null}
+          {externalType === "rss_feed" ? (
+            <div className="rss-preview-actions">
+              <button
+                disabled={isBusy || externalRssPreview.status === "loading" || !externalUrl.trim()}
+                onClick={() => void previewRssFeed(externalUrl, externalMaxItems, setExternalRssPreview)}
+                type="button"
+              >
+                Preview feed
+              </button>
+              {renderRssPreview(externalRssPreview)}
+            </div>
+          ) : null}
           <button disabled={isBusy || !externalUrl.trim()} onClick={() => void createExternalMedia()} type="button">
             Add
           </button>
@@ -554,10 +699,16 @@ export function MediaLibraryPage() {
                   </label>
                   <label>
                     URL
-                    <input value={editUrl} onChange={(event) => setEditUrl(event.target.value)} />
+                    <input
+                      value={editUrl}
+                      onChange={(event) => {
+                        setEditUrl(event.target.value);
+                        setEditRssPreview(emptyRssPreview);
+                      }}
+                    />
                   </label>
                   <label>
-                    Duration
+                    {item.type === "rss_feed" ? "Duration per item" : "Duration"}
                     <input
                       min={1}
                       type="number"
@@ -573,8 +724,12 @@ export function MediaLibraryPage() {
                         max={20}
                         type="number"
                         value={editMaxItems}
-                        onChange={(event) => setEditMaxItems(Math.max(Math.min(Number(event.target.value), 20), 1))}
+                        onChange={(event) => {
+                          setEditMaxItems(Math.max(Math.min(Number(event.target.value), 20), 1));
+                          setEditRssPreview(emptyRssPreview);
+                        }}
                       />
+                      <small>The server resolves RSS into concrete player cards.</small>
                     </label>
                   ) : (
                     <>
@@ -593,6 +748,18 @@ export function MediaLibraryPage() {
                         : null}
                     </>
                   )}
+                  {item.type === "rss_feed" ? (
+                    <div className="rss-preview-actions">
+                      <button
+                        disabled={isBusy || editRssPreview.status === "loading" || !editUrl.trim()}
+                        onClick={() => void previewRssFeed(editUrl, editMaxItems, setEditRssPreview)}
+                        type="button"
+                      >
+                        Preview feed
+                      </button>
+                      {renderRssPreview(editRssPreview)}
+                    </div>
+                  ) : null}
                   <div className="button-row">
                     <button disabled={isBusy || !editUrl.trim()} onClick={() => void saveExternalMedia(item)} type="button">
                       Save

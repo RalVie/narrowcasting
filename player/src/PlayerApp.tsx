@@ -368,6 +368,24 @@ function getMediaUrlDiagnostics(file: string) {
   };
 }
 
+function formatRssPublishedAt(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? new Date(time).toLocaleString() : value;
+}
+
+function getRssSummaryExcerpt(value: string | null | undefined) {
+  if (!value?.trim()) {
+    return "No description available.";
+  }
+
+  const normalizedValue = value.replace(/\s+/g, " ").trim();
+  return normalizedValue.length > 360 ? `${normalizedValue.slice(0, 357).trim()}...` : normalizedValue;
+}
+
 function inspectMediaHttpStatus(
   file: string,
   context: Record<string, unknown>,
@@ -2560,15 +2578,29 @@ export function PlayerApp() {
     }
 
     if (activeItem.type === "rss_item") {
+      const publishedAt = formatRssPublishedAt(activeItem.publishedAt);
+      const hasImage = Boolean(activeItem.image);
+
       return (
-        <article className="rss-card" key={getItemKey(activeItem, schedule, activeIndex, playbackEpoch, playbackSessionKey)}>
-          {activeItem.image ? <img alt="" className="rss-card-image" src={activeItem.image} /> : null}
+        <article
+          className={`rss-card ${hasImage ? "with-image" : "without-image"}`}
+          key={getItemKey(activeItem, schedule, activeIndex, playbackEpoch, playbackSessionKey)}
+        >
+          {activeItem.image ? (
+            <img alt="" className="rss-card-image" src={activeItem.image} />
+          ) : (
+            <div className="rss-card-image-fallback">
+              <span>RSS</span>
+            </div>
+          )}
           <div className="rss-card-content">
-            {activeItem.sourceTitle ? <p className="status-label">{activeItem.sourceTitle}</p> : null}
+            <div className="rss-card-source-row">
+              {activeItem.sourceTitle ? <p className="status-label">{activeItem.sourceTitle}</p> : null}
+              {publishedAt ? <span>{publishedAt}</span> : null}
+            </div>
             <h1>{activeItem.title}</h1>
-            {activeItem.summary ? <p className="supporting-copy">{activeItem.summary}</p> : null}
+            <p className="supporting-copy">{getRssSummaryExcerpt(activeItem.summary)}</p>
             <div className="rss-card-meta">
-              {activeItem.publishedAt ? <span>{new Date(activeItem.publishedAt).toLocaleString()}</span> : null}
               {activeItem.link ? <span>{activeItem.link}</span> : null}
             </div>
           </div>

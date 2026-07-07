@@ -587,6 +587,77 @@ button:disabled {
   padding-top: 10px;
 }
 
+.rss-preview-actions,
+.rss-preview-panel,
+.rss-preview-list {
+  display: grid;
+  gap: 10px;
+}
+
+.rss-preview-panel {
+  border: 1px solid #d9dfd4;
+  border-left: 4px solid #7fb58b;
+  border-radius: 8px;
+  padding: 10px;
+  background: #ffffff;
+}
+
+.rss-preview-panel.error {
+  border-left-color: #c65f5f;
+}
+
+.rss-preview-panel.loading {
+  border-left-color: #d89b3d;
+}
+
+.rss-preview-panel p {
+  margin: 0;
+  color: #5f6f64;
+  font-size: 13px;
+}
+
+.rss-preview-item {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  border-top: 1px solid #e4e9df;
+  padding-top: 10px;
+}
+
+.rss-preview-item img,
+.rss-preview-image-fallback {
+  width: 64px;
+  height: 48px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.rss-preview-image-fallback {
+  display: grid;
+  place-items: center;
+  color: #4f6656;
+  background: #eaf0e8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.rss-preview-item div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.rss-preview-item strong,
+.rss-preview-item span {
+  overflow-wrap: anywhere;
+}
+
+.rss-preview-item span {
+  color: #647064;
+  font-size: 12px;
+}
+
 .media-card h3 {
   margin: 0 0 4px;
   overflow-wrap: anywhere;
