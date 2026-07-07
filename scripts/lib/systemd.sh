@@ -83,3 +83,12 @@ install_env_file_if_absent() {
   sudo_cmd mkdir -p "$CONFIG_DIR"
   write_file_if_absent "$CONFIG_DIR/$filename" "$content" "0600" "root"
 }
+
+ensure_kiosk_env_readable_if_present() {
+  local kiosk_env="$CONFIG_DIR/kiosk.env"
+
+  if [ -f "$kiosk_env" ]; then
+    sudo_cmd chmod 0644 "$kiosk_env"
+    log_success "$kiosk_env is readable by the kiosk session"
+  fi
+}

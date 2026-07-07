@@ -745,6 +745,7 @@ function sendPlayerDebugLog(
 
   const body = JSON.stringify({
     category,
+    debugEnabled: true,
     details,
     event,
     level,

@@ -253,6 +253,12 @@ async function savePlayerRegistration(body) {
 
 function logPlayerDebug(body, request) {
   const payload = body && typeof body === "object" ? body : {};
+  const debugEnabled = payload.debugEnabled === true;
+
+  if (!debugEnabled) {
+    return false;
+  }
+
   const event = typeof payload.event === "string" ? payload.event : "unknown";
   const level = typeof payload.level === "string" ? payload.level : "info";
   const category = typeof payload.category === "string" ? payload.category : "player";
@@ -274,6 +280,8 @@ function logPlayerDebug(body, request) {
   } else {
     console.log("player debug", entry);
   }
+
+  return true;
 }
 
 const server = createServer(async (request, response) => {
@@ -313,8 +321,8 @@ const server = createServer(async (request, response) => {
   if (path === "/api/debug-log" && request.method === "POST") {
     try {
       const body = await readRequestJson(request);
-      logPlayerDebug(body, request);
-      sendJson(response, 200, { ok: true });
+      const accepted = logPlayerDebug(body, request);
+      sendJson(response, 200, { accepted, ok: true });
     } catch (error) {
       console.warn("player debug endpoint rejected payload", {
         at: new Date().toISOString(),
@@ -342,5 +350,5 @@ const server = createServer(async (request, response) => {
 
 server.listen(port, host, () => {
   console.log(`narrowcasting player available at http://${host}:${port}/player`);
-  console.log("player debug endpoint available at /api/debug-log");
+  console.log("player debug endpoint available at /api/debug-log when /player?debug=1 is active");
 });

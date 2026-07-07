@@ -186,6 +186,10 @@ function isTemporaryMediaFilename(filename: string) {
   return filename.endsWith(".upload.tmp") || filename.includes(".normalized.tmp.");
 }
 
+function isLegacyNormalizedMediaFilename(filename: string) {
+  return /^normalized-[a-zA-Z0-9_-]+\.mp4$/.test(filename);
+}
+
 function parseNullableNumber(value: unknown) {
   const numberValue = Number(value);
   return Number.isFinite(numberValue) ? numberValue : null;
@@ -843,6 +847,7 @@ export async function listMedia(): Promise<MediaItem[]> {
     await Promise.all(
       filenames
         .filter((filename) => !isTemporaryMediaFilename(filename))
+        .filter((filename) => !isLegacyNormalizedMediaFilename(filename))
         .filter((filename) => !playbackAssets.has(filename))
         .map((filename) => itemFromFile(filename, metadataByFilename.get(filename), usedMediaIds))
     )

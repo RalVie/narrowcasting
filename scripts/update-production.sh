@@ -143,6 +143,7 @@ install_system_packages
 install_server_media_packages
 npm_install_all
 build_all
+ensure_kiosk_env_readable_if_present
 refresh_installed_services
 reload_systemd
 restart_known_services

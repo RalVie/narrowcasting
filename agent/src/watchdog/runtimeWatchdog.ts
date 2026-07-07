@@ -371,6 +371,17 @@ async function restartService(serviceName: string, label: string) {
   return runCommand("sudo", ["-n", "systemctl", "restart", unit], label);
 }
 
+async function systemdServiceExists(serviceName: string) {
+  if (!isLinux()) {
+    return false;
+  }
+
+  return runCommand("systemctl", ["cat", `${serviceName}.service`], `check ${serviceName} service`, {
+    logFailure: false,
+    logSuccess: false
+  });
+}
+
 async function restartChromium(config: AgentConfig, reason: string) {
   recoveryState.chromiumRestartTimes = pruneWindow(
     recoveryState.chromiumRestartTimes,
@@ -395,7 +406,13 @@ async function restartChromium(config: AgentConfig, reason: string) {
     });
   }
 
-  await restartService(config.narrowcastingKioskService, "restart kiosk service");
+  if (await systemdServiceExists(config.narrowcastingKioskService)) {
+    await restartService(config.narrowcastingKioskService, "restart kiosk service");
+  } else {
+    console.warn("runtime watchdog kiosk service restart skipped because service is not installed", {
+      serviceName: config.narrowcastingKioskService
+    });
+  }
   await delay(8_000);
 
   const cdp = await getCdpHealth(config);
@@ -520,16 +537,6 @@ async function healthCheck(config: AgentConfig) {
     const functionalHealth = await getFunctionalHealth(config, cdp.target);
     const reason = functionalFailureReason(functionalHealth, false);
 
-    console.log("runtime watchdog browser renderer check", {
-      at: now,
-      blankSuspected: functionalHealth?.blankSuspected ?? null,
-      browserRendererActive,
-      currentUrl: cdp.target?.url ?? null,
-      documentReadyState: functionalHealth?.documentReadyState ?? null,
-      playerHealthAgeMs: functionalHealth?.playerHealthAgeMs ?? null,
-      rootPresent: functionalHealth?.rootPresent ?? null
-    });
-
     if (reason) {
       recoveryState.consecutiveFunctionalFailures += 1;
       console.warn("runtime watchdog detected Browser Renderer functional health issue", {
@@ -558,12 +565,6 @@ async function healthCheck(config: AgentConfig) {
 
     recoveryState.consecutiveFunctionalFailures = 0;
     recoveryState.lastSuccessfulHealthCheck = now;
-    console.log("runtime watchdog health OK", {
-      at: now,
-      browserRendererActive,
-      currentUrl: cdp.target?.url ?? null,
-      documentReadyState: functionalHealth?.documentReadyState ?? null
-    });
     await writeStatus(config, {
       lastCheckAt: now,
       lastRecovery: recoveryState.lastRecovery,
@@ -599,19 +600,6 @@ async function healthCheck(config: AgentConfig) {
   const functionalHealth = await getFunctionalHealth(config, cdp.target);
   const functionalReason = functionalFailureReason(functionalHealth, true);
 
-  console.log("runtime watchdog Player functional check", {
-    at: now,
-    activeUrl: cdp.target?.url ?? null,
-    blankSuspected: functionalHealth?.blankSuspected ?? null,
-    bodyChildCount: functionalHealth?.bodyChildCount ?? null,
-    bodyTextLength: functionalHealth?.bodyTextLength ?? null,
-    documentReadyState: functionalHealth?.documentReadyState ?? null,
-    playerHealthAgeMs: functionalHealth?.playerHealthAgeMs ?? null,
-    playerState: functionalHealth?.playerHealth?.state ?? null,
-    rootChildCount: functionalHealth?.rootChildCount ?? null,
-    rootPresent: functionalHealth?.rootPresent ?? null
-  });
-
   if (functionalReason) {
     recoveryState.consecutiveFunctionalFailures += 1;
     console.warn("runtime watchdog detected Player functional health issue", {
@@ -643,13 +631,6 @@ async function healthCheck(config: AgentConfig) {
   recoveryState.consecutiveFunctionalFailures = 0;
   recoveryState.lastSuccessfulHealthCheck = now;
   recoveryState.failedRecoveryCount = 0;
-  console.log("runtime watchdog health OK", {
-    at: now,
-    currentUrl: cdp.target?.url ?? null,
-    documentReadyState: functionalHealth?.documentReadyState ?? null,
-    playerHealthAgeMs: functionalHealth?.playerHealthAgeMs ?? null,
-    playerState: functionalHealth?.playerHealth?.state ?? null
-  });
   await writeStatus(config, {
     lastCheckAt: now,
     lastRecovery: recoveryState.lastRecovery,

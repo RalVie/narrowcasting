@@ -607,6 +607,7 @@ update_player() {
   npm_install_part player
   build_part agent
   build_part player
+  ensure_kiosk_env_readable_if_present
   refresh_services_if_installed narrowcasting-agent narrowcasting-player narrowcasting-kiosk
   restart_services narrowcasting-agent narrowcasting-player
   restart_kiosk_if_available

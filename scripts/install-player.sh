@@ -163,6 +163,7 @@ PLAYER_PORT=${PLAYER_PORT:-4174}"
   install_env_file_if_absent "kiosk.env" "KIOSK_URL=${KIOSK_URL:-http://localhost:4174/player}
 CHROMIUM_PROFILE_DIR=${CHROMIUM_PROFILE_DIR:-$ROOT_DIR/player/chromium-kiosk-profile}
 RESTART_DELAY_SECONDS=10"
+  ensure_kiosk_env_readable_if_present
 }
 
 prepare_runtime_scripts() {
