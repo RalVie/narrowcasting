@@ -49,6 +49,7 @@ type MediaReference = string | undefined;
 
 const mediaRoot = resolve(process.cwd(), "public", "media");
 const metadataPath = resolve(process.cwd(), "data", "media.json");
+const metadataTempPath = resolve(process.cwd(), "data", "media.json.tmp");
 const imageExtensions = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 const videoExtensions = new Set([".mp4", ".webm"]);
 const execFileAsync = promisify(execFile);
@@ -704,11 +705,26 @@ async function readMetadataFile(): Promise<MediaItem[]> {
     const value: unknown = JSON.parse(content);
 
     if (Array.isArray(value)) {
-      return value
-        .map((item) => normalizeMetadataItem(item))
-        .filter((item): item is MediaItem => item !== null);
+      return value.flatMap((item): MediaItem[] => {
+        try {
+          const normalizedItem = normalizeMetadataItem(item);
+          return normalizedItem ? [normalizedItem] : [];
+        } catch (error) {
+          console.warn("invalid media metadata item ignored", {
+            error: error instanceof Error ? error.message : String(error)
+          });
+          return [];
+        }
+      });
     }
-  } catch {
+  } catch (error) {
+    if ((error as { code?: string })?.code === "ENOENT") {
+      return [];
+    }
+
+    console.warn("media metadata could not be loaded", {
+      error: error instanceof Error ? error.message : String(error)
+    });
     return [];
   }
 
@@ -718,7 +734,8 @@ async function readMetadataFile(): Promise<MediaItem[]> {
 async function writeMetadataFile(items: MediaItem[]) {
   validateMediaCollection(items);
   await mkdir(resolve(process.cwd(), "data"), { recursive: true });
-  await writeFile(metadataPath, `${JSON.stringify(items, null, 2)}\n`, "utf8");
+  await writeFile(metadataTempPath, `${JSON.stringify(items, null, 2)}\n`, "utf8");
+  await rename(metadataTempPath, metadataPath);
 }
 
 async function updateMediaItem(mediaId: string, patch: Partial<MediaItem>) {
