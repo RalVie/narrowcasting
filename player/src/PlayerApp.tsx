@@ -735,7 +735,7 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutM
   }
 }
 
-async function probeServerUrl(serverUrl: string | null) {
+async function probeServerUrl(serverUrl: string | null, options: { acceptAuthRequired?: boolean } = {}) {
   const normalizedUrl = normalizeServerUrl(serverUrl);
 
   if (!normalizedUrl) {
@@ -744,6 +744,10 @@ async function probeServerUrl(serverUrl: string | null) {
 
   try {
     const response = await fetchWithTimeout(`${normalizedUrl}/api/status`, {}, 1200);
+
+    if (options.acceptAuthRequired && (response.status === 401 || response.status === 403)) {
+      return normalizedUrl;
+    }
 
     if (!response.ok) {
       return null;
@@ -1877,8 +1881,8 @@ export function PlayerApp() {
 
     async function fetchPreviewSchedule(screenId: string) {
       previewServerUrl =
-        (await probeServerUrl(previewServerUrl)) ??
-        (await probeServerUrl(getPreviewServerUrlFromLocation())) ??
+        (await probeServerUrl(previewServerUrl, { acceptAuthRequired: true })) ??
+        (await probeServerUrl(getPreviewServerUrlFromLocation(), { acceptAuthRequired: true })) ??
         (await discoverServerUrl(readLocalStorage(serverUrlKey)));
 
       if (!previewServerUrl) {
