@@ -9,6 +9,8 @@ const port = Number(process.env.PLAYER_PORT ?? 4174);
 const appRoot = resolve(process.cwd());
 const distRoot = resolve(appRoot, "dist");
 const publicRoot = resolve(appRoot, "public");
+const playerMediaRoot = resolve(publicRoot, "media");
+const serverMediaRoot = resolve(appRoot, "..", "server", "public", "media");
 const discoveryHostname = process.env.DISCOVERY_HOSTNAME ?? "http://narrowcasting.local:3000";
 const discoveryTimeoutMs = Number(process.env.DISCOVERY_TIMEOUT_MS ?? 220);
 const discoveryConcurrency = Number(process.env.DISCOVERY_CONCURRENCY ?? 25);
@@ -32,14 +34,15 @@ function isInside(root, filePath) {
   return relativePath === "" || (!relativePath.startsWith("..") && !resolve(filePath).includes("\0"));
 }
 
-async function sendFile(response, root, requestPath) {
+async function sendFile(response, root, requestPath, options = {}) {
+  const sendNotFound = options.sendNotFound !== false;
   const cleanPath = decodeURIComponent(requestPath).replace(/^\/+/, "");
   const filePath = resolve(join(root, cleanPath));
 
   if (!isInside(root, filePath)) {
     response.writeHead(400);
     response.end("Invalid path");
-    return;
+    return false;
   }
 
   try {
@@ -55,9 +58,14 @@ async function sendFile(response, root, requestPath) {
       ...getCacheHeaders(cleanPath)
     });
     createReadStream(filePath).pipe(response);
+    return true;
   } catch {
-    response.writeHead(404);
-    response.end("Not found");
+    if (sendNotFound) {
+      response.writeHead(404);
+      response.end("Not found");
+    }
+
+    return false;
   }
 }
 
@@ -341,8 +349,18 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  if (path.startsWith("/data/") || path.startsWith("/media/")) {
+  if (path.startsWith("/data/")) {
     await sendFile(response, publicRoot, path);
+    return;
+  }
+
+  if (path.startsWith("/media/")) {
+    const mediaPath = path.replace(/^\/media\//, "");
+    const servedFromPlayerCache = await sendFile(response, playerMediaRoot, mediaPath, { sendNotFound: false });
+
+    if (!servedFromPlayerCache) {
+      await sendFile(response, serverMediaRoot, mediaPath);
+    }
     return;
   }
 

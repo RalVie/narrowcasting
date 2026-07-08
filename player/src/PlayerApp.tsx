@@ -10,6 +10,7 @@ const playerIdKey = "narrowcasting:player-id";
 const screenIdKey = "narrowcasting:screen-id";
 const deviceSecretKey = "narrowcasting:device-secret";
 const serverUrlKey = "narrowcasting:server-url";
+const previewAdminKeyKey = "narrowcasting:preview-admin-key";
 const browserRendererResumeKey = "narrowcasting:browser-renderer-resume";
 const browserRendererControlUrl = "http://127.0.0.1:4175/browser-renderer/render";
 const browserRendererPersistentAllItemsSeconds = 24 * 60 * 60;
@@ -794,6 +795,34 @@ function isDebugEnabled() {
   return new URLSearchParams(window.location.search).get("debug") === "1";
 }
 
+function getPreviewScreenId() {
+  return new URLSearchParams(window.location.search).get("screenId")?.trim() || null;
+}
+
+function readPreviewAdminKey() {
+  return readLocalStorage(previewAdminKeyKey);
+}
+
+function writePreviewAdminKey(key: string) {
+  writeLocalStorage(previewAdminKeyKey, key);
+}
+
+function clearPreviewAdminKey() {
+  removeLocalStorage(previewAdminKeyKey);
+}
+
+function promptForPreviewAdminKey() {
+  const key = window.prompt("Enter the existing Narrowcasting admin key to preview this screen.");
+
+  if (!key?.trim()) {
+    return null;
+  }
+
+  const trimmedKey = key.trim();
+  writePreviewAdminKey(trimmedKey);
+  return trimmedKey;
+}
+
 function sendPlayerDebugLog(
   category: string,
   event: string,
@@ -832,7 +861,14 @@ function hasReloadMarker() {
 function reloadPlayerForSchedule(signature: string, debugEnabled: boolean) {
   writeStoredScheduleSignature(signature);
   writeScheduleReloadCount(readScheduleReloadCount() + 1);
-  window.location.href = `/player?reload=${Date.now()}${debugEnabled ? "&debug=1" : ""}`;
+  const params = new URLSearchParams(window.location.search);
+  params.set("reload", String(Date.now()));
+
+  if (debugEnabled) {
+    params.set("debug", "1");
+  }
+
+  window.location.href = `/player?${params.toString()}`;
 }
 
 async function persistPlayerRegistration(
@@ -1314,6 +1350,8 @@ function InstrumentedVideo({
 }
 
 export function PlayerApp() {
+  const previewScreenId = getPreviewScreenId();
+  const isPreviewMode = Boolean(previewScreenId);
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [playbackEpoch, setPlaybackEpoch] = useState(0);
@@ -1370,8 +1408,11 @@ export function PlayerApp() {
   const heartbeatBackoffUntilRef = useRef(0);
   const lastWebUrlDiagnosticRef = useRef<string | null>(null);
   const waitingForRegistration =
+    !isPreviewMode &&
     registration.status === "pending" ||
-    ((registration.status === "discovering" || registration.status === "error") && registration.serverUrl !== null);
+    (!isPreviewMode &&
+      (registration.status === "discovering" || registration.status === "error") &&
+      registration.serverUrl !== null);
 
   useEffect(() => {
     if (!debugInfo.enabled) {
@@ -1468,6 +1509,16 @@ export function PlayerApp() {
   }, []);
 
   useEffect(() => {
+    if (isPreviewMode) {
+      setRegistration((state) => ({
+        ...state,
+        screenId: previewScreenId,
+        status: "approved",
+        message: "Browser preview mode. Schedule is loaded by screenId."
+      }));
+      return;
+    }
+
     if (registration.screenId && registration.deviceSecret) {
       return;
     }
@@ -1595,9 +1646,13 @@ export function PlayerApp() {
         window.clearInterval(registerTimer);
       }
     };
-  }, [registration.deviceSecret, registration.playerId, registration.screenId]);
+  }, [isPreviewMode, previewScreenId, registration.deviceSecret, registration.playerId, registration.screenId]);
 
   useEffect(() => {
+    if (isPreviewMode) {
+      return;
+    }
+
     if (!registration.screenId || !registration.deviceSecret || registration.serverUrl) {
       return;
     }
@@ -1651,9 +1706,13 @@ export function PlayerApp() {
         window.clearInterval(discoveryTimer);
       }
     };
-  }, [registration.deviceSecret, registration.playerId, registration.screenId, registration.serverUrl]);
+  }, [isPreviewMode, registration.deviceSecret, registration.playerId, registration.screenId, registration.serverUrl]);
 
   useEffect(() => {
+    if (isPreviewMode) {
+      return;
+    }
+
     if (!registration.screenId || !registration.serverUrl || !registration.deviceSecret) {
       return;
     }
@@ -1664,9 +1723,13 @@ export function PlayerApp() {
       registration.serverUrl,
       registration.deviceSecret
     );
-  }, [registration.deviceSecret, registration.playerId, registration.screenId, registration.serverUrl]);
+  }, [isPreviewMode, registration.deviceSecret, registration.playerId, registration.screenId, registration.serverUrl]);
 
   useEffect(() => {
+    if (isPreviewMode) {
+      return;
+    }
+
     if (!registration.screenId || !registration.serverUrl || !registration.deviceSecret) {
       return;
     }
@@ -1795,24 +1858,76 @@ export function PlayerApp() {
     registration.playerId,
     registration.screenId,
     registration.serverUrl,
+    isPreviewMode,
     resetInvalidDeviceIdentity
   ]);
 
   useEffect(() => {
     let cancelled = false;
     let currentSignature: string | null = null;
+    let previewServerUrl: string | null = null;
+
+    async function fetchPreviewSchedule(screenId: string) {
+      previewServerUrl = await discoverServerUrl(previewServerUrl ?? readLocalStorage(serverUrlKey));
+
+      if (!previewServerUrl) {
+        throw new Error("Narrowcasting server not found for browser preview.");
+      }
+
+      writeLocalStorage(serverUrlKey, previewServerUrl);
+
+      let adminKey = readPreviewAdminKey() ?? promptForPreviewAdminKey();
+
+      if (!adminKey) {
+        throw new Error("Admin key is required for browser preview.");
+      }
+
+      const scheduleUrl = `${previewServerUrl}/api/schedule?screenId=${encodeURIComponent(screenId)}`;
+      let response = await fetch(scheduleUrl, {
+        cache: "no-store",
+        headers: {
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache",
+          "X-Narrowcasting-Admin-Key": adminKey
+        }
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        clearPreviewAdminKey();
+        adminKey = promptForPreviewAdminKey();
+
+        if (!adminKey) {
+          throw new Error("The admin key was rejected or not supplied.");
+        }
+
+        response = await fetch(scheduleUrl, {
+          cache: "no-store",
+          headers: {
+            "Cache-Control": "no-cache",
+            Pragma: "no-cache",
+            "X-Narrowcasting-Admin-Key": adminKey
+          }
+        });
+      }
+
+      return response;
+    }
+
+    function fetchLocalSchedule() {
+      return fetch(`/data/schedule.json?t=${Date.now()}`, {
+        cache: "no-store",
+        headers: {
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache"
+        }
+      });
+    }
 
     async function loadSchedule() {
       const polledAt = new Date().toLocaleTimeString();
 
       try {
-        const response = await fetch(`/data/schedule.json?t=${Date.now()}`, {
-          cache: "no-store",
-          headers: {
-            "Cache-Control": "no-cache",
-            Pragma: "no-cache"
-          }
-        });
+        const response = previewScreenId ? await fetchPreviewSchedule(previewScreenId) : await fetchLocalSchedule();
 
         if (!response.ok) {
           if (!cancelled) {
@@ -1822,7 +1937,7 @@ export function PlayerApp() {
               lastPollAt: polledAt,
               fetchedSignature: null,
               reloadTriggered: false,
-              status: `fetch failed: HTTP ${response.status}`
+              status: `${previewScreenId ? `preview ${previewScreenId}` : "local schedule"} fetch failed: HTTP ${response.status}`
             }));
           }
           return;
@@ -1847,11 +1962,13 @@ export function PlayerApp() {
             itemCount: body.items.length,
             reloadTriggered: shouldReload,
             reloadCount: readScheduleReloadCount(),
-            status: shouldReload
-              ? "signature changed; reloading"
-              : nextSignature === currentSignature
-                ? "unchanged"
-                : "signature changed; applying"
+            status: `${previewScreenId ? `preview ${previewScreenId}` : "local schedule"}: ${
+              shouldReload
+                ? "signature changed; reloading"
+                : nextSignature === currentSignature
+                  ? "unchanged"
+                  : "signature changed; applying"
+            }`
           }));
 
           if (shouldReload) {
@@ -1941,7 +2058,7 @@ export function PlayerApp() {
             lastPollAt: polledAt,
             fetchedSignature: null,
             reloadTriggered: false,
-            status: "invalid schedule"
+            status: `${previewScreenId ? `preview ${previewScreenId}` : "local schedule"}: invalid schedule`
           }));
         }
       } catch (error) {
@@ -1968,7 +2085,7 @@ export function PlayerApp() {
       window.clearInterval(reloadTimer);
       clearFailureTimer();
     };
-  }, []);
+  }, [previewScreenId]);
 
   useEffect(() => {
     function handleResize() {
@@ -2877,10 +2994,10 @@ export function PlayerApp() {
   const isDecommissioned = schedule?.assignmentStatus === "decommissioned";
 
   useEffect(() => {
-    if (isDecommissioned && registration.deviceSecret) {
+    if (!isPreviewMode && isDecommissioned && registration.deviceSecret) {
       resetInvalidDeviceIdentity();
     }
-  }, [isDecommissioned, registration.deviceSecret, resetInvalidDeviceIdentity]);
+  }, [isDecommissioned, isPreviewMode, registration.deviceSecret, resetInvalidDeviceIdentity]);
 
   if (isDecommissioned) {
     return (
@@ -2931,7 +3048,9 @@ export function PlayerApp() {
       <main className="player-shell">
         <section className="playback-surface" aria-label="Local playlist playback">
           <p className="status-label">
-            {hasNoProgramAssignment
+            {isPreviewMode
+              ? `Browser preview: ${previewScreenId}`
+              : hasNoProgramAssignment
               ? "Screen assignment"
               : hasEmptyPlaylist
                 ? `Local schedule version ${schedule.version}`
@@ -2948,12 +3067,15 @@ export function PlayerApp() {
         <footer className="status-bar">
           <span>
             Playback:{" "}
-            {hasNoProgramAssignment
+            {isPreviewMode
+              ? "browser preview"
+              : hasNoProgramAssignment
                 ? "no program assigned"
                 : hasEmptyPlaylist
                   ? "empty playlist"
                   : "waiting"}
           </span>
+          {isPreviewMode ? <span>Preview Screen: {previewScreenId}</span> : null}
           <span>Schedule: {hasEmptyPlaylist ? `version ${schedule.version}` : "not cached"}</span>
           <span>Reload: every 30s</span>
         </footer>
@@ -3010,6 +3132,7 @@ export function PlayerApp() {
         </section>
         <footer className="status-bar">
           <span>Playback: local</span>
+          {isPreviewMode ? <span>Preview Screen: {previewScreenId}</span> : null}
           <span>Theme: {theme.name}</span>
           <span>
             Item {activeIndex + 1} / {schedule?.items.length}
@@ -3030,11 +3153,14 @@ export function PlayerApp() {
         } ${activeItem.type === "rss_item" ? "rss-surface" : ""}`}
         aria-label="Local playlist playback"
       >
-        <p className="status-label">Local schedule version {schedule?.version}</p>
+        <p className="status-label">
+          {isPreviewMode ? `Browser preview: ${previewScreenId}` : `Local schedule version ${schedule?.version}`}
+        </p>
         {renderActiveItem(activeItem.type === "image" ? "media-image" : "media-video")}
       </section>
       <footer className="status-bar">
-        <span>Playback: local</span>
+        <span>Playback: {isPreviewMode ? "browser preview" : "local"}</span>
+        {isPreviewMode ? <span>Preview Screen: {previewScreenId}</span> : null}
         <span>
           Item {activeIndex + 1} / {schedule?.items.length}
         </span>

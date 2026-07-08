@@ -1422,6 +1422,13 @@ button:disabled {
   font-weight: 700;
 }
 
+.screen-preview-url-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
 .screen-warning {
   border-radius: 999px;
   padding: 4px 8px;

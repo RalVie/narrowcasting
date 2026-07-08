@@ -67,6 +67,14 @@ function schedulePreviewHref(screenId: string) {
   return `#schedule-preview?screenId=${encodeURIComponent(screenId)}`;
 }
 
+function browserPreviewUrl(screenId: string) {
+  if (typeof window === "undefined") {
+    return `/player?screenId=${encodeURIComponent(screenId)}`;
+  }
+
+  return `${window.location.protocol}//${window.location.hostname}:4174/player?screenId=${encodeURIComponent(screenId)}`;
+}
+
 export function ScreensPage() {
   const [screens, setScreens] = useState<ScreenRecord[]>([]);
   const [selectedScreenId, setSelectedScreenId] = useState<string | null>(null);
@@ -344,6 +352,18 @@ export function ScreensPage() {
     }
   }
 
+  async function copyBrowserPreviewUrl(screen: ScreenRecord) {
+    const url = browserPreviewUrl(screen.screenId);
+
+    try {
+      await window.navigator.clipboard.writeText(url);
+      setStatus(`Browser Preview URL copied for ${screen.name}.`);
+    } catch {
+      window.prompt("Copy Browser Preview URL", url);
+      setStatus(`Browser Preview URL shown for ${screen.name}.`);
+    }
+  }
+
   async function createGroup() {
     setIsBusy(true);
     setStatus("Creating screen group...");
@@ -562,6 +582,25 @@ export function ScreensPage() {
     );
   }
 
+  function renderBrowserPreviewLink(screen: ScreenRecord) {
+    if (screen.status !== "approved") {
+      return <span>-</span>;
+    }
+
+    const url = browserPreviewUrl(screen.screenId);
+
+    return (
+      <span className="screen-preview-url-row">
+        <a className="screen-assignment-link" href={url} rel="noreferrer" target="_blank">
+          Open Browser Preview
+        </a>
+        <button disabled={isBusy} onClick={() => void copyBrowserPreviewUrl(screen)} type="button">
+          Copy URL
+        </button>
+      </span>
+    );
+  }
+
   function campaignSummary(screen: ScreenRecord) {
     const targetedCampaigns = campaignsByScreenId.get(screen.screenId) ?? [];
     const enabledCampaigns = targetedCampaigns.filter((campaign) => campaign.enabled);
@@ -632,6 +671,11 @@ export function ScreensPage() {
               Preview Schedule
             </a>
           ) : null}
+          {screen.status === "approved" ? (
+            <a className="screen-assignment-link" href={browserPreviewUrl(screen.screenId)} rel="noreferrer" target="_blank">
+              Browser Preview
+            </a>
+          ) : null}
           {screen.status === "pending" ? (
             <button disabled={isBusy} onClick={() => void approveScreen(screen.screenId)} type="button">
               Approve
@@ -693,6 +737,8 @@ export function ScreensPage() {
             <dd>{latestCampaignRevision(screen)}</dd>
             <dt>Schedule Preview</dt>
             <dd>{renderSchedulePreviewLink(screen)}</dd>
+            <dt>Browser Preview</dt>
+            <dd>{renderBrowserPreviewLink(screen)}</dd>
           </dl>
         </section>
 
