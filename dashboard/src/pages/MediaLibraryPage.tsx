@@ -1,10 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import type { ChangeEvent } from "react";
+import type { CSSProperties, ChangeEvent } from "react";
 import { apiUrl } from "../api/apiBase";
 import { readApiError } from "../api/readApiError";
-import type { BrowserAction, MediaItem } from "../mediaTypes";
+import type { BrowserAction, MediaItem, RssStyle } from "../mediaTypes";
 
 const refreshIntervalMs = 10_000;
+const defaultRssStyle: Required<RssStyle> = {
+  backgroundColor: "#000000",
+  textColor: "#f8fbff",
+  titleColor: "#ffffff",
+  accentColor: "#c4f1d7",
+  cardBackgroundColor: "#111a15"
+};
 
 function formatFileSize(size: number) {
   if (size < 1024) {
@@ -129,6 +136,25 @@ function getSummaryExcerpt(value: string | null) {
   return value.length > 180 ? `${value.slice(0, 177).trim()}...` : value;
 }
 
+function getRssStyleWithDefaults(style?: RssStyle): Required<RssStyle> {
+  return {
+    ...defaultRssStyle,
+    ...(style ?? {})
+  };
+}
+
+function getRssPreviewStyle(style: RssStyle): CSSProperties {
+  const resolvedStyle = getRssStyleWithDefaults(style);
+
+  return {
+    "--rss-preview-accent": resolvedStyle.accentColor,
+    "--rss-preview-background": resolvedStyle.backgroundColor,
+    "--rss-preview-card-background": resolvedStyle.cardBackgroundColor,
+    "--rss-preview-text": resolvedStyle.textColor,
+    "--rss-preview-title": resolvedStyle.titleColor
+  } as CSSProperties;
+}
+
 export function MediaLibraryPage() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [items, setItems] = useState<MediaItem[]>([]);
@@ -139,6 +165,7 @@ export function MediaLibraryPage() {
   const [externalUrl, setExternalUrl] = useState("");
   const [externalDuration, setExternalDuration] = useState(10);
   const [externalMaxItems, setExternalMaxItems] = useState(5);
+  const [externalRssStyle, setExternalRssStyle] = useState<RssStyle>(defaultRssStyle);
   const [externalWebUrlRenderMode, setExternalWebUrlRenderMode] = useState<"iframe" | "browser">("iframe");
   const [externalBrowserActions, setExternalBrowserActions] = useState<BrowserAction[]>([]);
   const [externalRssPreview, setExternalRssPreview] = useState<RssPreviewState>(emptyRssPreview);
@@ -147,6 +174,7 @@ export function MediaLibraryPage() {
   const [editUrl, setEditUrl] = useState("");
   const [editDuration, setEditDuration] = useState(10);
   const [editMaxItems, setEditMaxItems] = useState(5);
+  const [editRssStyle, setEditRssStyle] = useState<RssStyle>(defaultRssStyle);
   const [editWebUrlRenderMode, setEditWebUrlRenderMode] = useState<"iframe" | "browser">("iframe");
   const [editBrowserActions, setEditBrowserActions] = useState<BrowserAction[]>([]);
   const [editRssPreview, setEditRssPreview] = useState<RssPreviewState>(emptyRssPreview);
@@ -266,7 +294,8 @@ export function MediaLibraryPage() {
           browserActions: externalType === "web_url" && externalWebUrlRenderMode === "browser"
             ? serializeBrowserActions(externalBrowserActions)
             : undefined,
-          maxItems: externalType === "rss_feed" ? externalMaxItems : undefined
+          maxItems: externalType === "rss_feed" ? externalMaxItems : undefined,
+          rssStyle: externalType === "rss_feed" ? getRssStyleWithDefaults(externalRssStyle) : undefined
         })
       });
 
@@ -278,6 +307,7 @@ export function MediaLibraryPage() {
       setExternalUrl("");
       setExternalDuration(10);
       setExternalMaxItems(5);
+      setExternalRssStyle(defaultRssStyle);
       setExternalWebUrlRenderMode("iframe");
       setExternalBrowserActions([]);
       setExternalRssPreview(emptyRssPreview);
@@ -296,6 +326,7 @@ export function MediaLibraryPage() {
     setEditUrl(item.url ?? "");
     setEditDuration(item.duration ?? 10);
     setEditMaxItems(item.maxItems ?? 5);
+    setEditRssStyle(getRssStyleWithDefaults(item.rssStyle));
     setEditWebUrlRenderMode(item.webUrlRenderMode ?? "iframe");
     setEditBrowserActions(item.browserActions ?? []);
     setEditRssPreview(emptyRssPreview);
@@ -316,6 +347,7 @@ export function MediaLibraryPage() {
           url: editUrl.trim(),
           duration: editDuration,
           maxItems: item.type === "rss_feed" ? editMaxItems : undefined,
+          rssStyle: item.type === "rss_feed" ? getRssStyleWithDefaults(editRssStyle) : undefined,
           webUrlRenderMode: item.type === "web_url" ? editWebUrlRenderMode : undefined,
           browserActions: item.type === "web_url" && editWebUrlRenderMode === "browser"
             ? serializeBrowserActions(editBrowserActions)
@@ -470,6 +502,35 @@ export function MediaLibraryPage() {
     );
   }
 
+  function renderRssStyleEditor(style: RssStyle, setStyle: (style: RssStyle) => void) {
+    const resolvedStyle = getRssStyleWithDefaults(style);
+    const controls: Array<{ field: keyof Required<RssStyle>; label: string }> = [
+      { field: "backgroundColor", label: "Background" },
+      { field: "textColor", label: "Text" },
+      { field: "titleColor", label: "Title" },
+      { field: "accentColor", label: "Accent" },
+      { field: "cardBackgroundColor", label: "Card background" }
+    ];
+
+    return (
+      <div className="rss-style-editor">
+        <strong>RSS colors</strong>
+        <div className="rss-style-grid">
+          {controls.map((control) => (
+            <label key={control.field}>
+              {control.label}
+              <input
+                type="color"
+                value={resolvedStyle[control.field]}
+                onChange={(event) => setStyle({ ...resolvedStyle, [control.field]: event.target.value })}
+              />
+            </label>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   async function previewRssFeed(url: string, maxItems: number, setPreview: (preview: RssPreviewState) => void) {
     const trimmedUrl = url.trim();
 
@@ -519,13 +580,13 @@ export function MediaLibraryPage() {
     }
   }
 
-  function renderRssPreview(preview: RssPreviewState) {
+  function renderRssPreview(preview: RssPreviewState, style: RssStyle) {
     if (preview.status === "idle") {
       return null;
     }
 
     return (
-      <div className={`rss-preview-panel ${preview.status}`}>
+      <div className={`rss-preview-panel ${preview.status}`} style={getRssPreviewStyle(style)}>
         {preview.message ? <p>{preview.message}</p> : null}
         {preview.items.length > 0 ? (
           <div className="rss-preview-list">
@@ -639,6 +700,7 @@ export function MediaLibraryPage() {
               <small>The server resolves RSS into concrete player cards. The Player never fetches the feed.</small>
             </label>
           ) : null}
+          {externalType === "rss_feed" ? renderRssStyleEditor(externalRssStyle, setExternalRssStyle) : null}
           {externalType === "web_url" ? (
             <label>
               Render mode
@@ -667,7 +729,7 @@ export function MediaLibraryPage() {
               >
                 Preview feed
               </button>
-              {renderRssPreview(externalRssPreview)}
+              {renderRssPreview(externalRssPreview, externalRssStyle)}
             </div>
           ) : null}
           <button disabled={isBusy || !externalUrl.trim()} onClick={() => void createExternalMedia()} type="button">
@@ -717,20 +779,23 @@ export function MediaLibraryPage() {
                     />
                   </label>
                   {item.type === "rss_feed" ? (
-                    <label>
-                      Max items
-                      <input
-                        min={1}
-                        max={20}
-                        type="number"
-                        value={editMaxItems}
-                        onChange={(event) => {
-                          setEditMaxItems(Math.max(Math.min(Number(event.target.value), 20), 1));
-                          setEditRssPreview(emptyRssPreview);
-                        }}
-                      />
-                      <small>The server resolves RSS into concrete player cards.</small>
-                    </label>
+                    <>
+                      <label>
+                        Max items
+                        <input
+                          min={1}
+                          max={20}
+                          type="number"
+                          value={editMaxItems}
+                          onChange={(event) => {
+                            setEditMaxItems(Math.max(Math.min(Number(event.target.value), 20), 1));
+                            setEditRssPreview(emptyRssPreview);
+                          }}
+                        />
+                        <small>The server resolves RSS into concrete player cards.</small>
+                      </label>
+                      {renderRssStyleEditor(editRssStyle, setEditRssStyle)}
+                    </>
                   ) : (
                     <>
                       <label>
@@ -757,7 +822,7 @@ export function MediaLibraryPage() {
                       >
                         Preview feed
                       </button>
-                      {renderRssPreview(editRssPreview)}
+                      {renderRssPreview(editRssPreview, editRssStyle)}
                     </div>
                   ) : null}
                   <div className="button-row">

@@ -109,6 +109,7 @@ export async function getScheduleForProgram(program: Program, themeId?: string):
                 image: null,
                 publishedAt: null,
                 sourceTitle: media.title ?? null,
+                rssStyle: media.rssStyle,
                 duration: item.duration
               }
             ];
@@ -124,6 +125,7 @@ export async function getScheduleForProgram(program: Program, themeId?: string):
             image: entry.image,
             publishedAt: entry.publishedAt,
             sourceTitle: media.title ?? null,
+            rssStyle: media.rssStyle,
             duration: item.duration
           }));
         }

@@ -16,6 +16,14 @@ export type BrowserAction =
       intervalSeconds: number;
     };
 
+export interface RssStyle {
+  backgroundColor?: string;
+  textColor?: string;
+  titleColor?: string;
+  accentColor?: string;
+  cardBackgroundColor?: string;
+}
+
 export interface MediaItem {
   id: string;
   mediaId: string;
@@ -26,6 +34,7 @@ export interface MediaItem {
   url?: string;
   duration?: number;
   maxItems?: number;
+  rssStyle?: RssStyle;
   webUrlRenderMode?: "iframe" | "browser";
   browserActions?: BrowserAction[];
   originalFilename?: string;

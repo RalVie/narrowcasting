@@ -51,6 +51,14 @@ export interface WebUrlScheduleItem {
   browserActions?: BrowserAction[];
 }
 
+export interface RssStyle {
+  backgroundColor?: string;
+  textColor?: string;
+  titleColor?: string;
+  accentColor?: string;
+  cardBackgroundColor?: string;
+}
+
 export interface RssScheduleItem {
   id: string;
   mediaId?: string;
@@ -61,6 +69,7 @@ export interface RssScheduleItem {
   image?: string | null;
   publishedAt?: string | null;
   sourceTitle?: string | null;
+  rssStyle?: RssStyle;
   duration: number;
 }
 

@@ -386,6 +386,20 @@ function getRssSummaryExcerpt(value: string | null | undefined) {
   return normalizedValue.length > 360 ? `${normalizedValue.slice(0, 357).trim()}...` : normalizedValue;
 }
 
+function getSafeRssColor(value: string | null | undefined, fallback: string) {
+  return value && /^#[0-9a-fA-F]{6}$/.test(value.trim()) ? value.trim() : fallback;
+}
+
+function getRssCardStyle(item: Extract<ScheduleItem, { type: "rss_item" }>): CSSProperties {
+  return {
+    "--rss-accent": getSafeRssColor(item.rssStyle?.accentColor, "#c4f1d7"),
+    "--rss-background": getSafeRssColor(item.rssStyle?.backgroundColor, "#000000"),
+    "--rss-card-background": getSafeRssColor(item.rssStyle?.cardBackgroundColor, "#111a15"),
+    "--rss-text": getSafeRssColor(item.rssStyle?.textColor, "#d2ddd6"),
+    "--rss-title": getSafeRssColor(item.rssStyle?.titleColor, "#f8fbff")
+  } as CSSProperties;
+}
+
 function inspectMediaHttpStatus(
   file: string,
   context: Record<string, unknown>,
@@ -2585,6 +2599,7 @@ export function PlayerApp() {
         <article
           className={`rss-card ${hasImage ? "with-image" : "without-image"}`}
           key={getItemKey(activeItem, schedule, activeIndex, playbackEpoch, playbackSessionKey)}
+          style={getRssCardStyle(activeItem)}
         >
           {activeItem.image ? (
             <img alt="" className="rss-card-image" src={activeItem.image} />

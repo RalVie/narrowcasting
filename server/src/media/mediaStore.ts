@@ -4,7 +4,7 @@ import { access, mkdir, readdir, readFile, rename, stat, unlink, writeFile } fro
 import { basename, extname, resolve } from "node:path";
 import { promisify } from "node:util";
 import { assertValid, type DomainValidationIssue } from "../validation/domainValidation.js";
-import type { BrowserAction } from "../../../shared/runtime.js";
+import type { BrowserAction, RssStyle } from "../../../shared/runtime.js";
 
 export interface MediaItem {
   /**
@@ -20,6 +20,7 @@ export interface MediaItem {
   url?: string;
   duration?: number;
   maxItems?: number;
+  rssStyle?: RssStyle;
   webUrlRenderMode?: "iframe" | "browser";
   browserActions?: BrowserAction[];
   originalFilename?: string;
@@ -308,6 +309,50 @@ function getWebUrlRenderMode(value: unknown): "iframe" | "browser" {
   return value === "browser" ? "browser" : "iframe";
 }
 
+function isValidHexColor(value: unknown) {
+  return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value.trim());
+}
+
+function normalizeHexColor(value: unknown) {
+  return isValidHexColor(value) ? (value as string).trim().toLowerCase() : undefined;
+}
+
+function normalizeRssStyle(value: unknown): RssStyle | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const candidate = value as RssStyle;
+  const style: RssStyle = {
+    backgroundColor: normalizeHexColor(candidate.backgroundColor),
+    textColor: normalizeHexColor(candidate.textColor),
+    titleColor: normalizeHexColor(candidate.titleColor),
+    accentColor: normalizeHexColor(candidate.accentColor),
+    cardBackgroundColor: normalizeHexColor(candidate.cardBackgroundColor)
+  };
+  const hasStyleValue = Object.values(style).some((entry) => entry !== undefined);
+
+  return hasStyleValue ? style : undefined;
+}
+
+function parseRssStyleInput(value: unknown): RssStyle | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const candidate = value as RssStyle;
+  const style: RssStyle = {
+    backgroundColor: typeof candidate.backgroundColor === "string" ? candidate.backgroundColor.trim() : undefined,
+    textColor: typeof candidate.textColor === "string" ? candidate.textColor.trim() : undefined,
+    titleColor: typeof candidate.titleColor === "string" ? candidate.titleColor.trim() : undefined,
+    accentColor: typeof candidate.accentColor === "string" ? candidate.accentColor.trim() : undefined,
+    cardBackgroundColor: typeof candidate.cardBackgroundColor === "string" ? candidate.cardBackgroundColor.trim() : undefined
+  };
+  const hasStyleValue = Object.values(style).some((entry) => entry !== undefined);
+
+  return hasStyleValue ? style : undefined;
+}
+
 function normalizeBrowserActions(value: unknown): BrowserAction[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
@@ -425,6 +470,19 @@ function validateMediaItem(item: MediaItem, existingIds = new Set<string>()): Do
       severity: "blocking_error",
       message: "RSS Feed media must use a valid http or https URL."
     });
+  }
+
+  if (item.type === "rss_feed" && item.rssStyle) {
+    for (const [field, value] of Object.entries(item.rssStyle)) {
+      if (value !== undefined && !isValidHexColor(value)) {
+        issues.push({
+          ruleId: "VAL-MEDIA-009",
+          field: `rssStyle.${field}`,
+          severity: "blocking_error",
+          message: "RSS style colors must be valid hex colors such as #000000."
+        });
+      }
+    }
   }
 
   if (
@@ -548,7 +606,8 @@ function normalizeMetadataItem(value: unknown): MediaItem | null {
       duration: Math.max(Number(candidate.duration ?? 10), 1),
       webUrlRenderMode: candidate.type === "web_url" ? getWebUrlRenderMode(candidate.webUrlRenderMode) : undefined,
       browserActions: candidate.type === "web_url" ? normalizeBrowserActions(candidate.browserActions) : undefined,
-      maxItems: candidate.type === "rss_feed" ? Math.max(Math.min(Number(candidate.maxItems ?? 5), 20), 1) : undefined
+      maxItems: candidate.type === "rss_feed" ? Math.max(Math.min(Number(candidate.maxItems ?? 5), 20), 1) : undefined,
+      rssStyle: candidate.type === "rss_feed" ? normalizeRssStyle(candidate.rssStyle) : undefined
     };
   }
 
@@ -992,6 +1051,7 @@ export async function createExternalMedia(input: unknown): Promise<MediaItem> {
   const title = typeof candidate.title === "string" && candidate.title.trim() ? candidate.title.trim() : undefined;
   const duration = Math.max(Number(candidate.duration ?? 10), 1);
   const maxItems = externalType === "rss_feed" ? Math.max(Math.min(Number(candidate.maxItems ?? 5), 20), 1) : undefined;
+  const rssStyle = externalType === "rss_feed" ? parseRssStyleInput(candidate.rssStyle) : undefined;
   const webUrlRenderMode = externalType === "web_url" ? getWebUrlRenderMode(candidate.webUrlRenderMode) : undefined;
   const browserActions = externalType === "web_url" ? normalizeBrowserActions(candidate.browserActions) : undefined;
   const mediaId = createStableMediaId();
@@ -1006,7 +1066,8 @@ export async function createExternalMedia(input: unknown): Promise<MediaItem> {
     duration,
     webUrlRenderMode,
     browserActions,
-    maxItems
+    maxItems,
+    rssStyle
   };
 
   assertValid(validateMediaItem(item));
@@ -1043,6 +1104,9 @@ export async function updateExternalMedia(id: string, input: unknown): Promise<M
   const maxItems = existingItem.type === "rss_feed"
     ? Math.max(Math.min(Number(candidate.maxItems ?? existingItem.maxItems ?? 5), 20), 1)
     : undefined;
+  const rssStyle = existingItem.type === "rss_feed"
+    ? parseRssStyleInput(candidate.rssStyle ?? existingItem.rssStyle)
+    : undefined;
   const webUrlRenderMode = existingItem.type === "web_url"
     ? getWebUrlRenderMode(candidate.webUrlRenderMode ?? existingItem.webUrlRenderMode)
     : undefined;
@@ -1057,6 +1121,7 @@ export async function updateExternalMedia(id: string, input: unknown): Promise<M
     url,
     duration,
     maxItems,
+    rssStyle,
     webUrlRenderMode,
     browserActions
   };

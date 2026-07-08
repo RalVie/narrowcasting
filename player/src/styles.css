@@ -103,7 +103,12 @@ h1 {
   grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.4fr);
   align-items: center;
   gap: 4vw;
-  width: min(1500px, 90vw);
+  min-height: 100vh;
+  box-sizing: border-box;
+  width: 100vw;
+  padding: 6vw;
+  color: var(--rss-text, #d2ddd6);
+  background: var(--rss-background, #000000);
   text-align: left;
 }
 
@@ -122,12 +127,10 @@ h1 {
   display: grid;
   min-height: min(46vh, 440px);
   place-items: center;
-  border: 1px solid rgb(255 255 255 / 18%);
+  border: 1px solid var(--rss-accent, #c4f1d7);
   border-radius: 8px;
-  color: #c4f1d7;
-  background:
-    linear-gradient(135deg, rgb(255 255 255 / 8%), rgb(255 255 255 / 2%)),
-    #111a15;
+  color: var(--rss-accent, #c4f1d7);
+  background: var(--rss-card-background, #111a15);
   font-size: clamp(28px, 5vw, 76px);
   font-weight: 800;
   letter-spacing: 0;
@@ -136,10 +139,15 @@ h1 {
 .rss-card-content {
   display: grid;
   gap: 22px;
+  border-radius: 8px;
+  padding: clamp(22px, 3vw, 48px);
+  background: var(--rss-card-background, transparent);
 }
 
 .rss-card-content .status-label {
   justify-self: start;
+  border-color: var(--rss-accent, #c4f1d7);
+  color: var(--rss-accent, #c4f1d7);
 }
 
 .rss-card-source-row {
@@ -150,19 +158,24 @@ h1 {
 }
 
 .rss-card-source-row span {
-  color: #9fb7a9;
+  color: var(--rss-accent, #9fb7a9);
   font-size: clamp(14px, 1.4vw, 20px);
+}
+
+.rss-card h1 {
+  color: var(--rss-title, #f8fbff);
 }
 
 .rss-card .supporting-copy {
   max-width: 980px;
   margin: 0;
+  color: var(--rss-text, #d2ddd6);
 }
 
 .rss-card-meta {
   display: grid;
   gap: 8px;
-  color: #9fb7a9;
+  color: var(--rss-accent, #9fb7a9);
   font-size: clamp(14px, 1.4vw, 20px);
   overflow-wrap: anywhere;
 }
