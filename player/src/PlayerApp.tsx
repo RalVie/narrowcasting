@@ -799,6 +799,14 @@ function getPreviewScreenId() {
   return new URLSearchParams(window.location.search).get("screenId")?.trim() || null;
 }
 
+function getPreviewServerUrlFromLocation() {
+  if (!window.location.hostname) {
+    return null;
+  }
+
+  return normalizeServerUrl(`${window.location.protocol}//${window.location.hostname}:3000`);
+}
+
 function readPreviewAdminKey() {
   return readLocalStorage(previewAdminKeyKey);
 }
@@ -1868,7 +1876,10 @@ export function PlayerApp() {
     let previewServerUrl: string | null = null;
 
     async function fetchPreviewSchedule(screenId: string) {
-      previewServerUrl = await discoverServerUrl(previewServerUrl ?? readLocalStorage(serverUrlKey));
+      previewServerUrl =
+        (await probeServerUrl(previewServerUrl)) ??
+        (await probeServerUrl(getPreviewServerUrlFromLocation())) ??
+        (await discoverServerUrl(readLocalStorage(serverUrlKey)));
 
       if (!previewServerUrl) {
         throw new Error("Narrowcasting server not found for browser preview.");
@@ -3043,10 +3054,19 @@ export function PlayerApp() {
   if (!activeItem) {
     const hasEmptyPlaylist = schedule !== null && schedule.items.length === 0;
     const hasNoProgramAssignment = schedule?.assignmentStatus === "unassigned";
+    const previewStatus =
+      debugInfo.status.startsWith("fetch error") ||
+      debugInfo.status.includes("fetch failed") ||
+      debugInfo.status.includes("invalid schedule")
+        ? debugInfo.status
+        : "Loading browser preview schedule";
 
     return (
       <main className="player-shell">
-        <section className="playback-surface" aria-label="Local playlist playback">
+        <section
+          className="playback-surface"
+          aria-label={isPreviewMode ? "Browser preview playback" : "Local playlist playback"}
+        >
           <p className="status-label">
             {isPreviewMode
               ? `Browser preview: ${previewScreenId}`
@@ -3057,7 +3077,9 @@ export function PlayerApp() {
                 : "Waiting for local schedule"}
           </p>
           <h1>
-            {hasNoProgramAssignment
+            {isPreviewMode && !hasEmptyPlaylist
+              ? previewStatus
+              : hasNoProgramAssignment
               ? "No program assigned."
               : hasEmptyPlaylist
                 ? "Playlist is empty"
@@ -3076,7 +3098,14 @@ export function PlayerApp() {
                   : "waiting"}
           </span>
           {isPreviewMode ? <span>Preview Screen: {previewScreenId}</span> : null}
-          <span>Schedule: {hasEmptyPlaylist ? `version ${schedule.version}` : "not cached"}</span>
+          <span>
+            Schedule:{" "}
+            {hasEmptyPlaylist
+              ? `version ${schedule.version}`
+              : isPreviewMode
+                ? "loading preview"
+                : "not cached"}
+          </span>
           <span>Reload: every 30s</span>
         </footer>
         {renderDebugOverlay()}
