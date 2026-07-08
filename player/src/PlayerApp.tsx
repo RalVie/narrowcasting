@@ -3027,7 +3027,7 @@ export function PlayerApp() {
       <section
         className={`playback-surface ${
           activeItem.type === "image" || activeItem.type === "video" || getWebUrlRenderData(activeItem) ? "image-surface" : ""
-        }`}
+        } ${activeItem.type === "rss_item" ? "rss-surface" : ""}`}
         aria-label="Local playlist playback"
       >
         <p className="status-label">Local schedule version {schedule?.version}</p>

@@ -26,6 +26,22 @@ body {
   text-align: center;
 }
 
+.rss-surface {
+  place-content: stretch;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  text-align: left;
+}
+
+.rss-surface > .status-label {
+  position: fixed;
+  top: 18px;
+  left: 22px;
+  z-index: 2;
+  background: rgb(0 0 0 / 56%);
+}
+
 .image-surface {
   position: relative;
   min-height: 100vh;
@@ -104,20 +120,25 @@ h1 {
   align-items: center;
   gap: 4vw;
   min-height: 100vh;
+  max-width: 100%;
+  min-width: 0;
   box-sizing: border-box;
-  width: 100vw;
+  width: 100%;
   padding: 6vw;
   color: var(--rss-text, #d2ddd6);
   background: var(--rss-background, #000000);
+  overflow: hidden;
   text-align: left;
 }
 
 .rss-card.without-image {
-  grid-template-columns: minmax(220px, 0.45fr) minmax(0, 1.55fr);
+  grid-template-columns: minmax(180px, 0.45fr) minmax(0, 1.55fr);
 }
 
 .rss-card-image {
+  min-width: 0;
   width: 100%;
+  max-width: 100%;
   max-height: 72vh;
   border-radius: 8px;
   object-fit: cover;
@@ -125,6 +146,7 @@ h1 {
 
 .rss-card-image-fallback {
   display: grid;
+  min-width: 0;
   min-height: min(46vh, 440px);
   place-items: center;
   border: 1px solid var(--rss-accent, #c4f1d7);
@@ -139,9 +161,12 @@ h1 {
 .rss-card-content {
   display: grid;
   gap: 22px;
+  min-width: 0;
+  max-width: 100%;
   border-radius: 8px;
   padding: clamp(22px, 3vw, 48px);
   background: var(--rss-card-background, transparent);
+  overflow: hidden;
 }
 
 .rss-card-content .status-label {
@@ -155,31 +180,49 @@ h1 {
   flex-wrap: wrap;
   gap: 10px;
   align-items: center;
+  min-width: 0;
 }
 
 .rss-card-source-row span {
+  min-width: 0;
   color: var(--rss-accent, #9fb7a9);
   font-size: var(--rss-meta-size, clamp(14px, 1.4vw, 20px));
+  overflow-wrap: anywhere;
 }
 
 .rss-card h1 {
+  min-width: 0;
   color: var(--rss-title, #f8fbff);
   font-size: var(--rss-title-size, clamp(42px, 8vw, 110px));
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .rss-card .supporting-copy {
+  display: -webkit-box;
+  max-height: 8.7em;
   max-width: 980px;
   margin: 0;
   color: var(--rss-text, #d2ddd6);
   font-size: var(--rss-body-size, clamp(18px, 2vw, 26px));
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
 }
 
 .rss-card-meta {
   display: grid;
   gap: 8px;
+  min-width: 0;
   color: var(--rss-accent, #9fb7a9);
   font-size: var(--rss-meta-size, clamp(14px, 1.4vw, 20px));
   overflow-wrap: anywhere;
+}
+
+.theme-program-region .rss-card {
+  min-height: 100%;
+  padding: clamp(18px, 4%, 56px);
 }
 
 .media-image[data-missing="true"],
