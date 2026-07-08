@@ -1898,14 +1898,21 @@ export function PlayerApp() {
       }
 
       const scheduleUrl = `${previewServerUrl}/api/schedule?screenId=${encodeURIComponent(screenId)}`;
-      let response = await fetch(scheduleUrl, {
-        cache: "no-store",
-        headers: {
-          "Cache-Control": "no-cache",
-          Pragma: "no-cache",
-          "X-Narrowcasting-Admin-Key": adminKey
+      const fetchScheduleWithAdminKey = async (key: string) => {
+        try {
+          return await fetch(scheduleUrl, {
+            cache: "no-store",
+            headers: {
+              "X-Narrowcasting-Admin-Key": key
+            }
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "network request failed";
+          throw new Error(`Browser preview schedule request failed for ${scheduleUrl}: ${message}`);
         }
-      });
+      };
+
+      let response = await fetchScheduleWithAdminKey(adminKey);
 
       if (response.status === 401 || response.status === 403) {
         clearPreviewAdminKey();
@@ -1915,14 +1922,7 @@ export function PlayerApp() {
           throw new Error("The admin key was rejected or not supplied.");
         }
 
-        response = await fetch(scheduleUrl, {
-          cache: "no-store",
-          headers: {
-            "Cache-Control": "no-cache",
-            Pragma: "no-cache",
-            "X-Narrowcasting-Admin-Key": adminKey
-          }
-        });
+        response = await fetchScheduleWithAdminKey(adminKey);
       }
 
       return response;
