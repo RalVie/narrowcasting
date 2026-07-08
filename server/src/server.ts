@@ -17,6 +17,17 @@ function getAllowedCorsOrigins() {
     .filter(Boolean);
 }
 
+function isAllowedPlayerOrigin(origin: string) {
+  const playerPort = process.env.PLAYER_PORT ?? "4174";
+
+  try {
+    const url = new URL(origin);
+    return (url.protocol === "http:" || url.protocol === "https:") && url.port === playerPort;
+  } catch {
+    return false;
+  }
+}
+
 export function buildServer() {
   const app = Fastify({
     logger: true
@@ -51,13 +62,13 @@ export function buildServer() {
       }
 
       if (allowedCorsOrigins.length > 0) {
-        callback(null, allowedCorsOrigins.includes(origin));
+        callback(null, allowedCorsOrigins.includes(origin) || isAllowedPlayerOrigin(origin));
         return;
       }
 
       // Development keeps broad CORS so Vite dashboard dev servers can call the Pi/server.
       // Production without NARROWCASTING_CORS_ORIGIN only allows same-origin/no-Origin requests.
-      callback(null, process.env.NODE_ENV !== "production");
+      callback(null, process.env.NODE_ENV !== "production" || isAllowedPlayerOrigin(origin));
     },
     allowedHeaders: [
       "Content-Type",
