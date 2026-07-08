@@ -72,7 +72,9 @@ function getCacheHeaders(cleanPath) {
 
   if (cleanPath.startsWith("assets/")) {
     return {
-      "Cache-Control": "public, max-age=31536000, immutable"
+      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      Expires: "0",
+      Pragma: "no-cache"
     };
   }
 

@@ -595,10 +595,12 @@ update_server() {
   install_server_media_packages
   npm_install_part server
   npm_install_part dashboard
+  npm_install_part player
   build_part server
   build_part dashboard
-  refresh_services_if_installed narrowcasting-server
-  restart_services narrowcasting-server
+  build_part player
+  refresh_services_if_installed narrowcasting-server narrowcasting-player
+  restart_services narrowcasting-server narrowcasting-player
 }
 
 update_player() {
