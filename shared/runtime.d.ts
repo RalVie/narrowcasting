@@ -57,6 +57,9 @@ export interface RssStyle {
   titleColor?: string;
   accentColor?: string;
   cardBackgroundColor?: string;
+  titleSize?: "small" | "normal" | "large" | "extra-large";
+  bodySize?: "small" | "normal" | "large" | "extra-large";
+  metaSize?: "small" | "normal" | "large" | "extra-large";
 }
 
 export interface RssScheduleItem {

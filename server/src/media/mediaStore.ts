@@ -54,6 +54,7 @@ const videoExtensions = new Set([".mp4", ".webm"]);
 const execFileAsync = promisify(execFile);
 let videoProcessingActive = false;
 const videoProcessingQueue: VideoProcessingJob[] = [];
+const rssTextSizePresets = new Set(["small", "normal", "large", "extra-large"]);
 
 export function getMediaRoot() {
   return mediaRoot;
@@ -317,6 +318,14 @@ function normalizeHexColor(value: unknown) {
   return isValidHexColor(value) ? (value as string).trim().toLowerCase() : undefined;
 }
 
+function isValidRssTextSize(value: unknown) {
+  return typeof value === "string" && rssTextSizePresets.has(value);
+}
+
+function normalizeRssTextSize(value: unknown) {
+  return isValidRssTextSize(value) ? (value as RssStyle["titleSize"]) : undefined;
+}
+
 function normalizeRssStyle(value: unknown): RssStyle | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
@@ -328,7 +337,10 @@ function normalizeRssStyle(value: unknown): RssStyle | undefined {
     textColor: normalizeHexColor(candidate.textColor),
     titleColor: normalizeHexColor(candidate.titleColor),
     accentColor: normalizeHexColor(candidate.accentColor),
-    cardBackgroundColor: normalizeHexColor(candidate.cardBackgroundColor)
+    cardBackgroundColor: normalizeHexColor(candidate.cardBackgroundColor),
+    titleSize: normalizeRssTextSize(candidate.titleSize),
+    bodySize: normalizeRssTextSize(candidate.bodySize),
+    metaSize: normalizeRssTextSize(candidate.metaSize)
   };
   const hasStyleValue = Object.values(style).some((entry) => entry !== undefined);
 
@@ -346,7 +358,10 @@ function parseRssStyleInput(value: unknown): RssStyle | undefined {
     textColor: typeof candidate.textColor === "string" ? candidate.textColor.trim() : undefined,
     titleColor: typeof candidate.titleColor === "string" ? candidate.titleColor.trim() : undefined,
     accentColor: typeof candidate.accentColor === "string" ? candidate.accentColor.trim() : undefined,
-    cardBackgroundColor: typeof candidate.cardBackgroundColor === "string" ? candidate.cardBackgroundColor.trim() : undefined
+    cardBackgroundColor: typeof candidate.cardBackgroundColor === "string" ? candidate.cardBackgroundColor.trim() : undefined,
+    titleSize: typeof candidate.titleSize === "string" ? candidate.titleSize.trim() as RssStyle["titleSize"] : undefined,
+    bodySize: typeof candidate.bodySize === "string" ? candidate.bodySize.trim() as RssStyle["bodySize"] : undefined,
+    metaSize: typeof candidate.metaSize === "string" ? candidate.metaSize.trim() as RssStyle["metaSize"] : undefined
   };
   const hasStyleValue = Object.values(style).some((entry) => entry !== undefined);
 
@@ -474,12 +489,31 @@ function validateMediaItem(item: MediaItem, existingIds = new Set<string>()): Do
 
   if (item.type === "rss_feed" && item.rssStyle) {
     for (const [field, value] of Object.entries(item.rssStyle)) {
-      if (value !== undefined && !isValidHexColor(value)) {
+      if (
+        value !== undefined &&
+        field !== "titleSize" &&
+        field !== "bodySize" &&
+        field !== "metaSize" &&
+        !isValidHexColor(value)
+      ) {
         issues.push({
           ruleId: "VAL-MEDIA-009",
           field: `rssStyle.${field}`,
           severity: "blocking_error",
           message: "RSS style colors must be valid hex colors such as #000000."
+        });
+      }
+
+      if (
+        value !== undefined &&
+        (field === "titleSize" || field === "bodySize" || field === "metaSize") &&
+        !isValidRssTextSize(value)
+      ) {
+        issues.push({
+          ruleId: "VAL-MEDIA-010",
+          field: `rssStyle.${field}`,
+          severity: "blocking_error",
+          message: "RSS text sizes must be small, normal, large, or extra-large."
         });
       }
     }

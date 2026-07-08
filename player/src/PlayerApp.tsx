@@ -390,13 +390,42 @@ function getSafeRssColor(value: string | null | undefined, fallback: string) {
   return value && /^#[0-9a-fA-F]{6}$/.test(value.trim()) ? value.trim() : fallback;
 }
 
+function getSafeRssTextSize(value: string | null | undefined, role: "body" | "meta" | "title") {
+  const values = {
+    body: {
+      small: "clamp(16px, 1.6vw, 22px)",
+      normal: "clamp(18px, 2vw, 26px)",
+      large: "clamp(22px, 2.4vw, 32px)",
+      "extra-large": "clamp(26px, 3vw, 40px)"
+    },
+    meta: {
+      small: "clamp(12px, 1.1vw, 16px)",
+      normal: "clamp(14px, 1.4vw, 20px)",
+      large: "clamp(18px, 1.8vw, 24px)",
+      "extra-large": "clamp(22px, 2.2vw, 30px)"
+    },
+    title: {
+      small: "clamp(34px, 5vw, 72px)",
+      normal: "clamp(42px, 8vw, 110px)",
+      large: "clamp(56px, 9vw, 128px)",
+      "extra-large": "clamp(68px, 10vw, 150px)"
+    }
+  } as const;
+  const size = value === "small" || value === "large" || value === "extra-large" ? value : "normal";
+
+  return values[role][size];
+}
+
 function getRssCardStyle(item: Extract<ScheduleItem, { type: "rss_item" }>): CSSProperties {
   return {
     "--rss-accent": getSafeRssColor(item.rssStyle?.accentColor, "#c4f1d7"),
     "--rss-background": getSafeRssColor(item.rssStyle?.backgroundColor, "#000000"),
     "--rss-card-background": getSafeRssColor(item.rssStyle?.cardBackgroundColor, "#111a15"),
     "--rss-text": getSafeRssColor(item.rssStyle?.textColor, "#d2ddd6"),
-    "--rss-title": getSafeRssColor(item.rssStyle?.titleColor, "#f8fbff")
+    "--rss-title": getSafeRssColor(item.rssStyle?.titleColor, "#f8fbff"),
+    "--rss-body-size": getSafeRssTextSize(item.rssStyle?.bodySize, "body"),
+    "--rss-meta-size": getSafeRssTextSize(item.rssStyle?.metaSize, "meta"),
+    "--rss-title-size": getSafeRssTextSize(item.rssStyle?.titleSize, "title")
   } as CSSProperties;
 }
 

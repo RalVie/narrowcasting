@@ -159,24 +159,26 @@ h1 {
 
 .rss-card-source-row span {
   color: var(--rss-accent, #9fb7a9);
-  font-size: clamp(14px, 1.4vw, 20px);
+  font-size: var(--rss-meta-size, clamp(14px, 1.4vw, 20px));
 }
 
 .rss-card h1 {
   color: var(--rss-title, #f8fbff);
+  font-size: var(--rss-title-size, clamp(42px, 8vw, 110px));
 }
 
 .rss-card .supporting-copy {
   max-width: 980px;
   margin: 0;
   color: var(--rss-text, #d2ddd6);
+  font-size: var(--rss-body-size, clamp(18px, 2vw, 26px));
 }
 
 .rss-card-meta {
   display: grid;
   gap: 8px;
   color: var(--rss-accent, #9fb7a9);
-  font-size: clamp(14px, 1.4vw, 20px);
+  font-size: var(--rss-meta-size, clamp(14px, 1.4vw, 20px));
   overflow-wrap: anywhere;
 }
 

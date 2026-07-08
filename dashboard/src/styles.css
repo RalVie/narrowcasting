@@ -622,6 +622,10 @@ button:disabled {
   padding: 2px;
 }
 
+.rss-style-grid select {
+  width: 100%;
+}
+
 .rss-preview-panel {
   border: 1px solid #d9dfd4;
   border-left: 4px solid var(--rss-preview-accent, #7fb58b);
@@ -642,7 +646,7 @@ button:disabled {
 .rss-preview-panel p {
   margin: 0;
   color: var(--rss-preview-text, #5f6f64);
-  font-size: 13px;
+  font-size: var(--rss-preview-body-size, 13px);
 }
 
 .rss-preview-item {
@@ -684,11 +688,12 @@ button:disabled {
 
 .rss-preview-item span {
   color: var(--rss-preview-accent, #647064);
-  font-size: 12px;
+  font-size: var(--rss-preview-meta-size, 12px);
 }
 
 .rss-preview-item strong {
   color: var(--rss-preview-title, #17201a);
+  font-size: var(--rss-preview-title-size, 14px);
 }
 
 .media-card h3 {

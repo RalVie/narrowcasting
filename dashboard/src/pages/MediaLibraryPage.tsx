@@ -10,7 +10,10 @@ const defaultRssStyle: Required<RssStyle> = {
   textColor: "#f8fbff",
   titleColor: "#ffffff",
   accentColor: "#c4f1d7",
-  cardBackgroundColor: "#111a15"
+  cardBackgroundColor: "#111a15",
+  titleSize: "normal",
+  bodySize: "normal",
+  metaSize: "normal"
 };
 
 function formatFileSize(size: number) {
@@ -151,8 +154,36 @@ function getRssPreviewStyle(style: RssStyle): CSSProperties {
     "--rss-preview-background": resolvedStyle.backgroundColor,
     "--rss-preview-card-background": resolvedStyle.cardBackgroundColor,
     "--rss-preview-text": resolvedStyle.textColor,
-    "--rss-preview-title": resolvedStyle.titleColor
+    "--rss-preview-title": resolvedStyle.titleColor,
+    "--rss-preview-body-size": getPreviewTextSize(resolvedStyle.bodySize, "body"),
+    "--rss-preview-meta-size": getPreviewTextSize(resolvedStyle.metaSize, "meta"),
+    "--rss-preview-title-size": getPreviewTextSize(resolvedStyle.titleSize, "title")
   } as CSSProperties;
+}
+
+function getPreviewTextSize(size: RssStyle["titleSize"], role: "body" | "meta" | "title") {
+  const values = {
+    body: {
+      small: "12px",
+      normal: "13px",
+      large: "15px",
+      "extra-large": "17px"
+    },
+    meta: {
+      small: "11px",
+      normal: "12px",
+      large: "14px",
+      "extra-large": "16px"
+    },
+    title: {
+      small: "13px",
+      normal: "14px",
+      large: "16px",
+      "extra-large": "18px"
+    }
+  } as const;
+
+  return values[role][size ?? "normal"];
 }
 
 export function MediaLibraryPage() {
@@ -526,6 +557,45 @@ export function MediaLibraryPage() {
               />
             </label>
           ))}
+        </div>
+        <strong>RSS text sizes</strong>
+        <div className="rss-style-grid">
+          <label>
+            Title size
+            <select
+              value={resolvedStyle.titleSize}
+              onChange={(event) => setStyle({ ...resolvedStyle, titleSize: event.target.value as RssStyle["titleSize"] })}
+            >
+              <option value="small">Small</option>
+              <option value="normal">Normal</option>
+              <option value="large">Large</option>
+              <option value="extra-large">Extra-large</option>
+            </select>
+          </label>
+          <label>
+            Text size
+            <select
+              value={resolvedStyle.bodySize}
+              onChange={(event) => setStyle({ ...resolvedStyle, bodySize: event.target.value as RssStyle["bodySize"] })}
+            >
+              <option value="small">Small</option>
+              <option value="normal">Normal</option>
+              <option value="large">Large</option>
+              <option value="extra-large">Extra-large</option>
+            </select>
+          </label>
+          <label>
+            Date/source size
+            <select
+              value={resolvedStyle.metaSize}
+              onChange={(event) => setStyle({ ...resolvedStyle, metaSize: event.target.value as RssStyle["metaSize"] })}
+            >
+              <option value="small">Small</option>
+              <option value="normal">Normal</option>
+              <option value="large">Large</option>
+              <option value="extra-large">Extra-large</option>
+            </select>
+          </label>
         </div>
       </div>
     );
