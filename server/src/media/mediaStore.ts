@@ -49,7 +49,6 @@ type MediaReference = string | undefined;
 
 const mediaRoot = resolve(process.cwd(), "public", "media");
 const metadataPath = resolve(process.cwd(), "data", "media.json");
-const metadataTempPath = resolve(process.cwd(), "data", "media.json.tmp");
 const imageExtensions = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 const videoExtensions = new Set([".mp4", ".webm"]);
 const execFileAsync = promisify(execFile);
@@ -734,6 +733,7 @@ async function readMetadataFile(): Promise<MediaItem[]> {
 async function writeMetadataFile(items: MediaItem[]) {
   validateMediaCollection(items);
   await mkdir(resolve(process.cwd(), "data"), { recursive: true });
+  const metadataTempPath = resolve(process.cwd(), "data", `media.${process.pid}.${Date.now()}.${randomUUID()}.json.tmp`);
   await writeFile(metadataTempPath, `${JSON.stringify(items, null, 2)}\n`, "utf8");
   await rename(metadataTempPath, metadataPath);
 }
@@ -1008,7 +1008,6 @@ export async function listMedia(): Promise<MediaItem[]> {
     (first.title ?? first.filename).localeCompare(second.title ?? second.filename)
   );
 
-  await writeMetadataFile(items);
   return items;
 }
 
@@ -1033,17 +1032,24 @@ export async function createMedia(filename: string, content: Buffer): Promise<Me
   if (mediaType === "image") {
     const filePath = getMediaPath(safeFilename);
     await writeFile(filePath, content);
+    const fileStat = await stat(filePath);
     const items = await listMedia();
-    const item = items.find((mediaItem) => mediaItem.filename === safeFilename);
-
-    if (!item) {
-      throw new Error("media metadata could not be created");
-    }
-
-    const readyImage = await updateMediaItem(item.mediaId, {
+    const existingItem = items.find((mediaItem) => mediaItem.filename === safeFilename);
+    const mediaId = existingItem?.mediaId ?? createUniqueMediaId(items);
+    const readyImage: MediaItem = {
+      id: existingItem?.id ?? toLegacyMediaId(safeFilename),
+      mediaId,
+      filename: safeFilename,
+      type: "image",
+      size: fileStat.size,
       processingStatus: "ready"
-    });
-    return readyImage ?? item;
+    };
+    const nextItems = existingItem
+      ? items.map((item) => (item.mediaId === mediaId ? readyImage : item))
+      : [...items, readyImage];
+
+    await writeMetadataFile(nextItems);
+    return readyImage;
   }
 
   const items = await listMedia();

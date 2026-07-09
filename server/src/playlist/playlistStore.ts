@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
@@ -44,8 +45,6 @@ export interface PlaylistRecord extends Playlist {
 const defaultPlaylistId = "default";
 const playlistPath = resolve(process.cwd(), "data", "playlist.json");
 const playlistsPath = resolve(process.cwd(), "data", "playlists.json");
-const playlistTempPath = resolve(process.cwd(), "data", "playlist.json.tmp");
-const playlistsTempPath = resolve(process.cwd(), "data", "playlists.json.tmp");
 const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
 const allowedDays = new Set<string>(dayNames);
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -384,12 +383,14 @@ function normalizePlaylistRecord(
 
 async function writePlaylists(playlists: PlaylistRecord[]) {
   await mkdir(resolve(process.cwd(), "data"), { recursive: true });
+  const playlistsTempPath = resolve(process.cwd(), "data", `playlists.${process.pid}.${Date.now()}.${randomUUID()}.json.tmp`);
   await writeFile(playlistsTempPath, `${JSON.stringify(playlists, null, 2)}\n`, "utf8");
   await rename(playlistsTempPath, playlistsPath);
 
   const defaultPlaylist = playlists.find((playlist) => playlist.id === defaultPlaylistId);
 
   if (defaultPlaylist) {
+    const playlistTempPath = resolve(process.cwd(), "data", `playlist.${process.pid}.${Date.now()}.${randomUUID()}.json.tmp`);
     await writeFile(
       playlistTempPath,
       `${JSON.stringify(
