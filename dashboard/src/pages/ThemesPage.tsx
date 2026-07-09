@@ -789,7 +789,7 @@ export function ThemesPage() {
       ? `${(gridSize / theme.canvasWidth) * 100}% ${(gridSize / theme.canvasHeight) * 100}%`
       : undefined
   };
-  function getRegionStyle(region: ThemeRegion) {
+  function getRegionStyle(region: ThemeRegion, index: number) {
     const colors = regionColors[region.type] ?? regionColors.program;
 
     return {
@@ -799,7 +799,8 @@ export function ThemesPage() {
       height: `${(region.height / theme.canvasHeight) * 100}%`,
       borderColor: colors.color,
       backgroundColor: colors.background,
-      opacity: region.visible === false ? 0.36 : region.opacity ?? 1
+      opacity: region.visible === false ? 0.36 : region.opacity ?? 1,
+      zIndex: theme.regions.length - index
     };
   }
 
@@ -1033,7 +1034,7 @@ export function ThemesPage() {
               ) : null}
               <div className="theme-center-guide vertical" />
               <div className="theme-center-guide horizontal" />
-              {theme.regions.map((region) => {
+              {theme.regions.map((region, index) => {
                 const isSelected = region.id === selectedRegion.id;
 
                 return (
@@ -1042,7 +1043,7 @@ export function ThemesPage() {
                     key={region.id}
                     onPointerDown={(event) => beginMove(event, region)}
                     role="button"
-                    style={getRegionStyle(region)}
+                    style={getRegionStyle(region, index)}
                     tabIndex={0}
                   >
                     {renderDesignerRegionPreview(region)}

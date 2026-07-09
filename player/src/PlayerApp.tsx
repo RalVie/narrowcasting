@@ -911,14 +911,15 @@ async function persistPlayerRegistration(
   }
 }
 
-function getRegionFrameStyle(region: ThemeRegion): CSSProperties {
+function getRegionFrameStyle(region: ThemeRegion, zIndex?: number): CSSProperties {
   return {
     left: `${region.x}px`,
     top: `${region.y}px`,
     width: `${region.width}px`,
     height: `${region.height}px`,
     opacity: region.opacity ?? 1,
-    borderRadius: `${region.cornerRadius ?? 0}px`
+    borderRadius: `${region.cornerRadius ?? 0}px`,
+    zIndex
   };
 }
 
@@ -2860,13 +2861,13 @@ export function PlayerApp() {
     );
   }
 
-  function renderStaticImageRegion(region: ThemeRegion, className: string) {
+  function renderStaticImageRegion(region: ThemeRegion, className: string, zIndex?: number) {
     if (region.visible === false || !region.file) {
       return null;
     }
 
     return (
-      <div className={className} key={region.id} style={getRegionFrameStyle(region)}>
+      <div className={className} key={region.id} style={getRegionFrameStyle(region, zIndex)}>
         <img
           alt=""
           className="theme-static-image"
@@ -2882,7 +2883,7 @@ export function PlayerApp() {
     );
   }
 
-  function renderTextRegion(region: ThemeRegion) {
+  function renderTextRegion(region: ThemeRegion, zIndex?: number) {
     if (region.visible === false) {
       return null;
     }
@@ -2893,6 +2894,7 @@ export function PlayerApp() {
         key={region.id}
         style={{
           ...getRegionFrameStyle(region),
+          zIndex,
           alignItems: "center",
           backgroundColor: region.backgroundColor ?? "transparent",
           color: region.textColor ?? "#ffffff",
@@ -2912,7 +2914,7 @@ export function PlayerApp() {
     );
   }
 
-  function renderClockRegion(region: ThemeRegion) {
+  function renderClockRegion(region: ThemeRegion, zIndex?: number) {
     if (region.visible === false) {
       return null;
     }
@@ -2923,6 +2925,7 @@ export function PlayerApp() {
         key={region.id}
         style={{
           ...getRegionFrameStyle(region),
+          zIndex,
           alignItems: "center",
           backgroundColor: region.backgroundColor ?? "transparent",
           color: region.textColor ?? "#ffffff",
@@ -2940,6 +2943,52 @@ export function PlayerApp() {
         {formatClock(clockNow, region.clockFormat)}
       </div>
     );
+  }
+
+  function renderThemeRegion(region: ThemeRegion, index: number, regionCount: number, renderMainContentRegion: boolean) {
+    const zIndex = regionCount - index;
+
+    if (region.type === "image") {
+      return renderStaticImageRegion(region, "theme-static-region", zIndex);
+    }
+
+    if (region.type === "logo") {
+      return renderStaticImageRegion(region, "theme-logo-region", zIndex);
+    }
+
+    if (region.type === "text") {
+      return renderTextRegion(region, zIndex);
+    }
+
+    if (region.type === "clock") {
+      return renderClockRegion(region, zIndex);
+    }
+
+    if (region.type === "rss") {
+      return region.visible !== false && activeItem?.type === "rss_item" ? (
+        <div
+          className="theme-rss-region"
+          key={`rss-region-${region.id}-${playbackSessionKey}`}
+          style={getRegionFrameStyle(region, zIndex)}
+        >
+          {renderActiveItem("themed-media", region.id, true)}
+        </div>
+      ) : null;
+    }
+
+    if (region.type === "program") {
+      return region.visible !== false && renderMainContentRegion ? (
+        <div
+          className="theme-program-region"
+          key={`program-region-${region.id}-${playbackSessionKey}`}
+          style={getRegionFrameStyle(region, zIndex)}
+        >
+          {renderActiveItem("themed-media", region.id, true)}
+        </div>
+      ) : null;
+    }
+
+    return null;
   }
 
   useEffect(() => {
@@ -3138,19 +3187,13 @@ export function PlayerApp() {
   }
 
   const theme = schedule?.theme;
-  const programRegion = theme?.regions.find((region) => region.type === "program");
 
   if (theme) {
     const scale = Math.min(
       viewportSize.width / theme.canvasWidth,
       viewportSize.height / theme.canvasHeight
     );
-    const imageRegions = theme.regions.filter((region) => region.type === "image");
-    const logoRegions = theme.regions.filter((region) => region.type === "logo");
-    const textRegions = theme.regions.filter((region) => region.type === "text");
-    const clockRegions = theme.regions.filter((region) => region.type === "clock");
-    const rssRegions = theme.regions.filter((region) => region.type === "rss");
-    const hasVisibleRssRegion = rssRegions.some((region) => region.visible !== false);
+    const hasVisibleRssRegion = theme.regions.some((region) => region.type === "rss" && region.visible !== false);
     const renderMainContentRegion = activeItem.type !== "rss_item" || !hasVisibleRssRegion;
 
     return (
@@ -3171,30 +3214,9 @@ export function PlayerApp() {
               transform: `scale(${Number.isFinite(scale) ? scale : 1})`
             }}
           >
-            {imageRegions.map((region) => renderStaticImageRegion(region, "theme-static-region"))}
-            {programRegion && programRegion.visible !== false && renderMainContentRegion ? (
-              <div
-                className="theme-program-region"
-                key={`program-region-${playbackSessionKey}`}
-                style={getRegionFrameStyle(programRegion)}
-              >
-                {renderActiveItem("themed-media", programRegion.id, true)}
-              </div>
-            ) : null}
-            {rssRegions.map((region) =>
-              region.visible !== false && activeItem.type === "rss_item" ? (
-                <div
-                  className="theme-rss-region"
-                  key={`rss-region-${region.id}-${playbackSessionKey}`}
-                  style={getRegionFrameStyle(region)}
-                >
-                  {renderActiveItem("themed-media", region.id, true)}
-                </div>
-              ) : null
+            {theme.regions.map((region, index) =>
+              renderThemeRegion(region, index, theme.regions.length, renderMainContentRegion)
             )}
-            {logoRegions.map((region) => renderStaticImageRegion(region, "theme-logo-region"))}
-            {textRegions.map((region) => renderTextRegion(region))}
-            {clockRegions.map((region) => renderClockRegion(region))}
           </div>
         </section>
         <footer className="status-bar">
