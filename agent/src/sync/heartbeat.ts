@@ -17,7 +17,7 @@ interface AgentStatusSnapshot {
   lastSync: string | null;
   syncStatus: string | null;
   lastError: string | null;
-  browserRenderer: BrowserRendererRuntimeStatus | null;
+  browserRenderer?: BrowserRendererRuntimeStatus | null;
 }
 
 function sanitizeText(value: unknown) {
@@ -80,14 +80,15 @@ async function readAgentStatus(config: AgentConfig): Promise<AgentStatusSnapshot
       lastSync: sanitizeText(body.lastSync),
       syncStatus: sanitizeText(body.syncStatus),
       lastError: sanitizeText(body.lastError),
-      browserRenderer: body.browserRenderer ? normalizeBrowserRendererStatus(body.browserRenderer) : null
+      ...(Object.prototype.hasOwnProperty.call(body, "browserRenderer")
+        ? { browserRenderer: body.browserRenderer ? normalizeBrowserRendererStatus(body.browserRenderer) : null }
+        : {})
     };
   } catch {
     return {
       lastSync: null,
       syncStatus: null,
-      lastError: null,
-      browserRenderer: null
+      lastError: null
     };
   }
 }
@@ -179,7 +180,7 @@ export function startHeartbeat(config: AgentConfig) {
       lastScheduleSync: agentStatus.lastSync,
       lastScheduleSignature: schedule ? String(schedule.version) : null,
       playbackError: agentStatus.lastError,
-      browserRenderer: agentStatus.browserRenderer
+      ...(agentStatus.browserRenderer !== undefined ? { browserRenderer: agentStatus.browserRenderer } : {})
     };
 
     try {

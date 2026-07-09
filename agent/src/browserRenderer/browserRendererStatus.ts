@@ -1,4 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { AgentConfig } from "../config/loadAgentConfig.js";
 
@@ -113,19 +114,17 @@ export async function writeBrowserRendererStatus(
   }
 
   await mkdir(dirname(config.statusPath), { recursive: true });
-  await writeFile(
-    config.statusPath,
-    `${JSON.stringify(
-      {
-        ...existing,
-        browserRenderer: {
-          ...status,
-          lastUpdatedAt: status.lastUpdatedAt || new Date().toISOString()
-        }
-      },
-      null,
-      2
-    )}\n`,
-    "utf8"
-  );
+  await writeJsonAtomic(config.statusPath, {
+    ...existing,
+    browserRenderer: {
+      ...status,
+      lastUpdatedAt: status.lastUpdatedAt || new Date().toISOString()
+    }
+  });
+}
+
+async function writeJsonAtomic(path: string, value: unknown) {
+  const pendingPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  await writeFile(pendingPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await rename(pendingPath, path);
 }

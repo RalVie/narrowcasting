@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { access, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { hostname } from "node:os";
@@ -557,18 +558,16 @@ async function writeAgentStatusFile(
 ) {
   const existingStatus = await readExistingAgentStatus(config);
   await mkdir(dirname(config.statusPath), { recursive: true });
-  await writeFile(
-    config.statusPath,
-    `${JSON.stringify(
-      {
-        ...status,
-        browserRenderer: status.browserRenderer ?? existingStatus.browserRenderer ?? undefined
-      },
-      null,
-      2
-    )}\n`,
-    "utf8"
-  );
+  await writeJsonAtomic(config.statusPath, {
+    ...status,
+    browserRenderer: status.browserRenderer ?? existingStatus.browserRenderer ?? undefined
+  });
+}
+
+async function writeJsonAtomic(path: string, value: unknown) {
+  const pendingPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  await writeFile(pendingPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await rename(pendingPath, path);
 }
 
 export function startSyncLoop(config: AgentConfig) {

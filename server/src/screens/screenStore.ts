@@ -383,14 +383,23 @@ export async function updateScreenHeartbeat(
     return null;
   }
 
+  const inputHasBrowserRenderer =
+    Boolean(input && typeof input === "object" && Object.prototype.hasOwnProperty.call(input, "browserRenderer"));
+  const updatedHeartbeat: ScreenHeartbeat = {
+    ...heartbeat,
+    browserRenderer: inputHasBrowserRenderer
+      ? heartbeat.browserRenderer
+      : screen.heartbeat?.browserRenderer ?? heartbeat.browserRenderer
+  };
+
   const updatedScreen: ScreenRecord = {
     ...screen,
-    lastSeen: heartbeat.lastSeen,
-    version: heartbeat.softwareVersion ?? screen.version,
-    hostname: heartbeat.hostname ?? screen.hostname,
-    resolution: heartbeat.resolution ?? screen.resolution,
-    orientation: heartbeat.orientation,
-    heartbeat
+    lastSeen: updatedHeartbeat.lastSeen,
+    version: updatedHeartbeat.softwareVersion ?? screen.version,
+    hostname: updatedHeartbeat.hostname ?? screen.hostname,
+    resolution: updatedHeartbeat.resolution ?? screen.resolution,
+    orientation: updatedHeartbeat.orientation,
+    heartbeat: updatedHeartbeat
   };
 
   await writeScreens(screens.map((item) => (item.screenId === screenId ? updatedScreen : item)));
