@@ -328,11 +328,11 @@ function functionalFailureReason(health: PlayerFunctionalHealth | null, playerEx
     return "Player functional health could not be read through CDP.";
   }
 
-  if (health.errorText) {
+  if (playerExpected && health.errorText) {
     return "Player page reports a runtime error overlay.";
   }
 
-  if (health.blankSuspected) {
+  if (playerExpected && health.blankSuspected) {
     return "Chromium appears to be rendering a blank Player page.";
   }
 
