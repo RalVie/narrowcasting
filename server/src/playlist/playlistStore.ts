@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
   isMediaReadyForPlaylist,
@@ -44,6 +44,8 @@ export interface PlaylistRecord extends Playlist {
 const defaultPlaylistId = "default";
 const playlistPath = resolve(process.cwd(), "data", "playlist.json");
 const playlistsPath = resolve(process.cwd(), "data", "playlists.json");
+const playlistTempPath = resolve(process.cwd(), "data", "playlist.json.tmp");
+const playlistsTempPath = resolve(process.cwd(), "data", "playlists.json.tmp");
 const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
 const allowedDays = new Set<string>(dayNames);
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -103,7 +105,8 @@ function toPlaylistId(value: string) {
 function normalizePlaylistItems(
   items: unknown,
   existingItems: PlaylistItem[] = [],
-  mediaItems: MediaItem[] = []
+  mediaItems: MediaItem[] = [],
+  options: { preserveUnresolved?: boolean } = {}
 ): PlaylistItem[] {
   if (!Array.isArray(items)) {
     return [];
@@ -127,6 +130,32 @@ function normalizePlaylistItems(
         (type !== "image" && type !== "video" && type !== "web_url" && type !== "rss_feed") ||
         !file
       ) {
+        if (
+          options.preserveUnresolved &&
+          typeof candidate.mediaId === "string" &&
+          candidate.mediaId.trim() &&
+          (candidate.type === "image" ||
+            candidate.type === "video" ||
+            candidate.type === "web_url" ||
+            candidate.type === "rss_feed") &&
+          typeof candidate.file === "string" &&
+          candidate.file.trim()
+        ) {
+          return {
+            id: typeof candidate.id === "string" ? candidate.id : `item-${index + 1}`,
+            mediaId: candidate.mediaId.trim(),
+            type: candidate.type,
+            file: candidate.file.trim(),
+            duration: Math.max(Number(candidate.duration ?? existingItems[index]?.duration ?? 10), 1),
+            durationMode:
+              candidate.type === "video" &&
+              (candidate.durationMode === "clip" ||
+                (candidate.durationMode === undefined && existingItems[index]?.durationMode === "clip"))
+                ? "clip"
+                : undefined
+          };
+        }
+
         return null;
       }
 
@@ -349,19 +378,20 @@ function normalizePlaylistRecord(
     name,
     version: value.version,
     updatedAt: value.updatedAt,
-    items: normalizePlaylistItems(value.items, [], mediaItems)
+    items: normalizePlaylistItems(value.items, [], mediaItems, { preserveUnresolved: true })
   };
 }
 
 async function writePlaylists(playlists: PlaylistRecord[]) {
   await mkdir(resolve(process.cwd(), "data"), { recursive: true });
-  await writeFile(playlistsPath, `${JSON.stringify(playlists, null, 2)}\n`, "utf8");
+  await writeFile(playlistsTempPath, `${JSON.stringify(playlists, null, 2)}\n`, "utf8");
+  await rename(playlistsTempPath, playlistsPath);
 
   const defaultPlaylist = playlists.find((playlist) => playlist.id === defaultPlaylistId);
 
   if (defaultPlaylist) {
     await writeFile(
-      playlistPath,
+      playlistTempPath,
       `${JSON.stringify(
         {
           version: defaultPlaylist.version,
@@ -373,6 +403,7 @@ async function writePlaylists(playlists: PlaylistRecord[]) {
       )}\n`,
       "utf8"
     );
+    await rename(playlistTempPath, playlistPath);
   }
 }
 
@@ -384,15 +415,28 @@ export async function listPlaylists(): Promise<PlaylistRecord[]> {
     const value: unknown = JSON.parse(content);
 
     if (Array.isArray(value)) {
-      const playlists = value
-        .map((item, index) => normalizePlaylistRecord(item, index, mediaItems))
-        .filter((item): item is PlaylistRecord => item !== null);
+      const playlists = value.flatMap((item, index): PlaylistRecord[] => {
+        try {
+          const playlist = normalizePlaylistRecord(item, index, mediaItems);
+          return playlist ? [playlist] : [];
+        } catch (error) {
+          console.warn("invalid playlist record ignored", {
+            error: error instanceof Error ? error.message : String(error)
+          });
+          return [];
+        }
+      });
 
       if (playlists.length > 0) {
         return playlists;
       }
     }
-  } catch {
+  } catch (error) {
+    if ((error as { code?: string })?.code !== "ENOENT") {
+      console.warn("playlist list could not be loaded", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
     // Fall back to the Phase 4-8 single playlist file below.
   }
 
@@ -416,7 +460,7 @@ export async function listPlaylists(): Promise<PlaylistRecord[]> {
       name: "Default Playlist",
       version: defaultPlaylist.version,
       updatedAt: defaultPlaylist.updatedAt,
-      items: normalizePlaylistItems(defaultPlaylist.items, [], mediaItems)
+      items: normalizePlaylistItems(defaultPlaylist.items, [], mediaItems, { preserveUnresolved: true })
     }
   ];
 }
