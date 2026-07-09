@@ -766,16 +766,12 @@ export function MediaLibraryPage() {
               <label>
                 <input
                   checked={externalWebUrlPlaybackMode === "persistent"}
-                  disabled={externalWebUrlRenderMode === "browser"}
                   name="external-web-url-playback-mode"
                   onChange={() => setExternalWebUrlPlaybackMode("persistent")}
                   type="radio"
                 />
                 Persistent until schedule changes
               </label>
-              {externalWebUrlRenderMode === "browser" ? (
-                <small>Persistent playback currently uses Embedded iframe mode.</small>
-              ) : null}
             </fieldset>
           ) : null}
           {externalType === "rss_feed" || externalWebUrlPlaybackMode !== "persistent" ? (
@@ -811,14 +807,7 @@ export function MediaLibraryPage() {
               Render mode
               <select
                 value={externalWebUrlRenderMode}
-                onChange={(event) => {
-                  const mode = event.target.value as "iframe" | "browser";
-                  setExternalWebUrlRenderMode(mode);
-
-                  if (mode === "browser") {
-                    setExternalWebUrlPlaybackMode("timed");
-                  }
-                }}
+                onChange={(event) => setExternalWebUrlRenderMode(event.target.value as "iframe" | "browser")}
               >
                 <option value="iframe">Embedded iframe</option>
                 <option value="browser">Browser renderer</option>
@@ -896,16 +885,12 @@ export function MediaLibraryPage() {
                       <label>
                         <input
                           checked={editWebUrlPlaybackMode === "persistent"}
-                          disabled={editWebUrlRenderMode === "browser"}
                           name={`edit-web-url-playback-mode-${item.mediaId}`}
                           onChange={() => setEditWebUrlPlaybackMode("persistent")}
                           type="radio"
                         />
                         Persistent until schedule changes
                       </label>
-                      {editWebUrlRenderMode === "browser" ? (
-                        <small>Persistent playback currently uses Embedded iframe mode.</small>
-                      ) : null}
                     </fieldset>
                   ) : null}
                   {item.type === "rss_feed" || editWebUrlPlaybackMode !== "persistent" ? (

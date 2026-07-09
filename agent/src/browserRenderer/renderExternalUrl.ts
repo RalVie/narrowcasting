@@ -3,7 +3,8 @@ import { CdpConnection, listChromiumTargets, selectKioskTarget } from "./cdpClie
 import type { BrowserAction } from "../../../shared/runtime.js";
 
 export interface BrowserRenderRequest {
-  durationSeconds: number;
+  durationSeconds?: number;
+  playbackMode?: "timed" | "persistent";
   playerUrl: string;
   url: string;
   browserActions?: BrowserAction[];
@@ -28,7 +29,9 @@ export async function renderExternalUrl(
     throw new Error("Player URL must be an absolute http or https URL");
   }
 
-  if (!Number.isFinite(request.durationSeconds) || request.durationSeconds <= 0) {
+  const playbackMode = request.playbackMode === "persistent" ? "persistent" : "timed";
+
+  if (playbackMode === "timed" && (!Number.isFinite(request.durationSeconds) || Number(request.durationSeconds) <= 0)) {
     throw new Error("Duration must be a positive number of seconds");
   }
 
@@ -60,10 +63,16 @@ export async function renderExternalUrl(
 
     console.log("browser renderer external URL active", {
       browserActions: request.browserActions?.length ?? 0,
-      durationSeconds: request.durationSeconds,
+      durationSeconds: playbackMode === "timed" ? request.durationSeconds : null,
+      playbackMode,
       url: request.url
     });
-    await waitWithRefresh(connection, request.browserActions ?? [], request.durationSeconds * 1000, request.signal);
+    if (playbackMode === "persistent") {
+      console.log("browser renderer persistent session active until schedule changes", { url: request.url });
+      await waitUntilCancelled(connection, request.browserActions ?? [], request.signal);
+    } else {
+      await waitWithRefresh(connection, request.browserActions ?? [], Number(request.durationSeconds) * 1000, request.signal);
+    }
   } finally {
     if (connected) {
       console.log("browser renderer returning to player", { playerUrl: request.playerUrl });
@@ -76,6 +85,10 @@ export async function renderExternalUrl(
       }
     }
   }
+}
+
+async function waitUntilCancelled(connection: CdpConnection, actions: BrowserAction[], signal?: AbortSignal) {
+  await waitWithRefresh(connection, actions, null, signal);
 }
 
 async function executeBrowserActions(
@@ -118,7 +131,7 @@ async function executeBrowserActions(
 async function waitWithRefresh(
   connection: CdpConnection,
   actions: BrowserAction[],
-  durationMs: number,
+  durationMs: number | null,
   signal?: AbortSignal
 ) {
   const refreshActions = actions.filter((action): action is Extract<BrowserAction, { type: "refresh_interval" }> =>
@@ -143,6 +156,12 @@ async function waitWithRefresh(
   );
 
   try {
+    if (durationMs === null) {
+      while (true) {
+        await abortableDelay(60_000, signal);
+      }
+    }
+
     await abortableDelay(durationMs, signal);
   } finally {
     for (const timer of timers) {

@@ -552,15 +552,6 @@ function validateMediaItem(item: MediaItem, existingIds = new Set<string>()): Do
     });
   }
 
-  if (item.type === "web_url" && item.webUrlPlaybackMode === "persistent" && item.webUrlRenderMode === "browser") {
-    issues.push({
-      ruleId: "VAL-MEDIA-012",
-      field: "webUrlPlaybackMode",
-      severity: "blocking_error",
-      message: "Persistent Web URL playback currently requires embedded iframe render mode."
-    });
-  }
-
   if (!Number.isFinite(item.size) || item.size < 0) {
     issues.push({
       ruleId: "VAL-MEDIA-003",

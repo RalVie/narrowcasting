@@ -267,6 +267,7 @@ function getBrowserRendererSessionSignature(item: ScheduleItem | null) {
   return JSON.stringify({
     browserActions: webUrlItem.browserActions,
     mode: webUrlItem.webUrlRenderMode,
+    playbackMode: webUrlItem.playbackMode,
     type: "web_url",
     url: webUrlItem.url
   });
@@ -2341,11 +2342,14 @@ export function PlayerApp() {
     }
 
     const browserRun = getBrowserRendererRun(schedule, activeIndex);
-    const durationMs = browserRun?.durationMs ?? Math.max(typeof activeItem.duration === "number" ? activeItem.duration : 10, 1) * 1000;
+    const isPersistentBrowserRenderer = webUrlItem.playbackMode === "persistent";
+    const durationMs = isPersistentBrowserRenderer
+      ? null
+      : browserRun?.durationMs ?? Math.max(typeof activeItem.duration === "number" ? activeItem.duration : 10, 1) * 1000;
     const itemKey = browserRun?.sessionSignature ?? `${activeIndex}:${activeItem.id}`;
     const resume = readBrowserRendererResume();
 
-    if (browserRun && resume?.sessionSignature === browserRun.sessionSignature) {
+    if (!isPersistentBrowserRenderer && browserRun && resume?.sessionSignature === browserRun.sessionSignature) {
       if (Date.now() <= resume.expiresAt) {
         removeLocalStorage(browserRendererResumeKey);
         setBrowserRendererState({
@@ -2389,12 +2393,21 @@ export function PlayerApp() {
       return;
     }
 
-    writeBrowserRendererResume(browserRun?.sessionSignature ?? itemKey, durationMs, browserRun?.nextIndex ?? ((activeIndex + 1) % schedule.items.length));
+    if (durationMs !== null) {
+      writeBrowserRendererResume(
+        browserRun?.sessionSignature ?? itemKey,
+        durationMs,
+        browserRun?.nextIndex ?? ((activeIndex + 1) % schedule.items.length)
+      );
+    } else {
+      removeLocalStorage(browserRendererResumeKey);
+    }
     console.info("browser session started", {
       allItemsSameSession: browserRun?.allItemsSameSession ?? false,
-      durationSeconds: Math.ceil(durationMs / 1000),
+      durationSeconds: durationMs === null ? null : Math.ceil(durationMs / 1000),
       itemCount: browserRun?.itemCount ?? 1,
       nextIndex: browserRun?.nextIndex ?? ((activeIndex + 1) % schedule.items.length),
+      playbackMode: webUrlItem.playbackMode,
       url: webUrlItem.url
     });
     if (browserRun && browserRun.itemCount > 1) {
@@ -2416,7 +2429,8 @@ export function PlayerApp() {
     void fetch(browserRendererControlUrl, {
       body: JSON.stringify({
         browserActions: webUrlItem.browserActions,
-        durationSeconds: Math.ceil(durationMs / 1000),
+        durationSeconds: durationMs === null ? undefined : Math.ceil(durationMs / 1000),
+        playbackMode: webUrlItem.playbackMode,
         playerUrl,
         url: webUrlItem.url
       }),
@@ -2432,14 +2446,17 @@ export function PlayerApp() {
         }
 
         console.info("browser renderer handoff accepted", {
-          durationSeconds: Math.ceil(durationMs / 1000),
+          durationSeconds: durationMs === null ? null : Math.ceil(durationMs / 1000),
           itemCount: browserRun?.itemCount ?? 1,
+          playbackMode: webUrlItem.playbackMode,
           playerUrl,
           url: webUrlItem.url
         });
         setBrowserRendererState({
           itemKey,
-          message: "Browser renderer active. Returning automatically after the configured duration.",
+          message: isPersistentBrowserRenderer
+            ? "Browser renderer active. Returning when the schedule changes."
+            : "Browser renderer active. Returning automatically after the configured duration.",
           status: "active"
         });
         handoffFallbackTimer = window.setTimeout(() => {

@@ -5,6 +5,7 @@ import type { BrowserAction } from "../../../shared/runtime.js";
 
 interface BrowserRenderPayload {
   durationSeconds?: unknown;
+  playbackMode?: unknown;
   playerUrl?: unknown;
   url?: unknown;
   browserActions?: unknown;
@@ -82,9 +83,10 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
     return;
   }
 
+  const playbackMode = payload.playbackMode === "persistent" ? "persistent" : "timed";
   const durationSeconds = Number(payload.durationSeconds);
 
-  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+  if (playbackMode === "timed" && (!Number.isFinite(durationSeconds) || durationSeconds <= 0)) {
     writeJson(response, 400, { ok: false, error: "invalid_duration" }, request.headers.origin);
     return;
   }
@@ -93,7 +95,8 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
   activeRenderController = controller;
   const renderPromise = renderExternalUrl(
     {
-      durationSeconds,
+      durationSeconds: playbackMode === "timed" ? durationSeconds : undefined,
+      playbackMode,
       playerUrl: payload.playerUrl,
       url: payload.url,
       browserActions: normalizeBrowserActions(payload.browserActions),
@@ -111,7 +114,8 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
     .then(() => {
       console.log("browser renderer request completed", {
         browserActions: Array.isArray(payload.browserActions) ? payload.browserActions.length : 0,
-        durationSeconds,
+        durationSeconds: playbackMode === "timed" ? durationSeconds : null,
+        playbackMode,
         url: payload.url
       });
     })
