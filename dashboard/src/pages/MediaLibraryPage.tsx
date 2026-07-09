@@ -195,6 +195,7 @@ export function MediaLibraryPage() {
   const [externalTitle, setExternalTitle] = useState("");
   const [externalUrl, setExternalUrl] = useState("");
   const [externalDuration, setExternalDuration] = useState(10);
+  const [externalWebUrlPlaybackMode, setExternalWebUrlPlaybackMode] = useState<"timed" | "persistent">("timed");
   const [externalMaxItems, setExternalMaxItems] = useState(5);
   const [externalRssStyle, setExternalRssStyle] = useState<RssStyle>(defaultRssStyle);
   const [externalWebUrlRenderMode, setExternalWebUrlRenderMode] = useState<"iframe" | "browser">("iframe");
@@ -204,6 +205,7 @@ export function MediaLibraryPage() {
   const [editTitle, setEditTitle] = useState("");
   const [editUrl, setEditUrl] = useState("");
   const [editDuration, setEditDuration] = useState(10);
+  const [editWebUrlPlaybackMode, setEditWebUrlPlaybackMode] = useState<"timed" | "persistent">("timed");
   const [editMaxItems, setEditMaxItems] = useState(5);
   const [editRssStyle, setEditRssStyle] = useState<RssStyle>(defaultRssStyle);
   const [editWebUrlRenderMode, setEditWebUrlRenderMode] = useState<"iframe" | "browser">("iframe");
@@ -321,6 +323,7 @@ export function MediaLibraryPage() {
           title: externalTitle.trim() || undefined,
           url: externalUrl.trim(),
           duration: externalDuration,
+          webUrlPlaybackMode: externalType === "web_url" ? externalWebUrlPlaybackMode : undefined,
           webUrlRenderMode: externalType === "web_url" ? externalWebUrlRenderMode : undefined,
           browserActions: externalType === "web_url" && externalWebUrlRenderMode === "browser"
             ? serializeBrowserActions(externalBrowserActions)
@@ -337,6 +340,7 @@ export function MediaLibraryPage() {
       setExternalTitle("");
       setExternalUrl("");
       setExternalDuration(10);
+      setExternalWebUrlPlaybackMode("timed");
       setExternalMaxItems(5);
       setExternalRssStyle(defaultRssStyle);
       setExternalWebUrlRenderMode("iframe");
@@ -356,6 +360,7 @@ export function MediaLibraryPage() {
     setEditTitle(item.title ?? "");
     setEditUrl(item.url ?? "");
     setEditDuration(item.duration ?? 10);
+    setEditWebUrlPlaybackMode(item.webUrlPlaybackMode ?? "timed");
     setEditMaxItems(item.maxItems ?? 5);
     setEditRssStyle(getRssStyleWithDefaults(item.rssStyle));
     setEditWebUrlRenderMode(item.webUrlRenderMode ?? "iframe");
@@ -377,6 +382,7 @@ export function MediaLibraryPage() {
           title: editTitle.trim() || undefined,
           url: editUrl.trim(),
           duration: editDuration,
+          webUrlPlaybackMode: item.type === "web_url" ? editWebUrlPlaybackMode : undefined,
           maxItems: item.type === "rss_feed" ? editMaxItems : undefined,
           rssStyle: item.type === "rss_feed" ? getRssStyleWithDefaults(editRssStyle) : undefined,
           webUrlRenderMode: item.type === "web_url" ? editWebUrlRenderMode : undefined,
@@ -745,15 +751,44 @@ export function MediaLibraryPage() {
               placeholder={externalType === "rss_feed" ? "https://example.com/feed.xml" : "https://example.com"}
             />
           </label>
-          <label>
-            {externalType === "rss_feed" ? "Duration per item" : "Duration"}
-            <input
-              min={1}
-              type="number"
-              value={externalDuration}
-              onChange={(event) => setExternalDuration(Math.max(Number(event.target.value), 1))}
-            />
-          </label>
+          {externalType === "web_url" ? (
+            <fieldset className="operator-duration-options">
+              <legend>Playback Mode</legend>
+              <label>
+                <input
+                  checked={externalWebUrlPlaybackMode !== "persistent"}
+                  name="external-web-url-playback-mode"
+                  onChange={() => setExternalWebUrlPlaybackMode("timed")}
+                  type="radio"
+                />
+                Timed playback
+              </label>
+              <label>
+                <input
+                  checked={externalWebUrlPlaybackMode === "persistent"}
+                  disabled={externalWebUrlRenderMode === "browser"}
+                  name="external-web-url-playback-mode"
+                  onChange={() => setExternalWebUrlPlaybackMode("persistent")}
+                  type="radio"
+                />
+                Persistent until schedule changes
+              </label>
+              {externalWebUrlRenderMode === "browser" ? (
+                <small>Persistent playback currently uses Embedded iframe mode.</small>
+              ) : null}
+            </fieldset>
+          ) : null}
+          {externalType === "rss_feed" || externalWebUrlPlaybackMode !== "persistent" ? (
+            <label>
+              {externalType === "rss_feed" ? "Duration per item" : "Duration"}
+              <input
+                min={1}
+                type="number"
+                value={externalDuration}
+                onChange={(event) => setExternalDuration(Math.max(Number(event.target.value), 1))}
+              />
+            </label>
+          ) : null}
           {externalType === "rss_feed" ? (
             <label>
               Max items
@@ -776,7 +811,14 @@ export function MediaLibraryPage() {
               Render mode
               <select
                 value={externalWebUrlRenderMode}
-                onChange={(event) => setExternalWebUrlRenderMode(event.target.value as "iframe" | "browser")}
+                onChange={(event) => {
+                  const mode = event.target.value as "iframe" | "browser";
+                  setExternalWebUrlRenderMode(mode);
+
+                  if (mode === "browser") {
+                    setExternalWebUrlPlaybackMode("timed");
+                  }
+                }}
               >
                 <option value="iframe">Embedded iframe</option>
                 <option value="browser">Browser renderer</option>
@@ -839,15 +881,44 @@ export function MediaLibraryPage() {
                       }}
                     />
                   </label>
-                  <label>
-                    {item.type === "rss_feed" ? "Duration per item" : "Duration"}
-                    <input
-                      min={1}
-                      type="number"
-                      value={editDuration}
-                      onChange={(event) => setEditDuration(Math.max(Number(event.target.value), 1))}
-                    />
-                  </label>
+                  {item.type === "web_url" ? (
+                    <fieldset className="operator-duration-options">
+                      <legend>Playback Mode</legend>
+                      <label>
+                        <input
+                          checked={editWebUrlPlaybackMode !== "persistent"}
+                          name={`edit-web-url-playback-mode-${item.mediaId}`}
+                          onChange={() => setEditWebUrlPlaybackMode("timed")}
+                          type="radio"
+                        />
+                        Timed playback
+                      </label>
+                      <label>
+                        <input
+                          checked={editWebUrlPlaybackMode === "persistent"}
+                          disabled={editWebUrlRenderMode === "browser"}
+                          name={`edit-web-url-playback-mode-${item.mediaId}`}
+                          onChange={() => setEditWebUrlPlaybackMode("persistent")}
+                          type="radio"
+                        />
+                        Persistent until schedule changes
+                      </label>
+                      {editWebUrlRenderMode === "browser" ? (
+                        <small>Persistent playback currently uses Embedded iframe mode.</small>
+                      ) : null}
+                    </fieldset>
+                  ) : null}
+                  {item.type === "rss_feed" || editWebUrlPlaybackMode !== "persistent" ? (
+                    <label>
+                      {item.type === "rss_feed" ? "Duration per item" : "Duration"}
+                      <input
+                        min={1}
+                        type="number"
+                        value={editDuration}
+                        onChange={(event) => setEditDuration(Math.max(Number(event.target.value), 1))}
+                      />
+                    </label>
+                  ) : null}
                   {item.type === "rss_feed" ? (
                     <>
                       <label>
@@ -872,7 +943,14 @@ export function MediaLibraryPage() {
                         Render mode
                         <select
                           value={editWebUrlRenderMode}
-                          onChange={(event) => setEditWebUrlRenderMode(event.target.value as "iframe" | "browser")}
+                          onChange={(event) => {
+                            const mode = event.target.value as "iframe" | "browser";
+                            setEditWebUrlRenderMode(mode);
+
+                            if (mode === "browser") {
+                              setEditWebUrlPlaybackMode("timed");
+                            }
+                          }}
                         >
                           <option value="iframe">Embedded iframe</option>
                           <option value="browser">Browser renderer</option>
@@ -933,7 +1011,12 @@ export function MediaLibraryPage() {
                         ) : null}
                       </>
                     ) : null}
-                    {item.type === "web_url" ? <p>Render mode: {item.webUrlRenderMode ?? "iframe"}</p> : null}
+                    {item.type === "web_url" ? (
+                      <>
+                        <p>Playback: {item.webUrlPlaybackMode === "persistent" ? "Persistent until schedule changes" : "Timed playback"}</p>
+                        <p>Render mode: {item.webUrlRenderMode ?? "iframe"}</p>
+                      </>
+                    ) : null}
                     {item.type === "web_url" && item.browserActions && item.browserActions.length > 0 ? (
                       <p>Automation actions: {item.browserActions.length}</p>
                     ) : null}

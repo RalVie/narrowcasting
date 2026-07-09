@@ -170,12 +170,18 @@ export function SchedulePreviewPage() {
                     Type: {item.type}
                     {item.type === "image" || item.type === "video" ? ` | File: ${item.file}` : ""}
                     {item.type === "web_url"
-                      ? ` | URL: ${item.url} | Render: ${item.webUrlRenderMode ?? "iframe"} | Automation: ${item.browserActions?.length ?? 0}`
+                      ? ` | URL: ${item.url} | Playback: ${item.playbackMode === "persistent" ? "persistent" : "timed"} | Render: ${item.webUrlRenderMode ?? "iframe"} | Automation: ${item.browserActions?.length ?? 0}`
                       : ""}
                     {item.type === "rss_item" && item.sourceTitle ? ` | Feed: ${item.sourceTitle}` : ""}
                   </p>
                 </div>
-                <span>{typeof item.duration === "number" ? `${item.duration}s` : "until ended"}</span>
+                <span>
+                  {item.type === "web_url" && item.playbackMode === "persistent"
+                    ? "until schedule changes"
+                    : typeof item.duration === "number"
+                      ? `${item.duration}s`
+                      : "until ended"}
+                </span>
               </article>
             ))}
           </div>

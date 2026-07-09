@@ -211,6 +211,7 @@ function getScheduleItemDebugSummary(item: ScheduleItem | null) {
     duration: typeof item.duration === "number" ? item.duration : null,
     file: item.type === "image" || item.type === "video" ? item.file : null,
     id: item.id,
+    playbackMode: item.type === "web_url" ? item.playbackMode ?? "timed" : null,
     title: "title" in item && typeof item.title === "string" ? item.title : null,
     type: item.type,
     url: item.type === "web_url" ? item.url : null
@@ -226,6 +227,7 @@ function getWebUrlRenderData(item: ScheduleItem | null) {
     renderType?: unknown;
     title?: unknown;
     url?: unknown;
+    playbackMode?: unknown;
     webUrlRenderMode?: unknown;
     browserActions?: unknown;
   };
@@ -240,6 +242,7 @@ function getWebUrlRenderData(item: ScheduleItem | null) {
     renderType: typeof candidate.renderType === "string" ? candidate.renderType : null,
     title: typeof candidate.title === "string" ? candidate.title : undefined,
     url: typeof candidate.url === "string" ? candidate.url : "",
+    playbackMode: candidate.playbackMode === "persistent" ? "persistent" : "timed",
     webUrlRenderMode: candidate.webUrlRenderMode === "browser" ? "browser" : "iframe",
     browserActions: Array.isArray(candidate.browserActions) ? candidate.browserActions : []
   };
@@ -3198,7 +3201,14 @@ export function PlayerApp() {
           Item {activeIndex + 1} / {schedule?.items.length}
         </span>
         <span>Type: {activeItem.type}</span>
-        <span>Duration: {activeItem.duration}s</span>
+        <span>
+          Duration:{" "}
+          {activeItem.type === "web_url" && activeItem.playbackMode === "persistent"
+            ? "until schedule changes"
+            : typeof activeItem.duration === "number"
+              ? `${activeItem.duration}s`
+              : "until ended"}
+        </span>
         <span>Loaded: {lastLoadedAt ?? "unknown"}</span>
       </footer>
       {renderDebugOverlay()}

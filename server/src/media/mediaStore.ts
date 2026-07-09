@@ -19,6 +19,7 @@ export interface MediaItem {
   title?: string;
   url?: string;
   duration?: number;
+  webUrlPlaybackMode?: "timed" | "persistent";
   maxItems?: number;
   rssStyle?: RssStyle;
   webUrlRenderMode?: "iframe" | "browser";
@@ -310,6 +311,10 @@ function getWebUrlRenderMode(value: unknown): "iframe" | "browser" {
   return value === "browser" ? "browser" : "iframe";
 }
 
+function getWebUrlPlaybackMode(value: unknown): "timed" | "persistent" {
+  return value === "persistent" ? "persistent" : "timed";
+}
+
 function isValidHexColor(value: unknown) {
   return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value.trim());
 }
@@ -533,6 +538,29 @@ function validateMediaItem(item: MediaItem, existingIds = new Set<string>()): Do
     });
   }
 
+  if (
+    item.type === "web_url" &&
+    item.webUrlPlaybackMode !== undefined &&
+    item.webUrlPlaybackMode !== "timed" &&
+    item.webUrlPlaybackMode !== "persistent"
+  ) {
+    issues.push({
+      ruleId: "VAL-MEDIA-011",
+      field: "webUrlPlaybackMode",
+      severity: "blocking_error",
+      message: "Web URL playback mode must be timed or persistent."
+    });
+  }
+
+  if (item.type === "web_url" && item.webUrlPlaybackMode === "persistent" && item.webUrlRenderMode === "browser") {
+    issues.push({
+      ruleId: "VAL-MEDIA-012",
+      field: "webUrlPlaybackMode",
+      severity: "blocking_error",
+      message: "Persistent Web URL playback currently requires embedded iframe render mode."
+    });
+  }
+
   if (!Number.isFinite(item.size) || item.size < 0) {
     issues.push({
       ruleId: "VAL-MEDIA-003",
@@ -638,6 +666,7 @@ function normalizeMetadataItem(value: unknown): MediaItem | null {
       title,
       url,
       duration: Math.max(Number(candidate.duration ?? 10), 1),
+      webUrlPlaybackMode: candidate.type === "web_url" ? getWebUrlPlaybackMode(candidate.webUrlPlaybackMode) : undefined,
       webUrlRenderMode: candidate.type === "web_url" ? getWebUrlRenderMode(candidate.webUrlRenderMode) : undefined,
       browserActions: candidate.type === "web_url" ? normalizeBrowserActions(candidate.browserActions) : undefined,
       maxItems: candidate.type === "rss_feed" ? Math.max(Math.min(Number(candidate.maxItems ?? 5), 20), 1) : undefined,
@@ -1107,6 +1136,7 @@ export async function createExternalMedia(input: unknown): Promise<MediaItem> {
   const url = typeof candidate.url === "string" ? candidate.url.trim() : "";
   const title = typeof candidate.title === "string" && candidate.title.trim() ? candidate.title.trim() : undefined;
   const duration = Math.max(Number(candidate.duration ?? 10), 1);
+  const webUrlPlaybackMode = externalType === "web_url" ? getWebUrlPlaybackMode(candidate.webUrlPlaybackMode) : undefined;
   const maxItems = externalType === "rss_feed" ? Math.max(Math.min(Number(candidate.maxItems ?? 5), 20), 1) : undefined;
   const rssStyle = externalType === "rss_feed" ? parseRssStyleInput(candidate.rssStyle) : undefined;
   const webUrlRenderMode = externalType === "web_url" ? getWebUrlRenderMode(candidate.webUrlRenderMode) : undefined;
@@ -1121,6 +1151,7 @@ export async function createExternalMedia(input: unknown): Promise<MediaItem> {
     title,
     url,
     duration,
+    webUrlPlaybackMode,
     webUrlRenderMode,
     browserActions,
     maxItems,
@@ -1158,6 +1189,9 @@ export async function updateExternalMedia(id: string, input: unknown): Promise<M
   const title = typeof candidate.title === "string" && candidate.title.trim() ? candidate.title.trim() : undefined;
   const url = typeof candidate.url === "string" ? candidate.url.trim() : existingItem.url ?? "";
   const duration = Math.max(Number(candidate.duration ?? existingItem.duration ?? 10), 1);
+  const webUrlPlaybackMode = existingItem.type === "web_url"
+    ? getWebUrlPlaybackMode(candidate.webUrlPlaybackMode ?? existingItem.webUrlPlaybackMode)
+    : undefined;
   const maxItems = existingItem.type === "rss_feed"
     ? Math.max(Math.min(Number(candidate.maxItems ?? existingItem.maxItems ?? 5), 20), 1)
     : undefined;
@@ -1177,6 +1211,7 @@ export async function updateExternalMedia(id: string, input: unknown): Promise<M
     title,
     url,
     duration,
+    webUrlPlaybackMode,
     maxItems,
     rssStyle,
     webUrlRenderMode,

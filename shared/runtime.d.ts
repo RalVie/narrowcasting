@@ -46,7 +46,8 @@ export interface WebUrlScheduleItem {
   type: "web_url";
   title?: string;
   url: string;
-  duration: number;
+  duration?: number;
+  playbackMode?: "timed" | "persistent";
   webUrlRenderMode?: "iframe" | "browser";
   browserActions?: BrowserAction[];
 }

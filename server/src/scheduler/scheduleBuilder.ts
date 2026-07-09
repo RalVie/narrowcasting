@@ -74,6 +74,7 @@ export async function getScheduleForProgram(program: Program, themeId?: string):
           if (!url) {
             return [];
           }
+          const playbackMode: "timed" | "persistent" = media.webUrlPlaybackMode === "persistent" ? "persistent" : "timed";
 
           return [
             {
@@ -82,7 +83,8 @@ export async function getScheduleForProgram(program: Program, themeId?: string):
               type: "web_url" as const,
               title: media.title,
               url,
-              duration: item.duration,
+              duration: playbackMode === "timed" ? item.duration : undefined,
+              playbackMode,
               webUrlRenderMode: media.webUrlRenderMode ?? "iframe",
               browserActions: media.browserActions
             }

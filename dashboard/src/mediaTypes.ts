@@ -36,6 +36,7 @@ export interface MediaItem {
   title?: string;
   url?: string;
   duration?: number;
+  webUrlPlaybackMode?: "timed" | "persistent";
   maxItems?: number;
   rssStyle?: RssStyle;
   webUrlRenderMode?: "iframe" | "browser";

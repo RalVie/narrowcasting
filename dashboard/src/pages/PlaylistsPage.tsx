@@ -31,6 +31,10 @@ function getPlaylistItemLabel(item: PlaylistItem, media?: MediaItem) {
   return media?.title ?? media?.filename ?? item.file;
 }
 
+function isPersistentWebUrlItem(item: PlaylistItem, media?: MediaItem) {
+  return item.type === "web_url" && media?.webUrlPlaybackMode === "persistent";
+}
+
 function formatBytes(size: number) {
   if (size < 1024) {
     return `${size} B`;
@@ -631,7 +635,14 @@ export function PlaylistsPage() {
                   <span className="operator-drag-handle">Drag</span>
                   <div className="operator-item-main">
                     <strong>{getPlaylistItemLabel(item, media)}</strong>
-                    <span>{item.type}{item.type === "video" ? " - video duration from file" : ""}</span>
+                    <span>
+                      {item.type}
+                      {item.type === "video"
+                        ? " - video duration from file"
+                        : isPersistentWebUrlItem(item, media)
+                          ? " - persistent until schedule changes"
+                          : ""}
+                    </span>
                   </div>
                   {item.type === "video" ? (
                     <fieldset className="operator-duration-options">
@@ -663,6 +674,8 @@ export function PlaylistsPage() {
                         seconden
                       </label>
                     </fieldset>
+                  ) : isPersistentWebUrlItem(item, media) ? (
+                    <p className="operator-empty">Persistent Web URL playback has no playlist duration.</p>
                   ) : (
                     <label>
                       Duration
