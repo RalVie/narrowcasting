@@ -9,6 +9,12 @@ export interface BrowserRenderRequest {
   url: string;
   browserActions?: BrowserAction[];
   signal?: AbortSignal;
+  onStateChange?: (state: {
+    currentTitle?: string | null;
+    currentUrl?: string | null;
+    navigationState?: "loading" | "loaded" | "failed" | null;
+    status: "starting" | "active" | "returning" | "error";
+  }) => void | Promise<void>;
 }
 
 export interface BrowserRendererOptions {
@@ -56,16 +62,29 @@ export async function renderExternalUrl(
     connected = true;
     await connection.send("Page.enable");
 
+    await request.onStateChange?.({
+      currentUrl: request.url,
+      navigationState: "loading",
+      status: "starting"
+    });
     console.log("browser renderer navigating to external URL", { url: request.url });
     await navigateAndWait(connection, request.url, options.timeoutMs);
     throwIfAborted(request.signal);
     await executeBrowserActions(connection, request.browserActions ?? [], options.timeoutMs, request.signal);
+    const currentTitle = await readPageTitle(connection);
 
     console.log("browser renderer external URL active", {
       browserActions: request.browserActions?.length ?? 0,
+      currentTitle,
       durationSeconds: playbackMode === "timed" ? request.durationSeconds : null,
       playbackMode,
       url: request.url
+    });
+    await request.onStateChange?.({
+      currentTitle,
+      currentUrl: request.url,
+      navigationState: "loaded",
+      status: "active"
     });
     if (playbackMode === "persistent") {
       console.log("browser renderer persistent session active until schedule changes", { url: request.url });
@@ -75,6 +94,11 @@ export async function renderExternalUrl(
     }
   } finally {
     if (connected) {
+      await request.onStateChange?.({
+        currentUrl: request.playerUrl,
+        navigationState: "loading",
+        status: "returning"
+      });
       console.log("browser renderer returning to player", { playerUrl: request.playerUrl });
 
       try {
@@ -84,6 +108,20 @@ export async function renderExternalUrl(
         connection.close();
       }
     }
+  }
+}
+
+async function readPageTitle(connection: CdpConnection): Promise<string | null> {
+  try {
+    const result = await connection.send("Runtime.evaluate", {
+      awaitPromise: false,
+      expression: "document.title || null",
+      returnByValue: true
+    }) as { result?: { value?: unknown } };
+
+    return typeof result.result?.value === "string" ? result.result.value : null;
+  } catch {
+    return null;
   }
 }
 

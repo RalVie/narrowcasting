@@ -1,5 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { hostname, networkInterfaces } from "node:os";
+import {
+  type BrowserRendererRuntimeStatus,
+  normalizeBrowserRendererStatus
+} from "../browserRenderer/browserRendererStatus.js";
 import type { AgentConfig } from "../config/loadAgentConfig.js";
 import type { Schedule } from "../schedule/types.js";
 
@@ -13,6 +17,7 @@ interface AgentStatusSnapshot {
   lastSync: string | null;
   syncStatus: string | null;
   lastError: string | null;
+  browserRenderer: BrowserRendererRuntimeStatus | null;
 }
 
 function sanitizeText(value: unknown) {
@@ -65,6 +70,7 @@ async function readAgentStatus(config: AgentConfig): Promise<AgentStatusSnapshot
   try {
     const content = await readFile(config.statusPath, "utf8");
     const body = JSON.parse(content) as {
+      browserRenderer?: unknown;
       lastSync?: unknown;
       syncStatus?: unknown;
       lastError?: unknown;
@@ -73,13 +79,15 @@ async function readAgentStatus(config: AgentConfig): Promise<AgentStatusSnapshot
     return {
       lastSync: sanitizeText(body.lastSync),
       syncStatus: sanitizeText(body.syncStatus),
-      lastError: sanitizeText(body.lastError)
+      lastError: sanitizeText(body.lastError),
+      browserRenderer: body.browserRenderer ? normalizeBrowserRendererStatus(body.browserRenderer) : null
     };
   } catch {
     return {
       lastSync: null,
       syncStatus: null,
-      lastError: null
+      lastError: null,
+      browserRenderer: null
     };
   }
 }
@@ -170,7 +178,8 @@ export function startHeartbeat(config: AgentConfig) {
       syncStatus: agentStatus.syncStatus,
       lastScheduleSync: agentStatus.lastSync,
       lastScheduleSignature: schedule ? String(schedule.version) : null,
-      playbackError: agentStatus.lastError
+      playbackError: agentStatus.lastError,
+      browserRenderer: agentStatus.browserRenderer
     };
 
     try {

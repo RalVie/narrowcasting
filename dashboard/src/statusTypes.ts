@@ -17,6 +17,26 @@ export interface AgentStatus {
     error?: string;
   }>;
   lastError?: string | null;
+  browserRenderer?: BrowserRendererRuntimeStatus | null;
+}
+
+export interface BrowserRendererRuntimeStatus {
+  status: "idle" | "starting" | "active" | "returning" | "recovering" | "error";
+  currentUrl: string | null;
+  playbackMode: "timed" | "persistent" | null;
+  runningSince: string | null;
+  lastUpdatedAt: string | null;
+  lastStopReason:
+    | "schedule_changed"
+    | "timed_playback_finished"
+    | "watchdog_recovery"
+    | "navigation_failed"
+    | "manual_cancel"
+    | "control_server_error"
+    | null;
+  currentTitle?: string | null;
+  navigationState?: "loading" | "loaded" | "failed" | null;
+  error?: string | null;
 }
 
 export interface PlayerCacheStatus {

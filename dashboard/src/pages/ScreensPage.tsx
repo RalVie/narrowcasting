@@ -27,8 +27,67 @@ function formatUptime(value: number | null | undefined) {
   return `${hours}h ${minutes}m ${seconds}s`;
 }
 
+function formatElapsedSince(value: string | null | undefined) {
+  if (!value) {
+    return "-";
+  }
+
+  const timestamp = Date.parse(value);
+
+  if (!Number.isFinite(timestamp)) {
+    return "-";
+  }
+
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  const hours = Math.floor(elapsedSeconds / 3600);
+  const minutes = Math.floor((elapsedSeconds % 3600) / 60);
+  const seconds = elapsedSeconds % 60;
+
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
 function formatNullable(value: string | number | null | undefined) {
   return value === null || value === undefined || value === "" ? "-" : String(value);
+}
+
+function formatBrowserRendererStatus(value: string | null | undefined) {
+  switch (value) {
+    case "active":
+      return "Active";
+    case "starting":
+      return "Starting";
+    case "returning":
+      return "Returning to Player";
+    case "recovering":
+      return "Recovering";
+    case "error":
+      return "Error";
+    default:
+      return "Idle";
+  }
+}
+
+function formatBrowserRendererStopReason(value: string | null | undefined) {
+  switch (value) {
+    case "schedule_changed":
+      return "Schedule changed";
+    case "timed_playback_finished":
+      return "Timed playback finished";
+    case "watchdog_recovery":
+      return "Watchdog recovery";
+    case "navigation_failed":
+      return "Navigation failed";
+    case "manual_cancel":
+      return "Manual cancel";
+    case "control_server_error":
+      return "Control server error";
+    default:
+      return "-";
+  }
+}
+
+function formatPlaybackMode(value: string | null | undefined) {
+  return value === "persistent" ? "Persistent" : value === "timed" ? "Timed" : "-";
 }
 
 function getHealthLabel(screen: ScreenRecord) {
@@ -763,6 +822,34 @@ export function ScreensPage() {
             <dd>{formatNullable(screen.heartbeat?.currentMediaType)}</dd>
             <dt>Play State</dt>
             <dd>{formatNullable(screen.heartbeat?.playState)}</dd>
+          </dl>
+        </section>
+
+        <section className="screen-detail-section">
+          <h3>Browser Renderer</h3>
+          <dl className="screen-meta">
+            <dt>Status</dt>
+            <dd>
+              <span className={`browser-renderer-status ${screen.heartbeat?.browserRenderer?.status ?? "idle"}`}>
+                {formatBrowserRendererStatus(screen.heartbeat?.browserRenderer?.status)}
+              </span>
+            </dd>
+            <dt>Current URL</dt>
+            <dd>{formatNullable(screen.heartbeat?.browserRenderer?.currentUrl)}</dd>
+            <dt>Title</dt>
+            <dd>{formatNullable(screen.heartbeat?.browserRenderer?.currentTitle)}</dd>
+            <dt>Playback Mode</dt>
+            <dd>{formatPlaybackMode(screen.heartbeat?.browserRenderer?.playbackMode)}</dd>
+            <dt>Navigation</dt>
+            <dd>{formatNullable(screen.heartbeat?.browserRenderer?.navigationState)}</dd>
+            <dt>Running Since</dt>
+            <dd>{formatDateTime(screen.heartbeat?.browserRenderer?.runningSince)}</dd>
+            <dt>Elapsed Time</dt>
+            <dd>{formatElapsedSince(screen.heartbeat?.browserRenderer?.runningSince)}</dd>
+            <dt>Stop Reason</dt>
+            <dd>{formatBrowserRendererStopReason(screen.heartbeat?.browserRenderer?.lastStopReason)}</dd>
+            <dt>Error</dt>
+            <dd>{formatNullable(screen.heartbeat?.browserRenderer?.error)}</dd>
           </dl>
         </section>
 

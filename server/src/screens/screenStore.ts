@@ -56,6 +56,26 @@ export interface ScreenHeartbeat {
   lastScheduleSync: string | null;
   lastScheduleSignature: string | null;
   playbackError?: string | null;
+  browserRenderer?: BrowserRendererRuntimeStatus | null;
+}
+
+export interface BrowserRendererRuntimeStatus {
+  status: "idle" | "starting" | "active" | "returning" | "recovering" | "error";
+  currentUrl: string | null;
+  playbackMode: "timed" | "persistent" | null;
+  runningSince: string | null;
+  lastUpdatedAt: string | null;
+  lastStopReason:
+    | "schedule_changed"
+    | "timed_playback_finished"
+    | "watchdog_recovery"
+    | "navigation_failed"
+    | "manual_cancel"
+    | "control_server_error"
+    | null;
+  currentTitle?: string | null;
+  navigationState?: "loading" | "loaded" | "failed" | null;
+  error?: string | null;
 }
 
 const screensPath = resolve(process.cwd(), "data", "screens.json");
@@ -75,6 +95,51 @@ function sanitizeNumber(value: unknown): number | null {
 
 function sanitizeNullableText(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim().slice(0, 500) : null;
+}
+
+function normalizeBrowserRendererStatus(value: unknown): BrowserRendererRuntimeStatus | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<BrowserRendererRuntimeStatus>;
+  const status =
+    candidate.status === "starting" ||
+    candidate.status === "active" ||
+    candidate.status === "returning" ||
+    candidate.status === "recovering" ||
+    candidate.status === "error"
+      ? candidate.status
+      : "idle";
+  const playbackMode =
+    candidate.playbackMode === "persistent" ? "persistent" : candidate.playbackMode === "timed" ? "timed" : null;
+  const stopReason =
+    candidate.lastStopReason === "schedule_changed" ||
+    candidate.lastStopReason === "timed_playback_finished" ||
+    candidate.lastStopReason === "watchdog_recovery" ||
+    candidate.lastStopReason === "navigation_failed" ||
+    candidate.lastStopReason === "manual_cancel" ||
+    candidate.lastStopReason === "control_server_error"
+      ? candidate.lastStopReason
+      : null;
+  const navigationState =
+    candidate.navigationState === "loading" ||
+    candidate.navigationState === "loaded" ||
+    candidate.navigationState === "failed"
+      ? candidate.navigationState
+      : null;
+
+  return {
+    status,
+    currentUrl: sanitizeNullableText(candidate.currentUrl),
+    playbackMode,
+    runningSince: sanitizeNullableText(candidate.runningSince),
+    lastUpdatedAt: sanitizeNullableText(candidate.lastUpdatedAt),
+    lastStopReason: stopReason,
+    currentTitle: sanitizeNullableText(candidate.currentTitle),
+    navigationState,
+    error: sanitizeNullableText(candidate.error)
+  };
 }
 
 function generateDeviceSecret() {
@@ -114,7 +179,8 @@ function normalizeHeartbeat(value: unknown): ScreenHeartbeat | undefined {
     syncStatus: sanitizeNullableText(candidate.syncStatus),
     lastScheduleSync: sanitizeNullableText(candidate.lastScheduleSync),
     lastScheduleSignature: sanitizeNullableText(candidate.lastScheduleSignature),
-    playbackError: sanitizeNullableText(candidate.playbackError)
+    playbackError: sanitizeNullableText(candidate.playbackError),
+    browserRenderer: normalizeBrowserRendererStatus(candidate.browserRenderer)
   };
 }
 

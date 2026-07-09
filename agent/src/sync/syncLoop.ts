@@ -1,6 +1,10 @@
 import { access, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { hostname } from "node:os";
+import {
+  type BrowserRendererRuntimeStatus,
+  normalizeBrowserRendererStatus
+} from "../browserRenderer/browserRendererStatus.js";
 import { cancelActiveBrowserRenderer } from "../browserRenderer/controlServer.js";
 import type { AgentConfig } from "../config/loadAgentConfig.js";
 import type { Schedule } from "../schedule/types.js";
@@ -495,17 +499,20 @@ async function writeAgentStatus(config: AgentConfig, currentScheduleVersion: num
 
 async function readExistingAgentStatus(config: AgentConfig): Promise<{
   lastSync: string | null;
+  browserRenderer: BrowserRendererRuntimeStatus | null;
 }> {
   try {
     const content = await readFile(config.statusPath, "utf8");
-    const value = JSON.parse(content) as { lastSync?: unknown };
+    const value = JSON.parse(content) as { browserRenderer?: unknown; lastSync?: unknown };
 
     return {
-      lastSync: typeof value.lastSync === "string" ? value.lastSync : null
+      lastSync: typeof value.lastSync === "string" ? value.lastSync : null,
+      browserRenderer: value.browserRenderer ? normalizeBrowserRendererStatus(value.browserRenderer) : null
     };
   } catch {
     return {
-      lastSync: null
+      lastSync: null,
+      browserRenderer: null
     };
   }
 }
@@ -545,12 +552,21 @@ async function writeAgentStatusFile(
     pendingScheduleVersion?: number | null;
     failedMedia?: Array<{ file: string; error?: string }>;
     lastError?: string;
+    browserRenderer?: BrowserRendererRuntimeStatus | null;
   }
 ) {
+  const existingStatus = await readExistingAgentStatus(config);
   await mkdir(dirname(config.statusPath), { recursive: true });
   await writeFile(
     config.statusPath,
-    `${JSON.stringify(status, null, 2)}\n`,
+    `${JSON.stringify(
+      {
+        ...status,
+        browserRenderer: status.browserRenderer ?? existingStatus.browserRenderer ?? undefined
+      },
+      null,
+      2
+    )}\n`,
     "utf8"
   );
 }

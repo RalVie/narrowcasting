@@ -1,5 +1,11 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AgentConfig } from "../config/loadAgentConfig.js";
+import {
+  type BrowserRendererStopReason,
+  type BrowserRendererRuntimeStatus,
+  idleBrowserRendererStatus,
+  writeBrowserRendererStatus
+} from "./browserRendererStatus.js";
 import { renderExternalUrl } from "./renderExternalUrl.js";
 import type { BrowserAction } from "../../../shared/runtime.js";
 
@@ -13,6 +19,7 @@ interface BrowserRenderPayload {
 
 let activeRender: Promise<void> | null = null;
 let activeRenderController: AbortController | null = null;
+let activeStopReason: BrowserRendererStopReason | null = null;
 
 export function isBrowserRendererActive() {
   return activeRender !== null;
@@ -23,6 +30,7 @@ export function cancelActiveBrowserRenderer(reason: string) {
     return;
   }
 
+  activeStopReason = "schedule_changed";
   console.log("browser session cancelled due to schedule update", { reason });
   activeRenderController.abort();
 }
@@ -92,7 +100,21 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
   }
 
   const controller = new AbortController();
+  const runningSince = new Date().toISOString();
   activeRenderController = controller;
+  activeStopReason = null;
+
+  await updateBrowserRendererStatus(config, {
+    status: "starting",
+    currentUrl: payload.url,
+    playbackMode,
+    runningSince,
+    lastUpdatedAt: new Date().toISOString(),
+    lastStopReason: null,
+    currentTitle: null,
+    navigationState: "loading",
+    error: null
+  });
   const renderPromise = renderExternalUrl(
     {
       durationSeconds: playbackMode === "timed" ? durationSeconds : undefined,
@@ -100,7 +122,19 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
       playerUrl: payload.playerUrl,
       url: payload.url,
       browserActions: normalizeBrowserActions(payload.browserActions),
-      signal: controller.signal
+      signal: controller.signal,
+      onStateChange: (state) =>
+        updateBrowserRendererStatus(config, {
+          status: state.status,
+          currentUrl: state.currentUrl ?? null,
+          playbackMode,
+          runningSince,
+          lastUpdatedAt: new Date().toISOString(),
+          lastStopReason: null,
+          currentTitle: state.currentTitle ?? null,
+          navigationState: state.navigationState ?? null,
+          error: null
+        })
     },
     {
       host: config.chromiumCdpHost,
@@ -118,14 +152,36 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
         playbackMode,
         url: payload.url
       });
+      void updateBrowserRendererStatus(config, {
+        ...idleBrowserRendererStatus,
+        lastUpdatedAt: new Date().toISOString(),
+        lastStopReason: playbackMode === "timed" ? "timed_playback_finished" : activeStopReason
+      });
     })
     .catch((error: unknown) => {
       if (controller.signal.aborted) {
+        const stopReason = activeStopReason ?? "manual_cancel";
         console.warn("browser renderer request cancelled", {
-          reason: "schedule update or runtime interruption"
+          reason: stopReason
+        });
+        void updateBrowserRendererStatus(config, {
+          ...idleBrowserRendererStatus,
+          lastUpdatedAt: new Date().toISOString(),
+          lastStopReason: stopReason
         });
       } else {
         console.error("browser renderer request failed", error);
+        void updateBrowserRendererStatus(config, {
+          status: "error",
+          currentUrl: typeof payload.url === "string" ? payload.url : null,
+          playbackMode,
+          runningSince: null,
+          lastUpdatedAt: new Date().toISOString(),
+          lastStopReason: "navigation_failed",
+          currentTitle: null,
+          navigationState: "failed",
+          error: error instanceof Error ? error.message : String(error)
+        });
       }
     })
     .finally(() => {
@@ -135,9 +191,21 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
       if (activeRenderController === controller) {
         activeRenderController = null;
       }
+      activeStopReason = null;
     });
 
   writeJson(response, 202, { ok: true, status: "accepted" }, request.headers.origin);
+}
+
+async function updateBrowserRendererStatus(config: AgentConfig, status: BrowserRendererRuntimeStatus) {
+  try {
+    await writeBrowserRendererStatus(config, status);
+  } catch (error) {
+    console.warn("browser renderer status update failed", {
+      error: error instanceof Error ? error.message : String(error),
+      status: status.status
+    });
+  }
 }
 
 function normalizeBrowserActions(value: unknown): BrowserAction[] {

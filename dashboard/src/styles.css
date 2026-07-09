@@ -1329,6 +1329,47 @@ button:disabled {
   background: #fff1c9;
 }
 
+.browser-renderer-status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.browser-renderer-status::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.browser-renderer-status.active {
+  color: #0e5f33;
+  background: #dff5e8;
+}
+
+.browser-renderer-status.starting,
+.browser-renderer-status.returning,
+.browser-renderer-status.recovering {
+  color: #5f4900;
+  background: #fff1c9;
+}
+
+.browser-renderer-status.error {
+  color: #7b362b;
+  background: #f8e4de;
+}
+
+.browser-renderer-status.idle {
+  color: #475447;
+  background: #edf1eb;
+}
+
 .screen-card label {
   display: grid;
   gap: 4px;

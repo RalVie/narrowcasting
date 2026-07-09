@@ -2,6 +2,10 @@ import { execFile } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import {
+  readBrowserRendererStatus,
+  writeBrowserRendererStatus
+} from "../browserRenderer/browserRendererStatus.js";
 import { isBrowserRendererActive } from "../browserRenderer/controlServer.js";
 import {
   CdpConnection,
@@ -512,6 +516,24 @@ async function recoverRuntime(
   await recordRecovery(config, "recovery_failed", reason, "failed");
 }
 
+async function recordBrowserRendererRecovery(config: AgentConfig, reason: string) {
+  try {
+    const currentStatus = await readBrowserRendererStatus(config);
+    await writeBrowserRendererStatus(config, {
+      ...currentStatus,
+      status: "recovering",
+      lastUpdatedAt: timestamp(),
+      lastStopReason: "watchdog_recovery",
+      error: reason
+    });
+  } catch (error) {
+    console.warn("runtime watchdog could not write Browser Renderer recovery status", {
+      error: error instanceof Error ? error.message : String(error),
+      reason
+    });
+  }
+}
+
 async function healthCheck(config: AgentConfig) {
   const now = timestamp();
   const browserRendererActive = isBrowserRendererActive();
@@ -520,6 +542,9 @@ async function healthCheck(config: AgentConfig) {
 
   if (!chromiumRunning) {
     console.warn("runtime watchdog detected Chromium not running", { at: now });
+    if (browserRendererActive) {
+      await recordBrowserRendererRecovery(config, "Chromium is not running.");
+    }
     await recoverRuntime(config, "Chromium is not running.", cdp, { skipNavigate: true });
     return;
   }
@@ -529,6 +554,9 @@ async function healthCheck(config: AgentConfig) {
       at: now,
       error: cdp.error
     });
+    if (browserRendererActive) {
+      await recordBrowserRendererRecovery(config, "Chromium DevTools Protocol is unavailable.");
+    }
     await recoverRuntime(config, "Chromium DevTools Protocol is unavailable.", cdp, { skipNavigate: true });
     return;
   }
@@ -548,6 +576,7 @@ async function healthCheck(config: AgentConfig) {
       });
 
       if (recoveryState.consecutiveFunctionalFailures >= functionalFailureThreshold) {
+        await recordBrowserRendererRecovery(config, reason);
         await recoverRuntime(config, reason, cdp);
         return;
       }

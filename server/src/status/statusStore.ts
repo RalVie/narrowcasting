@@ -23,6 +23,26 @@ export interface AgentStatus {
     error?: string;
   }>;
   lastError?: string | null;
+  browserRenderer?: BrowserRendererRuntimeStatus | null;
+}
+
+export interface BrowserRendererRuntimeStatus {
+  status: "idle" | "starting" | "active" | "returning" | "recovering" | "error";
+  currentUrl: string | null;
+  playbackMode: "timed" | "persistent" | null;
+  runningSince: string | null;
+  lastUpdatedAt: string | null;
+  lastStopReason:
+    | "schedule_changed"
+    | "timed_playback_finished"
+    | "watchdog_recovery"
+    | "navigation_failed"
+    | "manual_cancel"
+    | "control_server_error"
+    | null;
+  currentTitle?: string | null;
+  navigationState?: "loading" | "loaded" | "failed" | null;
+  error?: string | null;
 }
 
 const playerMediaDir = resolve(process.cwd(), "..", "player", "public", "media");
@@ -97,7 +117,8 @@ export async function readAgentStatus(): Promise<AgentStatus> {
               error: typeof item.error === "string" ? item.error : undefined
             }))
         : [],
-      lastError: typeof value.lastError === "string" ? value.lastError : null
+      lastError: typeof value.lastError === "string" ? value.lastError : null,
+      browserRenderer: normalizeBrowserRendererStatus(value.browserRenderer)
     };
   } catch {
     return {
@@ -108,9 +129,51 @@ export async function readAgentStatus(): Promise<AgentStatus> {
       readinessState: null,
       pendingScheduleVersion: null,
       failedMedia: [],
-      lastError: null
+      lastError: null,
+      browserRenderer: null
     };
   }
+}
+
+function normalizeBrowserRendererStatus(value: unknown): BrowserRendererRuntimeStatus | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<BrowserRendererRuntimeStatus>;
+  const status =
+    candidate.status === "starting" ||
+    candidate.status === "active" ||
+    candidate.status === "returning" ||
+    candidate.status === "recovering" ||
+    candidate.status === "error"
+      ? candidate.status
+      : "idle";
+
+  return {
+    status,
+    currentUrl: typeof candidate.currentUrl === "string" ? candidate.currentUrl : null,
+    playbackMode: candidate.playbackMode === "persistent" ? "persistent" : candidate.playbackMode === "timed" ? "timed" : null,
+    runningSince: typeof candidate.runningSince === "string" ? candidate.runningSince : null,
+    lastUpdatedAt: typeof candidate.lastUpdatedAt === "string" ? candidate.lastUpdatedAt : null,
+    lastStopReason:
+      candidate.lastStopReason === "schedule_changed" ||
+      candidate.lastStopReason === "timed_playback_finished" ||
+      candidate.lastStopReason === "watchdog_recovery" ||
+      candidate.lastStopReason === "navigation_failed" ||
+      candidate.lastStopReason === "manual_cancel" ||
+      candidate.lastStopReason === "control_server_error"
+        ? candidate.lastStopReason
+        : null,
+    currentTitle: typeof candidate.currentTitle === "string" ? candidate.currentTitle : null,
+    navigationState:
+      candidate.navigationState === "loading" ||
+      candidate.navigationState === "loaded" ||
+      candidate.navigationState === "failed"
+        ? candidate.navigationState
+        : null,
+    error: typeof candidate.error === "string" ? candidate.error : null
+  };
 }
 
 export async function getSystemStatus() {
