@@ -238,7 +238,11 @@ export function ProgramsPage() {
   }
 
   function themeName(themeId: string | undefined) {
-    return themes.find((theme) => theme.id === themeId)?.name ?? "Default Fullscreen";
+    if (!themeId) {
+      return "No theme selected";
+    }
+
+    return themes.find((theme) => theme.id === themeId)?.name ?? `Missing theme: ${themeId}`;
   }
 
   function handlePlaylistDragStart(event: DragEvent<HTMLElement>, playlistId: string) {
@@ -278,6 +282,9 @@ export function ProgramsPage() {
   const filteredPlaylists = playlists.filter((item) =>
     playlistSearch.trim() ? item.name.toLowerCase().includes(playlistSearch.trim().toLowerCase()) : true
   );
+  const selectedThemeExists = Boolean(program.themeId && themes.some((theme) => theme.id === program.themeId));
+  const selectedThemeMissing = Boolean(program.themeId && !selectedThemeExists);
+  const selectedThemeValue = selectedThemeExists ? program.themeId ?? "" : "";
 
   return (
     <section className="page-section operator-section" id="programs">
@@ -403,19 +410,25 @@ export function ProgramsPage() {
               onChange={(event) =>
                 updateProgram((currentProgram) => ({
                   ...currentProgram,
-                  themeId: event.target.value || undefined
+                  themeId: event.target.value
                 }))
               }
-              value={program.themeId === "default-fullscreen" ? "" : program.themeId ?? ""}
+              value={selectedThemeValue}
             >
-              <option value="">Default Fullscreen</option>
-              {themes.filter((theme) => theme.id !== "default-fullscreen").map((theme) => (
+              {!program.themeId ? <option value="">No theme selected</option> : null}
+              {selectedThemeMissing ? <option value="">Missing theme: {program.themeId}</option> : null}
+              {themes.map((theme) => (
                 <option key={theme.id} value={theme.id}>
                   {theme.name}
                 </option>
               ))}
             </select>
           </label>
+          {selectedThemeMissing ? (
+            <p className="operator-helper warning">
+              Selected theme is missing. Schedule rendering will use the runtime default until a valid theme is selected.
+            </p>
+          ) : null}
           <div className="operator-drop-zone">Drop playlists here</div>
           <div className="operator-timeline">
             {program.playlistIds.length === 0 ? <p className="operator-empty">No playlists yet. Drag playlists into this program.</p> : null}
