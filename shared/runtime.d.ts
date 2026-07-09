@@ -85,7 +85,7 @@ export type ScheduleItem =
   | RssScheduleItem;
 
 export type ThemeOrientation = "landscape" | "portrait";
-export type ThemeRegionType = "program" | "logo" | "image" | "text" | "clock";
+export type ThemeRegionType = "program" | "logo" | "image" | "text" | "clock" | "rss";
 export type ThemeObjectFit = "contain" | "cover" | "stretch" | "center";
 export type ThemeTextAlign = "left" | "center" | "right";
 export type ThemeClockFormat = "HH:mm" | "HH:mm:ss" | "dd-MM-yyyy HH:mm";

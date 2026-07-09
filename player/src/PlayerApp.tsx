@@ -3149,6 +3149,9 @@ export function PlayerApp() {
     const logoRegions = theme.regions.filter((region) => region.type === "logo");
     const textRegions = theme.regions.filter((region) => region.type === "text");
     const clockRegions = theme.regions.filter((region) => region.type === "clock");
+    const rssRegions = theme.regions.filter((region) => region.type === "rss");
+    const hasVisibleRssRegion = rssRegions.some((region) => region.visible !== false);
+    const renderMainContentRegion = activeItem.type !== "rss_item" || !hasVisibleRssRegion;
 
     return (
       <main className="player-shell themed-player-shell">
@@ -3169,7 +3172,7 @@ export function PlayerApp() {
             }}
           >
             {imageRegions.map((region) => renderStaticImageRegion(region, "theme-static-region"))}
-            {programRegion && programRegion.visible !== false ? (
+            {programRegion && programRegion.visible !== false && renderMainContentRegion ? (
               <div
                 className="theme-program-region"
                 key={`program-region-${playbackSessionKey}`}
@@ -3178,6 +3181,17 @@ export function PlayerApp() {
                 {renderActiveItem("themed-media", programRegion.id, true)}
               </div>
             ) : null}
+            {rssRegions.map((region) =>
+              region.visible !== false && activeItem.type === "rss_item" ? (
+                <div
+                  className="theme-rss-region"
+                  key={`rss-region-${region.id}-${playbackSessionKey}`}
+                  style={getRegionFrameStyle(region)}
+                >
+                  {renderActiveItem("themed-media", region.id, true)}
+                </div>
+              ) : null
+            )}
             {logoRegions.map((region) => renderStaticImageRegion(region, "theme-logo-region"))}
             {textRegions.map((region) => renderTextRegion(region))}
             {clockRegions.map((region) => renderClockRegion(region))}

@@ -11,13 +11,14 @@ const minimumRegionSize = 40;
 const defaultSafeArea = 80;
 const resizeHandles = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
 const addableRegionTypes: Array<{ label: string; type: ThemeRegionType }> = [
-  { label: "Program", type: "program" },
+  { label: "Main Content", type: "program" },
   { label: "Logo", type: "logo" },
   { label: "Image", type: "image" },
   { label: "Text", type: "text" },
-  { label: "Clock", type: "clock" }
+  { label: "Clock", type: "clock" },
+  { label: "RSS", type: "rss" }
 ];
-const futureRegionTypes = ["Ticker", "Weather", "RSS", "QR Code", "Video"];
+const futureRegionTypes = ["Ticker", "Weather", "QR Code", "Video"];
 const regionColors: Record<string, { color: string; background: string }> = {
   program: { color: "#30b56a", background: "rgb(48 181 106 / 28%)" },
   logo: { color: "#4777d9", background: "rgb(71 119 217 / 26%)" },
@@ -68,15 +69,21 @@ function defaultRegion(theme: Theme): ThemeRegion {
 function getDefaultRegionName(type: ThemeRegionType, count: number) {
   const label =
     type === "program"
-      ? "Program Region"
+      ? "Main Content"
       : type === "logo"
         ? "Logo"
         : type === "image"
           ? "Image"
           : type === "clock"
             ? "Clock"
-            : "Text";
+            : type === "rss"
+              ? "RSS"
+              : "Text";
   return count === 0 ? label : `${label} ${count + 1}`;
+}
+
+function getRegionTypeLabel(type: ThemeRegionType) {
+  return addableRegionTypes.find((item) => item.type === type)?.label ?? type;
 }
 
 function createRegion(type: ThemeRegionType, theme: Theme, gridSize: number, snapToGrid: boolean): ThemeRegion {
@@ -602,7 +609,7 @@ export function ThemesPage() {
     }
 
     if (selectedRegion.type === "program" && theme.regions.filter((region) => region.type === "program").length <= 1) {
-      setStatus("At least one Program Region is required.");
+      setStatus("At least one Main Content region is required.");
       return;
     }
 
@@ -851,7 +858,7 @@ export function ThemesPage() {
       <div className="section-header">
         <div>
           <h2>Themes</h2>
-          <p>Virtual canvas layout frames for program playback.</p>
+          <p>Virtual canvas layout frames for resolved playback content.</p>
         </div>
         <div className="button-row">
           <button disabled={isBusy} onClick={() => void createTheme()} type="button">
@@ -917,7 +924,7 @@ export function ThemesPage() {
                 />
                 <span className="theme-layer-main">
                   <strong>{region.name}</strong>
-                  <span>{region.type}</span>
+                  <span>{getRegionTypeLabel(region.type)}</span>
                 </span>
               </button>
             ))}
@@ -1074,7 +1081,7 @@ export function ThemesPage() {
             </label>
             <label>
               Region Type
-              <input readOnly type="text" value={selectedRegion.type} />
+              <input readOnly type="text" value={getRegionTypeLabel(selectedRegion.type)} />
             </label>
 
             <div className="theme-property-toggles">
@@ -1389,7 +1396,7 @@ export function ThemesPage() {
               </div>
             ) : null}
 
-            {selectedRegion.type === "program" ? (
+            {selectedRegion.type === "program" || selectedRegion.type === "rss" ? (
               <div className="theme-disabled-properties">
               <label>
                 Opacity

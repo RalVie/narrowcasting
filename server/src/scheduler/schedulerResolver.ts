@@ -599,7 +599,7 @@ async function buildSchedule(resolution: SchedulerResolution): Promise<Schedule>
     return buildUnassignedSchedule(resolution);
   }
 
-  const schedule = await getScheduleForProgram(resolution.resolvedProgram);
+  const schedule = await getScheduleForProgram(resolution.resolvedProgram, resolution.resolvedProgram.themeId);
 
   return {
     ...schedule,

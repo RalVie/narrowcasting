@@ -4,7 +4,7 @@ import { listPlaylists } from "../playlist/playlistStore.js";
 import { getProgramsOrDefault } from "../program/programStore.js";
 import { listScreenGroups } from "../screens/screenGroupStore.js";
 import { listScreens } from "../screens/screenStore.js";
-import { getThemeOrDefault } from "../theme/themeStore.js";
+import { getThemeOrDefault, listThemes } from "../theme/themeStore.js";
 import { fetchRssItems } from "../rss/rssFetcher.js";
 import {
   listAssignments,
@@ -616,13 +616,13 @@ async function buildPublishImpact(input: {
 }
 
 export async function validatePublishIntent(intent: PublishValidationIntent): Promise<PublishValidationReport> {
-  const [mediaItems, playlists, programs, screens, screenGroups, theme] = await Promise.all([
+  const [mediaItems, playlists, programs, screens, screenGroups, themes] = await Promise.all([
     listMedia(),
     listPlaylists(),
     getProgramsOrDefault(),
     listScreens(),
     listScreenGroups(),
-    getThemeOrDefault()
+    listThemes()
   ]);
   const messages: PublishValidationMessage[] = [];
   const approvedScreens = screens.filter((screen) => screen.status === "approved");
@@ -848,6 +848,7 @@ export async function validatePublishIntent(intent: PublishValidationIntent): Pr
   }
 
   const program = programs.find((item) => item.id === intent.programId);
+  const theme = await getThemeOrDefault(program?.themeId);
 
   if (!program) {
     messages.push(
@@ -861,6 +862,19 @@ export async function validatePublishIntent(intent: PublishValidationIntent): Pr
       })
     );
   } else {
+    if (program.themeId && !themes.some((item) => item.id === program.themeId)) {
+      messages.push(
+        message({
+          severity: "blocking_error",
+          category: "theme",
+          ruleId: "VAL-THEME-001",
+          message: "Program references a missing theme.",
+          affectedObject: { type: "Theme", id: program.themeId },
+          suggestedFix: "Select an existing theme for the program."
+        })
+      );
+    }
+
     messages.push(
       message({
         severity: "info",
@@ -1049,7 +1063,7 @@ export async function validatePublishIntent(intent: PublishValidationIntent): Pr
         ruleId: "VAL-THEME-003",
         message: "Theme must contain at least one renderable region.",
         affectedObject: { type: "Theme", id: theme.id, name: theme.name },
-        suggestedFix: "Add a Program region to the theme."
+        suggestedFix: "Add a Main Content region to the theme."
       })
     );
   }

@@ -101,7 +101,8 @@ h1 {
   background: #ffffff;
 }
 
-.theme-program-region .web-url-frame {
+.theme-program-region .web-url-frame,
+.theme-rss-region .web-url-frame {
   width: 100%;
   height: 100%;
 }
@@ -220,7 +221,8 @@ h1 {
   overflow-wrap: anywhere;
 }
 
-.theme-program-region .rss-card {
+.theme-program-region .rss-card,
+.theme-rss-region .rss-card {
   min-height: 100%;
   padding: clamp(18px, 4%, 56px);
 }
@@ -262,7 +264,8 @@ h1 {
   transform-origin: center;
 }
 
-.theme-program-region {
+.theme-program-region,
+.theme-rss-region {
   position: absolute;
   display: grid;
   place-items: center;

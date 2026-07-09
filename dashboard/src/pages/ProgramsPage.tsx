@@ -4,12 +4,14 @@ import { apiUrl } from "../api/apiBase";
 import { readApiError } from "../api/readApiError";
 import type { PlaylistRecord } from "../playlistTypes";
 import type { Program } from "../programTypes";
+import type { Theme } from "../themeTypes";
 
 const refreshIntervalMs = 10_000;
 
 export function ProgramsPage() {
   const [playlists, setPlaylists] = useState<PlaylistRecord[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
+  const [themes, setThemes] = useState<Theme[]>([]);
   const [selectedProgramId, setSelectedProgramId] = useState("default-program");
   const [program, setProgram] = useState<Program>({
     id: "default-program",
@@ -49,17 +51,19 @@ export function ProgramsPage() {
     setIsBusy(true);
 
     try {
-      const [playlistResponse, programResponse] = await Promise.all([
+      const [playlistResponse, programResponse, themeResponse] = await Promise.all([
         fetch(apiUrl("/api/playlists")),
-        fetch(apiUrl("/api/programs"))
+        fetch(apiUrl("/api/programs")),
+        fetch(apiUrl("/api/themes"))
       ]);
 
-      if (!playlistResponse.ok || !programResponse.ok) {
+      if (!playlistResponse.ok || !programResponse.ok || !themeResponse.ok) {
         throw new Error("program data unavailable");
       }
 
       const playlistBody = (await playlistResponse.json()) as PlaylistRecord[];
       const programBody = (await programResponse.json()) as Program[];
+      const themeBody = (await themeResponse.json()) as Theme[];
       const selectedProgram =
         programBody.find((item) => item.id === selectedProgramIdRef.current) ??
         programBody.find((item) => item.id === "default-program") ??
@@ -67,6 +71,7 @@ export function ProgramsPage() {
 
       setPlaylists(playlistBody);
       setPrograms(programBody);
+      setThemes(themeBody);
 
       if (selectedProgram) {
         selectProgram(selectedProgram);
@@ -82,7 +87,7 @@ export function ProgramsPage() {
     }
   }
 
-  async function createProgram(name = "New Program", playlistIds: string[] = []) {
+  async function createProgram(name = "New Program", playlistIds: string[] = [], themeId?: string) {
     setIsBusy(true);
     setStatus("Creating program...");
 
@@ -90,7 +95,7 @@ export function ProgramsPage() {
       const response = await fetch(apiUrl("/api/programs"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, playlistIds })
+        body: JSON.stringify({ name, playlistIds, themeId })
       });
 
       if (!response.ok) {
@@ -111,7 +116,7 @@ export function ProgramsPage() {
   }
 
   async function duplicateProgram() {
-    await createProgram(`${program.name} Copy`, program.playlistIds);
+    await createProgram(`${program.name} Copy`, program.playlistIds, program.themeId);
   }
 
   async function saveProgram() {
@@ -220,6 +225,10 @@ export function ProgramsPage() {
     return playlists.find((playlist) => playlist.id === playlistId)?.name ?? playlistId;
   }
 
+  function themeName(themeId: string | undefined) {
+    return themes.find((theme) => theme.id === themeId)?.name ?? "Default Fullscreen";
+  }
+
   function handlePlaylistDragStart(event: DragEvent<HTMLElement>, playlistId: string) {
     event.dataTransfer.effectAllowed = "copy";
     event.dataTransfer.setData("application/x-playlist-id", playlistId);
@@ -317,7 +326,7 @@ export function ProgramsPage() {
                 type="button"
               >
                 <strong>{item.name}</strong>
-                <span>{item.playlistIds.length} playlist(s)</span>
+                <span>{item.playlistIds.length} playlist(s) / Theme: {themeName(item.themeId)}</span>
               </button>
             ))}
           </div>
@@ -376,6 +385,25 @@ export function ProgramsPage() {
             }
             value={program.name}
           />
+          <label className="operator-field">
+            Theme
+            <select
+              onChange={(event) =>
+                updateProgram((currentProgram) => ({
+                  ...currentProgram,
+                  themeId: event.target.value || undefined
+                }))
+              }
+              value={program.themeId === "default-fullscreen" ? "" : program.themeId ?? ""}
+            >
+              <option value="">Default Fullscreen</option>
+              {themes.filter((theme) => theme.id !== "default-fullscreen").map((theme) => (
+                <option key={theme.id} value={theme.id}>
+                  {theme.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <div className="operator-drop-zone">Drop playlists here</div>
           <div className="operator-timeline">
             {program.playlistIds.length === 0 ? <p className="operator-empty">No playlists yet. Drag playlists into this program.</p> : null}

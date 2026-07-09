@@ -2,6 +2,7 @@ export interface Program {
   id: string;
   name: string;
   playlistIds: string[];
+  themeId?: string;
   options?: Record<string, unknown>;
 }
 

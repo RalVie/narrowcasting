@@ -1,12 +1,14 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { listPlaylists } from "../playlist/playlistStore.js";
+import { listThemes } from "../theme/themeStore.js";
 import { assertValid, isPlainObject, type DomainValidationIssue } from "../validation/domainValidation.js";
 
 export interface Program {
   id: string;
   name: string;
   playlistIds: string[];
+  themeId?: string;
   options?: Record<string, unknown>;
 }
 
@@ -44,6 +46,7 @@ function normalizeProgram(value: unknown, fallbackIndex: number): Program | null
     playlistIds: Array.isArray(candidate.playlistIds)
       ? candidate.playlistIds.filter((playlistId): playlistId is string => typeof playlistId === "string")
       : [],
+    themeId: typeof candidate.themeId === "string" && candidate.themeId.trim() ? candidate.themeId.trim() : undefined,
     options: candidate.options && typeof candidate.options === "object" ? candidate.options : undefined
   };
 }
@@ -94,6 +97,29 @@ async function validateProgramWrite(value: unknown) {
         });
       }
     });
+  }
+
+  if ("themeId" in body && body.themeId !== undefined && body.themeId !== null && body.themeId !== "") {
+    if (typeof body.themeId !== "string" || !body.themeId.trim()) {
+      issues.push({
+        ruleId: "VAL-PROGRAM-003",
+        field: "themeId",
+        severity: "blocking_error",
+        message: "Program theme reference must be a valid theme ID."
+      });
+    } else {
+      const themes = await listThemes();
+      const themeIds = new Set(themes.map((theme) => theme.id));
+
+      if (!themeIds.has(body.themeId.trim())) {
+        issues.push({
+          ruleId: "VAL-PROGRAM-003",
+          field: "themeId",
+          severity: "blocking_error",
+          message: "Program theme reference must exist."
+        });
+      }
+    }
   }
 
   assertValid(issues);
@@ -161,7 +187,8 @@ export async function createProgram(value: unknown): Promise<Program> {
     name,
     playlistIds: Array.isArray(incoming.playlistIds)
       ? incoming.playlistIds.filter((playlistId): playlistId is string => typeof playlistId === "string")
-      : []
+      : [],
+    themeId: typeof incoming.themeId === "string" && incoming.themeId.trim() ? incoming.themeId.trim() : undefined
   };
 
   await writePrograms([...programs, program]);
@@ -188,6 +215,12 @@ export async function saveProgram(id: string, value: unknown): Promise<Program |
     playlistIds: Array.isArray(incoming.playlistIds)
       ? incoming.playlistIds.filter((playlistId): playlistId is string => typeof playlistId === "string")
       : existingProgram.playlistIds,
+    themeId:
+      typeof incoming.themeId === "string" && incoming.themeId.trim()
+        ? incoming.themeId.trim()
+        : incoming.themeId === null || incoming.themeId === ""
+          ? undefined
+          : existingProgram.themeId,
     options: incoming.options && typeof incoming.options === "object" ? incoming.options : existingProgram.options
   };
 
