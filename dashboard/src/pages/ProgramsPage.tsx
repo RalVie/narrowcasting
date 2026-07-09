@@ -25,6 +25,11 @@ export function ProgramsPage() {
   const [playlistSearch, setPlaylistSearch] = useState("");
   const selectedProgramIdRef = useRef("default-program");
   const isDirtyRef = useRef(false);
+  const programDraftRef = useRef<Program>({
+    id: "default-program",
+    name: "Default Program",
+    playlistIds: ["default"]
+  });
 
   function markDirty() {
     isDirtyRef.current = true;
@@ -33,6 +38,7 @@ export function ProgramsPage() {
 
   function selectProgram(programRecord: Program) {
     selectedProgramIdRef.current = programRecord.id;
+    programDraftRef.current = programRecord;
     setSelectedProgramId(programRecord.id);
     setProgram(programRecord);
   }
@@ -116,18 +122,20 @@ export function ProgramsPage() {
   }
 
   async function duplicateProgram() {
-    await createProgram(`${program.name} Copy`, program.playlistIds, program.themeId);
+    const draft = programDraftRef.current;
+    await createProgram(`${draft.name} Copy`, draft.playlistIds, draft.themeId);
   }
 
   async function saveProgram() {
+    const draft = programDraftRef.current;
     setIsBusy(true);
-    setStatus(`Saving ${program.name}...`);
+    setStatus(`Saving ${draft.name}...`);
 
     try {
-      const response = await fetch(apiUrl(`/api/programs/${encodeURIComponent(program.id)}`), {
+      const response = await fetch(apiUrl(`/api/programs/${encodeURIComponent(draft.id)}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(program)
+        body: JSON.stringify(draft)
       });
 
       if (!response.ok) {
@@ -139,7 +147,7 @@ export function ProgramsPage() {
       setPrograms((currentPrograms) => currentPrograms.map((item) => (item.id === body.id ? body : item)));
       isDirtyRef.current = false;
       setIsDirty(false);
-      setStatus(`${program.name} saved.`);
+      setStatus(`${body.name} saved.`);
       window.dispatchEvent(new CustomEvent("narrowcasting:playlist-saved"));
     } catch (error) {
       setStatus(error instanceof Error ? `Save failed: ${error.message}` : "Save failed.");
@@ -149,15 +157,17 @@ export function ProgramsPage() {
   }
 
   async function deleteProgram() {
-    if (!window.confirm(`Delete program "${program.name}"?`)) {
+    const draft = programDraftRef.current;
+
+    if (!window.confirm(`Delete program "${draft.name}"?`)) {
       return;
     }
 
     setIsBusy(true);
-    setStatus(`Deleting ${program.name}...`);
+    setStatus(`Deleting ${draft.name}...`);
 
     try {
-      const response = await fetch(apiUrl(`/api/programs/${encodeURIComponent(program.id)}`), {
+      const response = await fetch(apiUrl(`/api/programs/${encodeURIComponent(draft.id)}`), {
         method: "DELETE"
       });
 
@@ -165,7 +175,7 @@ export function ProgramsPage() {
         throw new Error(await readApiError(response));
       }
 
-      const nextPrograms = programs.filter((item) => item.id !== program.id);
+      const nextPrograms = programs.filter((item) => item.id !== draft.id);
       const nextProgram = nextPrograms.find((item) => item.id === "default-program") ?? nextPrograms[0];
       setPrograms(nextPrograms);
 
@@ -175,7 +185,7 @@ export function ProgramsPage() {
 
       isDirtyRef.current = false;
       setIsDirty(false);
-      setStatus(`${program.name} deleted.`);
+      setStatus(`${draft.name} deleted.`);
       window.dispatchEvent(new CustomEvent("narrowcasting:playlist-saved"));
     } catch (error) {
       setStatus(error instanceof Error ? `Delete failed: ${error.message}` : "Delete failed.");
@@ -185,11 +195,13 @@ export function ProgramsPage() {
   }
 
   function updateProgram(updater: (program: Program) => Program) {
-    setProgram((currentProgram) => updater(currentProgram));
+    const nextProgram = updater(programDraftRef.current);
+    programDraftRef.current = nextProgram;
+    setProgram(nextProgram);
     markDirty();
   }
 
-  function addPlaylist(playlistId: string, index = program.playlistIds.length) {
+  function addPlaylist(playlistId: string, index = programDraftRef.current.playlistIds.length) {
     if (!playlistId) {
       return;
     }
@@ -239,7 +251,7 @@ export function ProgramsPage() {
     event.dataTransfer.setData("application/x-program-playlist-index", String(index));
   }
 
-  function handleProgramDrop(event: DragEvent<HTMLElement>, index = program.playlistIds.length) {
+  function handleProgramDrop(event: DragEvent<HTMLElement>, index = programDraftRef.current.playlistIds.length) {
     event.preventDefault();
     const playlistId = event.dataTransfer.getData("application/x-playlist-id");
     const draggedIndex = event.dataTransfer.getData("application/x-program-playlist-index");
