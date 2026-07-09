@@ -120,28 +120,42 @@ export function PlaylistsPage() {
     setIsBusy(true);
 
     try {
-      const [mediaResponse, playlistResponse] = await Promise.all([
+      const [mediaResult, playlistResult] = await Promise.allSettled([
         fetch(apiUrl("/api/media")),
         fetch(apiUrl("/api/playlists"))
       ]);
+      let mediaLoaded = false;
 
-      if (!mediaResponse.ok) {
-        throw new Error(`media HTTP ${mediaResponse.status}`);
+      if (mediaResult.status === "fulfilled" && mediaResult.value.ok) {
+        const mediaBody = (await mediaResult.value.json()) as unknown;
+
+        if (Array.isArray(mediaBody)) {
+          setMediaItems(mediaBody as MediaItem[]);
+          mediaLoaded = true;
+        }
       }
 
-      if (!playlistResponse.ok) {
-        throw new Error(`playlist HTTP ${playlistResponse.status}`);
+      if (playlistResult.status !== "fulfilled") {
+        throw new Error("playlist request failed");
       }
 
-      const mediaBody = (await mediaResponse.json()) as MediaItem[];
-      const playlistBody = (await playlistResponse.json()) as PlaylistRecord[];
+      if (!playlistResult.value.ok) {
+        throw new Error(`playlist HTTP ${playlistResult.value.status}`);
+      }
+
+      const playlistBody = (await playlistResult.value.json()) as unknown;
+
+      if (!Array.isArray(playlistBody)) {
+        throw new Error("playlist response was not an array");
+      }
+
+      const playlistRecords = playlistBody as PlaylistRecord[];
       const selectedPlaylist =
-        playlistBody.find((item) => item.id === selectedPlaylistIdRef.current) ??
-        playlistBody.find((item) => item.id === "default") ??
-        playlistBody[0];
+        playlistRecords.find((item) => item.id === selectedPlaylistIdRef.current) ??
+        playlistRecords.find((item) => item.id === "default") ??
+        playlistRecords[0];
 
-      setMediaItems(mediaBody);
-      setPlaylists(playlistBody);
+      setPlaylists(playlistRecords);
 
       if (selectedPlaylist) {
         selectPlaylist(selectedPlaylist);
@@ -149,7 +163,7 @@ export function PlaylistsPage() {
 
       isDirtyRef.current = false;
       setIsDirty(false);
-      setStatus("Workspace loaded.");
+      setStatus(mediaLoaded ? "Workspace loaded." : "Playlists loaded. Media library unavailable.");
     } catch (error) {
       setStatus(error instanceof Error ? `Unable to load workspace: ${error.message}` : "Unable to load workspace.");
     } finally {
