@@ -5,15 +5,18 @@ import multipart from "@fastify/multipart";
 import {
   createMedia,
   createExternalMedia,
-  deleteMedia,
+  deleteTrashedMediaPermanently,
   getMediaContentType,
   getMediaPath,
   listMedia,
+  listTrashedMedia,
+  moveMediaToTrash,
+  restoreMediaFromTrash,
   retryVideoNormalization,
   updateExternalMedia
 } from "../../media/mediaStore.js";
 import { badRequest, badRequestForError, conflict, notFound, payloadTooLarge } from "../apiErrors.js";
-import { validateMediaDelete } from "../../validation/referenceIntegrity.js";
+import { analyzeMediaUsage, removeMediaFromAllReferences, validateMediaDelete } from "../../validation/referenceIntegrity.js";
 import { fetchRssFeed } from "../../rss/rssFetcher.js";
 
 const imageUploadLimitBytes = 20 * 1024 * 1024;
@@ -53,6 +56,8 @@ export const mediaRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.get("/api/media", async () => listMedia());
+
+  app.get("/api/media/trash", async () => listTrashedMedia());
 
   app.post("/api/media/rss-preview", async (request) => {
     const body = (request.body ?? {}) as { url?: unknown; maxItems?: unknown };
@@ -132,6 +137,69 @@ export const mediaRoutes: FastifyPluginAsync = async (app) => {
     }
   });
 
+  app.get<{ Params: { id: string } }>("/api/media/:id/usage", async (request, reply) => {
+    const usage = await analyzeMediaUsage(request.params.id);
+
+    if (!usage) {
+      return notFound(reply, "media item not found", "MEDIA_NOT_FOUND");
+    }
+
+    return usage;
+  });
+
+  app.post<{ Body: { removeReferences?: boolean }; Params: { id: string } }>("/api/media/:id/trash", async (request, reply) => {
+    const validation = await validateMediaDelete(request.params.id);
+
+    if (!validation.ok && !request.body?.removeReferences) {
+      return conflict(reply, validation.error);
+    }
+
+    const removedReferences = !validation.ok && request.body?.removeReferences
+      ? await removeMediaFromAllReferences(request.params.id)
+      : null;
+    const item = await moveMediaToTrash(request.params.id);
+
+    if (!item) {
+      return notFound(reply, "media item not found", "MEDIA_NOT_FOUND");
+    }
+
+    return {
+      item,
+      removedReferences,
+      message: removedReferences
+        ? "Media moved to Trash after removing references. Affected content may need republishing."
+        : "Media moved to Trash."
+    };
+  });
+
+  app.post<{ Params: { id: string } }>("/api/media/:id/restore", async (request, reply) => {
+    try {
+      const item = await restoreMediaFromTrash(request.params.id);
+
+      if (!item) {
+        return notFound(reply, "trashed media item not found", "MEDIA_NOT_FOUND");
+      }
+
+      return item;
+    } catch (error) {
+      return conflict(reply, {
+        error: "validation_error",
+        code: "MEDIA_RESTORE_CONFLICT",
+        message: error instanceof Error ? error.message : "Media could not be restored."
+      });
+    }
+  });
+
+  app.delete<{ Params: { id: string } }>("/api/media/:id/permanent", async (request, reply) => {
+    const deleted = await deleteTrashedMediaPermanently(request.params.id);
+
+    if (!deleted) {
+      return notFound(reply, "trashed media item not found", "MEDIA_NOT_FOUND");
+    }
+
+    return reply.code(204).send();
+  });
+
   app.delete<{ Params: { id: string } }>("/api/media/:id", async (request, reply) => {
     const validation = await validateMediaDelete(request.params.id);
 
@@ -139,9 +207,9 @@ export const mediaRoutes: FastifyPluginAsync = async (app) => {
       return conflict(reply, validation.error);
     }
 
-    const deleted = await deleteMedia(request.params.id);
+    const item = await moveMediaToTrash(request.params.id);
 
-    if (!deleted) {
+    if (!item) {
       return notFound(reply, "media item not found", "MEDIA_NOT_FOUND");
     }
 

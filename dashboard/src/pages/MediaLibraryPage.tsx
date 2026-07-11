@@ -16,6 +16,20 @@ const defaultRssStyle: Required<RssStyle> = {
   metaSize: "normal"
 };
 
+interface MediaUsageReference {
+  type: "playlist" | "theme";
+  id: string;
+  name: string;
+  field?: string;
+  regionName?: string;
+}
+
+interface MediaConflictResponse {
+  code?: string;
+  message?: string;
+  references?: MediaUsageReference[];
+}
+
 function formatFileSize(size: number) {
   if (size < 1024) {
     return `${size} B`;
@@ -189,6 +203,7 @@ function getPreviewTextSize(size: RssStyle["titleSize"], role: "body" | "meta" |
 export function MediaLibraryPage() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [items, setItems] = useState<MediaItem[]>([]);
+  const [trashItems, setTrashItems] = useState<MediaItem[]>([]);
   const [status, setStatus] = useState("Loading media library...");
   const [isBusy, setIsBusy] = useState(false);
   const [externalType, setExternalType] = useState<"web_url" | "rss_feed">("web_url");
@@ -232,6 +247,24 @@ export function MediaLibraryPage() {
     }
   }
 
+  async function loadTrash() {
+    try {
+      const response = await fetch(apiUrl("/api/media/trash"));
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      setTrashItems((await response.json()) as MediaItem[]);
+    } catch {
+      setTrashItems([]);
+    }
+  }
+
+  async function refreshMediaWorkspace() {
+    await Promise.all([loadMedia(), loadTrash()]);
+  }
+
   async function uploadFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
 
@@ -255,7 +288,7 @@ export function MediaLibraryPage() {
       }
 
       setStatus(`${file.name} uploaded. Video normalization will continue in the background.`);
-      await loadMedia();
+      await refreshMediaWorkspace();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Upload failed.");
     } finally {
@@ -264,12 +297,90 @@ export function MediaLibraryPage() {
     }
   }
 
-  async function deleteItem(item: MediaItem) {
+  async function moveItemToTrash(item: MediaItem, removeReferences = false) {
     setIsBusy(true);
-    setStatus(`Deleting ${item.filename}...`);
+    setStatus(`Moving ${item.filename} to Trash...`);
 
     try {
-      const response = await fetch(apiUrl(`/api/media/${encodeURIComponent(item.mediaId)}`), {
+      const response = await fetch(apiUrl(`/api/media/${encodeURIComponent(item.mediaId)}/trash`), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ removeReferences })
+      });
+
+      if (!response.ok) {
+        if (response.status === 409) {
+          const conflictBody = (await response.json()) as MediaConflictResponse;
+          const references = conflictBody.references ?? [];
+          const referenceLines = references
+            .map((reference) =>
+              `${reference.type === "playlist" ? "Playlist" : "Theme"}: ${reference.name}${reference.regionName ? ` (${reference.regionName})` : ""}`
+            )
+            .join("\n");
+          const confirmRemove = window.confirm(
+            [
+              `${item.filename} is still used and cannot be moved to Trash safely.`,
+              referenceLines,
+              "",
+              "Remove it from all listed playlists/themes and move it to Trash?",
+              "Affected content may need republishing."
+            ].join("\n")
+          );
+
+          if (confirmRemove) {
+            await moveItemToTrash(item, true);
+          }
+
+          return;
+        }
+
+        throw new Error(await readApiError(response));
+      }
+
+      const body = (await response.json()) as { message?: string };
+      setStatus(body.message ?? `${item.filename} moved to Trash.`);
+      await refreshMediaWorkspace();
+    } catch (error) {
+      setStatus(error instanceof Error ? `Move to Trash failed: ${error.message}` : "Move to Trash failed.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function restoreItem(item: MediaItem) {
+    setIsBusy(true);
+    setStatus(`Restoring ${item.filename}...`);
+
+    try {
+      const response = await fetch(apiUrl(`/api/media/${encodeURIComponent(item.mediaId)}/restore`), {
+        method: "POST"
+      });
+
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+
+      setStatus(`${item.filename} restored.`);
+      await refreshMediaWorkspace();
+    } catch (error) {
+      setStatus(error instanceof Error ? `Restore failed: ${error.message}` : "Restore failed.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function deletePermanently(item: MediaItem) {
+    if (!window.confirm(`Permanently delete "${item.filename}" from Trash? This cannot be undone.`)) {
+      return;
+    }
+
+    setIsBusy(true);
+    setStatus(`Deleting ${item.filename} permanently...`);
+
+    try {
+      const response = await fetch(apiUrl(`/api/media/${encodeURIComponent(item.mediaId)}/permanent`), {
         method: "DELETE"
       });
 
@@ -277,10 +388,10 @@ export function MediaLibraryPage() {
         throw new Error(await readApiError(response));
       }
 
-      setStatus(`${item.filename} deleted.`);
-      await loadMedia();
+      setStatus(`${item.filename} permanently deleted.`);
+      await refreshMediaWorkspace();
     } catch (error) {
-      setStatus(error instanceof Error ? `Delete failed: ${error.message}` : "Delete failed.");
+      setStatus(error instanceof Error ? `Permanent delete failed: ${error.message}` : "Permanent delete failed.");
     } finally {
       setIsBusy(false);
     }
@@ -300,7 +411,7 @@ export function MediaLibraryPage() {
       }
 
       setStatus(`Normalization restarted for ${item.filename}.`);
-      await loadMedia();
+      await refreshMediaWorkspace();
     } catch (error) {
       setStatus(error instanceof Error ? `Retry failed: ${error.message}` : "Retry failed.");
     } finally {
@@ -347,7 +458,7 @@ export function MediaLibraryPage() {
       setExternalBrowserActions([]);
       setExternalRssPreview(emptyRssPreview);
       setStatus("External media created.");
-      await loadMedia();
+      await refreshMediaWorkspace();
     } catch (error) {
       setStatus(error instanceof Error ? `Create failed: ${error.message}` : "Create failed.");
     } finally {
@@ -399,7 +510,7 @@ export function MediaLibraryPage() {
       setEditingItemId(null);
       setEditRssPreview(emptyRssPreview);
       setStatus("External media saved.");
-      await loadMedia();
+      await refreshMediaWorkspace();
     } catch (error) {
       setStatus(error instanceof Error ? `Save failed: ${error.message}` : "Save failed.");
     } finally {
@@ -683,9 +794,9 @@ export function MediaLibraryPage() {
   }
 
   useEffect(() => {
-    void loadMedia();
+    void refreshMediaWorkspace();
     const timer = window.setInterval(() => {
-      void loadMedia();
+      void refreshMediaWorkspace();
     }, refreshIntervalMs);
 
     return () => {
@@ -704,7 +815,7 @@ export function MediaLibraryPage() {
           <button disabled={isBusy} onClick={() => inputRef.current?.click()} type="button">
             Upload
           </button>
-          <button disabled={isBusy} onClick={() => void loadMedia()} type="button">
+          <button disabled={isBusy} onClick={() => void refreshMediaWorkspace()} type="button">
             Refresh
           </button>
         </div>
@@ -1012,8 +1123,8 @@ export function MediaLibraryPage() {
                         Edit
                       </button>
                     ) : null}
-                    <button disabled={isBusy} onClick={() => void deleteItem(item)} type="button">
-                      Delete
+                    <button disabled={isBusy} onClick={() => void moveItemToTrash(item)} type="button">
+                      Move to Trash
                     </button>
                   </div>
                 </>
@@ -1022,6 +1133,37 @@ export function MediaLibraryPage() {
           </article>
         ))}
       </div>
+
+      <section className="operator-panel">
+        <div className="operator-panel-header">
+          <div>
+            <h3>Trash</h3>
+            <span>{trashItems.length} item(s)</span>
+          </div>
+        </div>
+        {trashItems.length === 0 ? <p className="operator-empty">Trash is empty.</p> : null}
+        {trashItems.length > 0 ? (
+          <div className="operator-list">
+            {trashItems.map((item) => (
+              <article className="operator-list-card" key={item.mediaId}>
+                <strong>{item.title ?? item.filename}</strong>
+                <span>
+                  {item.type}
+                  {item.trashedAt ? ` | Trashed ${new Date(item.trashedAt).toLocaleString()}` : ""}
+                </span>
+                <div className="button-row">
+                  <button disabled={isBusy} onClick={() => void restoreItem(item)} type="button">
+                    Restore
+                  </button>
+                  <button disabled={isBusy} onClick={() => void deletePermanently(item)} type="button">
+                    Delete permanently
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : null}
+      </section>
     </section>
   );
 }

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { access, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname, extname, resolve } from "node:path";
 import { hostname } from "node:os";
 import {
   type BrowserRendererRuntimeStatus,
@@ -421,6 +421,108 @@ function getRequiredMediaFiles(schedule: Schedule) {
   return Array.from(files);
 }
 
+interface CachePruneState {
+  obsoleteCounts: Record<string, number>;
+}
+
+const prunableMediaExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".mp4", ".webm"]);
+
+function getCachePruneStatePath(config: AgentConfig) {
+  return resolve(config.cacheDir, "cache-prune-state.json");
+}
+
+async function readCachePruneState(config: AgentConfig): Promise<CachePruneState> {
+  try {
+    const content = await readFile(getCachePruneStatePath(config), "utf8");
+    const value = JSON.parse(content) as Partial<CachePruneState>;
+
+    return {
+      obsoleteCounts:
+        value.obsoleteCounts && typeof value.obsoleteCounts === "object"
+          ? Object.fromEntries(
+              Object.entries(value.obsoleteCounts).filter(([, count]) => Number.isFinite(count) && count > 0)
+            )
+          : {}
+    };
+  } catch {
+    return { obsoleteCounts: {} };
+  }
+}
+
+async function writeCachePruneState(config: AgentConfig, state: CachePruneState) {
+  await mkdir(config.cacheDir, { recursive: true });
+  await writeJsonAtomic(getCachePruneStatePath(config), state);
+}
+
+async function pruneObsoleteCachedMedia(config: AgentConfig, activeSchedule: Schedule) {
+  const requiredFiles = new Set(getRequiredMediaFiles(activeSchedule).map((file) => basename(file)));
+  let filenames: string[];
+
+  try {
+    filenames = await readdir(config.mediaDir);
+  } catch (error) {
+    console.log("media cache pruning skipped", {
+      reason: "media directory unavailable",
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return;
+  }
+
+  const state = await readCachePruneState(config);
+  const nextCounts: Record<string, number> = {};
+  const retained: string[] = [];
+  const deleted: string[] = [];
+
+  console.log("media cache pruning started", {
+    requiredFiles: requiredFiles.size,
+    cachedFiles: filenames.length
+  });
+
+  for (const filename of filenames) {
+    const safeFilename = basename(filename);
+
+    if (
+      safeFilename !== filename ||
+      filename.startsWith(".") ||
+      filename.endsWith(".tmp") ||
+      !prunableMediaExtensions.has(extname(filename).toLowerCase())
+    ) {
+      retained.push(filename);
+      continue;
+    }
+
+    if (requiredFiles.has(filename)) {
+      retained.push(filename);
+      continue;
+    }
+
+    const obsoleteCount = (state.obsoleteCounts[filename] ?? 0) + 1;
+
+    if (obsoleteCount < 2) {
+      nextCounts[filename] = obsoleteCount;
+      retained.push(filename);
+      continue;
+    }
+
+    try {
+      await unlink(resolve(config.mediaDir, filename));
+      deleted.push(filename);
+    } catch (error) {
+      nextCounts[filename] = obsoleteCount;
+      console.error("media cache pruning delete failed", {
+        file: filename,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  await writeCachePruneState(config, { obsoleteCounts: nextCounts });
+  console.log("media cache pruning complete", {
+    retained: retained.length,
+    deleted
+  });
+}
+
 async function syncMediaFiles(config: AgentConfig, schedule: Schedule) {
   const files = getRequiredMediaFiles(schedule);
   const results: MediaSyncResult[] = [];
@@ -624,6 +726,7 @@ export function startSyncLoop(config: AgentConfig) {
       }
 
       await saveSchedule(config, schedule);
+      await pruneObsoleteCachedMedia(config, schedule);
       await writeAgentStatus(config, schedule.version);
       console.log("sync success", {
         scheduleVersion: schedule.version,

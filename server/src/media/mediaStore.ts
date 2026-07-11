@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { access, mkdir, readdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
-import { basename, extname, resolve } from "node:path";
+import { access, mkdir, readdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { basename, dirname, extname, resolve } from "node:path";
 import { promisify } from "node:util";
 import { assertValid, type DomainValidationIssue } from "../validation/domainValidation.js";
 import type { BrowserAction, RssStyle } from "../../../shared/runtime.js";
@@ -29,6 +29,9 @@ export interface MediaItem {
   processedAt?: string;
   processingError?: string;
   processingStatus?: "uploaded" | "analyzing" | "processing" | "ready" | "failed";
+  status?: "trashed";
+  trashedAt?: string;
+  trashFiles?: string[];
   videoProfile?: VideoProfile;
 }
 
@@ -50,6 +53,7 @@ type MediaReference = string | undefined;
 
 const mediaRoot = resolve(process.cwd(), "public", "media");
 const metadataPath = resolve(process.cwd(), "data", "media.json");
+const mediaTrashRoot = resolve(process.cwd(), "data", "trash", "media");
 const imageExtensions = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 const videoExtensions = new Set([".mp4", ".webm"]);
 const execFileAsync = promisify(execFile);
@@ -70,6 +74,18 @@ export function getMediaPath(filename: string) {
   }
 
   return filePath;
+}
+
+function getMediaTrashPath(mediaId: string, filename: string) {
+  const safeMediaId = mediaId.replace(/[^a-zA-Z0-9_-]+/g, "-");
+  const safeFilename = basename(filename);
+  const trashPath = resolve(mediaTrashRoot, safeMediaId, safeFilename);
+
+  if (safeFilename !== filename || !trashPath.startsWith(resolve(mediaTrashRoot, safeMediaId))) {
+    throw new Error("invalid media trash filename");
+  }
+
+  return trashPath;
 }
 
 export function getMediaContentType(filename: string) {
@@ -661,7 +677,15 @@ function normalizeMetadataItem(value: unknown): MediaItem | null {
       webUrlRenderMode: candidate.type === "web_url" ? getWebUrlRenderMode(candidate.webUrlRenderMode) : undefined,
       browserActions: candidate.type === "web_url" ? normalizeBrowserActions(candidate.browserActions) : undefined,
       maxItems: candidate.type === "rss_feed" ? Math.max(Math.min(Number(candidate.maxItems ?? 5), 20), 1) : undefined,
-      rssStyle: candidate.type === "rss_feed" ? normalizeRssStyle(candidate.rssStyle) : undefined
+      rssStyle: candidate.type === "rss_feed" ? normalizeRssStyle(candidate.rssStyle) : undefined,
+      status: candidate.status === "trashed" ? "trashed" : undefined,
+      trashedAt:
+        typeof candidate.trashedAt === "string" && candidate.trashedAt.trim()
+          ? candidate.trashedAt
+          : undefined,
+      trashFiles: Array.isArray(candidate.trashFiles)
+        ? candidate.trashFiles.filter((filename): filename is string => typeof filename === "string" && Boolean(filename.trim()))
+        : undefined
     };
   }
 
@@ -711,6 +735,14 @@ function normalizeMetadataItem(value: unknown): MediaItem | null {
         ? candidate.processingError
         : undefined,
     processingStatus,
+    status: candidate.status === "trashed" ? "trashed" : undefined,
+    trashedAt:
+      typeof candidate.trashedAt === "string" && candidate.trashedAt.trim()
+        ? candidate.trashedAt
+        : undefined,
+    trashFiles: Array.isArray(candidate.trashFiles)
+      ? candidate.trashFiles.filter((filename): filename is string => typeof filename === "string" && Boolean(filename.trim()))
+      : undefined,
     videoProfile:
       candidate.videoProfile && typeof candidate.videoProfile === "object"
         ? (candidate.videoProfile as VideoProfile)
@@ -991,14 +1023,15 @@ export async function listMedia(): Promise<MediaItem[]> {
     readdir(mediaRoot),
     readMetadataFile()
   ]);
-  const externalItems = metadata.filter((item) => item.type === "web_url" || item.type === "rss_feed");
+  const activeMetadata = metadata.filter((item) => item.status !== "trashed");
+  const externalItems = activeMetadata.filter((item) => item.type === "web_url" || item.type === "rss_feed");
   const metadataByFilename = new Map(
-    metadata
+    activeMetadata
       .filter((item) => item.type === "image" || item.type === "video")
       .map((item) => [item.filename, item])
   );
   const playbackAssets = new Set(
-    metadata
+    activeMetadata
       .filter((item) => item.type === "video" && item.playbackFilename && item.playbackFilename !== item.filename)
       .map((item) => item.playbackFilename as string)
   );
@@ -1015,7 +1048,7 @@ export async function listMedia(): Promise<MediaItem[]> {
     .filter((item): item is MediaItem => item !== null)
     .sort((first, second) => first.filename.localeCompare(second.filename));
   const fileItemNames = new Set(fileItems.map((item) => item.filename));
-  const metadataOnlyFileItems = metadata.filter(
+  const metadataOnlyFileItems = activeMetadata.filter(
     (item) =>
       (item.type === "image" || item.type === "video") &&
       !fileItemNames.has(item.filename) &&
@@ -1029,6 +1062,17 @@ export async function listMedia(): Promise<MediaItem[]> {
   );
 
   return items;
+}
+
+export async function listTrashedMedia(): Promise<MediaItem[]> {
+  const items = await readMetadataFile();
+
+  return items
+    .filter((item) => item.status === "trashed")
+    .sort((first, second) =>
+      (second.trashedAt ?? "").localeCompare(first.trashedAt ?? "") ||
+      (first.title ?? first.filename).localeCompare(second.title ?? second.filename)
+    );
 }
 
 export async function createMedia(filename: string, content: Buffer): Promise<MediaItem> {
@@ -1306,28 +1350,117 @@ export async function cleanupTemporaryMediaFiles() {
   }
 }
 
-export async function deleteMedia(id: string): Promise<boolean> {
-  const items = await listMedia();
-  const item = items.find((mediaItem) => mediaItem.id === id || mediaItem.mediaId === id);
+function getMediaFileBackedFilenames(item: MediaItem) {
+  return Array.from(
+    new Set([item.filename, item.originalFilename, item.playbackFilename].filter((value): value is string => Boolean(value)))
+  );
+}
 
-  if (!item) {
+async function moveFileToTrash(mediaId: string, filename: string) {
+  const sourcePath = getMediaPath(filename);
+  const trashPath = getMediaTrashPath(mediaId, filename);
+
+  try {
+    await access(sourcePath);
+  } catch {
     return false;
   }
 
-  if (item.type === "image" || item.type === "video") {
-    const filenames = new Set([item.filename, item.originalFilename, item.playbackFilename].filter((value): value is string => Boolean(value)));
+  await mkdir(dirname(trashPath), { recursive: true });
+  await rename(sourcePath, trashPath);
+  return true;
+}
 
-    for (const filename of filenames) {
-      try {
-        const filePath = getMediaPath(filename);
-        await access(filePath);
-        await unlink(filePath);
-      } catch {
-        // Metadata is still removed even if a file is already gone.
+async function restoreFileFromTrash(mediaId: string, filename: string) {
+  const activePath = getMediaPath(filename);
+  const trashPath = getMediaTrashPath(mediaId, filename);
+
+  try {
+    await access(activePath);
+    throw new Error(`active media file already exists: ${filename}`);
+  } catch (error) {
+    if ((error as { code?: string })?.code !== "ENOENT") {
+      throw error;
+    }
+  }
+
+  await mkdir(dirname(activePath), { recursive: true });
+  await rename(trashPath, activePath);
+}
+
+export async function moveMediaToTrash(id: string): Promise<MediaItem | null> {
+  const items = await readMetadataFile();
+  const item = items.find((mediaItem) => mediaItem.id === id || mediaItem.mediaId === id);
+
+  if (!item || item.status === "trashed") {
+    return null;
+  }
+
+  const trashFiles: string[] = [];
+
+  if (item.type === "image" || item.type === "video") {
+    for (const filename of getMediaFileBackedFilenames(item)) {
+      if (await moveFileToTrash(item.mediaId, filename)) {
+        trashFiles.push(filename);
       }
     }
   }
 
+  const trashedItem: MediaItem = {
+    ...item,
+    status: "trashed",
+    trashedAt: new Date().toISOString(),
+    trashFiles: trashFiles.length > 0 ? trashFiles : item.trashFiles
+  };
+
+  await writeMetadataFile(items.map((mediaItem) => (mediaItem.mediaId === item.mediaId ? trashedItem : mediaItem)));
+  return trashedItem;
+}
+
+export async function restoreMediaFromTrash(id: string): Promise<MediaItem | null> {
+  const items = await readMetadataFile();
+  const item = items.find((mediaItem) => mediaItem.id === id || mediaItem.mediaId === id);
+
+  if (!item || item.status !== "trashed") {
+    return null;
+  }
+
+  if (item.type === "image" || item.type === "video") {
+    const filenames = item.trashFiles && item.trashFiles.length > 0 ? item.trashFiles : getMediaFileBackedFilenames(item);
+
+    for (const filename of filenames) {
+      await restoreFileFromTrash(item.mediaId, filename);
+    }
+  }
+
+  const restoredItem: MediaItem = {
+    ...item,
+    status: undefined,
+    trashedAt: undefined,
+    trashFiles: undefined
+  };
+
+  await writeMetadataFile(items.map((mediaItem) => (mediaItem.mediaId === item.mediaId ? restoredItem : mediaItem)));
+  return restoredItem;
+}
+
+export async function deleteTrashedMediaPermanently(id: string): Promise<boolean> {
+  const items = await readMetadataFile();
+  const item = items.find((mediaItem) => mediaItem.id === id || mediaItem.mediaId === id);
+
+  if (!item || item.status !== "trashed") {
+    return false;
+  }
+
+  await rm(resolve(mediaTrashRoot, item.mediaId.replace(/[^a-zA-Z0-9_-]+/g, "-")), {
+    force: true,
+    recursive: true
+  });
   await writeMetadataFile(items.filter((mediaItem) => mediaItem.mediaId !== item.mediaId));
   return true;
+}
+
+export async function deleteMedia(id: string): Promise<boolean> {
+  const item = await moveMediaToTrash(id);
+  return Boolean(item);
 }

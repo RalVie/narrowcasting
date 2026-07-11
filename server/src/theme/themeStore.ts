@@ -1,4 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
   listMedia,
@@ -366,7 +367,9 @@ function validateThemeWrite(value: unknown, mediaItems: MediaItem[]) {
 
 async function writeThemes(themes: Theme[]) {
   await mkdir(resolve(process.cwd(), "data"), { recursive: true });
-  await writeFile(themesPath, `${JSON.stringify(themes, null, 2)}\n`, "utf8");
+  const themesTempPath = resolve(process.cwd(), "data", `themes.${process.pid}.${Date.now()}.${randomUUID()}.json.tmp`);
+  await writeFile(themesTempPath, `${JSON.stringify(themes, null, 2)}\n`, "utf8");
+  await rename(themesTempPath, themesPath);
 }
 
 export async function listThemes(): Promise<Theme[]> {
@@ -458,4 +461,54 @@ export async function deleteTheme(id: string): Promise<boolean> {
 
   await writeThemes(nextThemes);
   return true;
+}
+
+export async function removeMediaFromThemes(media: Pick<MediaItem, "id" | "mediaId" | "filename">) {
+  const themes = await listThemes();
+  const affected: Array<{ id: string; name: string; clearedReferences: number }> = [];
+  const nextThemes = themes.map((theme) => {
+    let clearedReferences = 0;
+    const nextTheme: Theme = {
+      ...theme,
+      backgroundMediaId:
+        theme.backgroundMediaId === media.mediaId || theme.backgroundMediaId === media.id
+          ? undefined
+          : theme.backgroundMediaId,
+      regions: theme.regions.map((region) => {
+        if (
+          (region.type === "logo" || region.type === "image") &&
+          (region.mediaId === media.mediaId || region.mediaId === media.id || region.file === media.filename)
+        ) {
+          clearedReferences += 1;
+          return {
+            ...region,
+            mediaId: undefined,
+            file: undefined
+          };
+        }
+
+        return region;
+      })
+    };
+
+    if (theme.backgroundMediaId && !nextTheme.backgroundMediaId) {
+      clearedReferences += 1;
+    }
+
+    if (clearedReferences > 0) {
+      affected.push({
+        id: theme.id,
+        name: theme.name,
+        clearedReferences
+      });
+    }
+
+    return nextTheme;
+  });
+
+  if (affected.length > 0) {
+    await writeThemes(nextThemes);
+  }
+
+  return affected;
 }

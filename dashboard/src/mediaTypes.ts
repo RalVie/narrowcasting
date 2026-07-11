@@ -46,6 +46,9 @@ export interface MediaItem {
   processedAt?: string;
   processingError?: string;
   processingStatus?: "uploaded" | "analyzing" | "processing" | "ready" | "failed";
+  status?: "trashed";
+  trashedAt?: string;
+  trashFiles?: string[];
   videoProfile?: {
     audioCodec?: string | null;
     bitrate?: number | null;

@@ -1,16 +1,30 @@
 import { listAssignments } from "../assignments/assignmentStore.js";
 import { listCampaigns } from "../campaigns/campaignStore.js";
 import { listMedia, resolveMediaReferenceFromList } from "../media/mediaStore.js";
-import { listPlaylists } from "../playlist/playlistStore.js";
+import { listPlaylists, removeMediaFromPlaylists } from "../playlist/playlistStore.js";
 import { getProgramsOrDefault } from "../program/programStore.js";
 import { readScheduler } from "../scheduler/schedulerStore.js";
-import { listThemes } from "../theme/themeStore.js";
+import { listThemes, removeMediaFromThemes } from "../theme/themeStore.js";
 
 export interface ReferenceUsage {
   objectType: string;
   objectId: string;
   objectName: string;
   field: string;
+}
+
+export interface MediaUsageReference {
+  type: "playlist" | "theme";
+  id: string;
+  name: string;
+  field?: string;
+  regionName?: string;
+}
+
+export interface MediaUsageAnalysis {
+  mediaId: string;
+  canTrash: boolean;
+  references: MediaUsageReference[];
 }
 
 export interface ReferenceValidationError {
@@ -129,6 +143,83 @@ export async function validateMediaDelete(reference: string): Promise<ReferenceV
   }
 
   return resultForReferences("Media", media.mediaId, references);
+}
+
+export async function analyzeMediaUsage(reference: string): Promise<MediaUsageAnalysis | null> {
+  const mediaItems = await listMedia();
+  const media = resolveMediaReferenceFromList(mediaItems, reference);
+
+  if (!media) {
+    return null;
+  }
+
+  const [playlists, themes] = await Promise.all([listPlaylists(), listThemes()]);
+  const references: MediaUsageReference[] = [];
+
+  for (const playlist of playlists) {
+    playlist.items.forEach((item) => {
+      if (item.mediaId === media.mediaId || item.mediaId === media.id || item.file === media.filename) {
+        references.push({
+          type: "playlist",
+          id: playlist.id,
+          name: playlist.name,
+          field: "items"
+        });
+      }
+    });
+  }
+
+  for (const theme of themes) {
+    if (theme.backgroundMediaId === media.mediaId || theme.backgroundMediaId === media.id) {
+      references.push({
+        type: "theme",
+        id: theme.id,
+        name: theme.name,
+        field: "backgroundMediaId"
+      });
+    }
+
+    theme.regions.forEach((region) => {
+      if (
+        (region.type === "logo" || region.type === "image") &&
+        (region.mediaId === media.mediaId || region.mediaId === media.id || region.file === media.filename)
+      ) {
+        references.push({
+          type: "theme",
+          id: theme.id,
+          name: theme.name,
+          field: "regions.mediaId",
+          regionName: region.name
+        });
+      }
+    });
+  }
+
+  return {
+    mediaId: media.mediaId,
+    canTrash: references.length === 0,
+    references
+  };
+}
+
+export async function removeMediaFromAllReferences(reference: string) {
+  const mediaItems = await listMedia();
+  const media = resolveMediaReferenceFromList(mediaItems, reference);
+
+  if (!media) {
+    return null;
+  }
+
+  const [playlists, themes] = await Promise.all([
+    removeMediaFromPlaylists(media),
+    removeMediaFromThemes(media)
+  ]);
+
+  return {
+    mediaId: media.mediaId,
+    playlists,
+    themes
+  };
 }
 
 export async function validatePlaylistDelete(playlistId: string): Promise<ReferenceValidationResult> {

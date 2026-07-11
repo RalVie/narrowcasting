@@ -585,6 +585,40 @@ export async function deletePlaylist(id: string): Promise<boolean> {
   return true;
 }
 
+export async function removeMediaFromPlaylists(media: Pick<MediaItem, "id" | "mediaId" | "filename">) {
+  const playlists = await listPlaylists();
+  const affected: Array<{ id: string; name: string; removedItems: number }> = [];
+  const nextPlaylists = playlists.map((playlist) => {
+    const nextItems = playlist.items.filter(
+      (item) => item.mediaId !== media.mediaId && item.mediaId !== media.id && item.file !== media.filename
+    );
+    const removedItems = playlist.items.length - nextItems.length;
+
+    if (removedItems === 0) {
+      return playlist;
+    }
+
+    affected.push({
+      id: playlist.id,
+      name: playlist.name,
+      removedItems
+    });
+
+    return {
+      ...playlist,
+      version: playlist.version + 1,
+      updatedAt: new Date().toISOString(),
+      items: nextItems
+    };
+  });
+
+  if (affected.length > 0) {
+    await writePlaylists(nextPlaylists);
+  }
+
+  return affected;
+}
+
 export async function getScheduleFromPlaylist(): Promise<Schedule> {
   const [existingPlaylistFile, mediaItems] = await Promise.all([readPlaylist(), listMedia()]);
 
