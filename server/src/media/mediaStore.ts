@@ -32,6 +32,7 @@ export interface MediaItem {
   status?: "trashed";
   trashedAt?: string;
   trashFiles?: string[];
+  thumbnailFilename?: string;
   videoProfile?: VideoProfile;
 }
 
@@ -52,6 +53,7 @@ export interface VideoProfile {
 type MediaReference = string | undefined;
 
 const mediaRoot = resolve(process.cwd(), "public", "media");
+const thumbnailRoot = resolve(process.cwd(), "public", "thumbnails");
 const metadataPath = resolve(process.cwd(), "data", "media.json");
 const mediaTrashRoot = resolve(process.cwd(), "data", "trash", "media");
 const imageExtensions = new Set([".jpg", ".jpeg", ".png", ".webp"]);
@@ -74,6 +76,25 @@ export function getMediaPath(filename: string) {
   }
 
   return filePath;
+}
+
+export function getThumbnailPath(filename: string) {
+  const safeFilename = basename(filename);
+  const filePath = resolve(thumbnailRoot, safeFilename);
+
+  if (safeFilename !== filename || !filePath.startsWith(thumbnailRoot) || extname(safeFilename).toLowerCase() !== ".jpg") {
+    throw new Error("invalid thumbnail filename");
+  }
+
+  return filePath;
+}
+
+export function getThumbnailContentType() {
+  return "image/jpeg";
+}
+
+function getVideoThumbnailFilename(mediaId: string) {
+  return `${mediaId.replace(/[^a-zA-Z0-9_-]+/g, "-")}.jpg`;
 }
 
 function getMediaTrashPath(mediaId: string, filename: string) {
@@ -317,6 +338,37 @@ async function transcodeVideo(inputPath: string, outputPath: string) {
     maxBuffer: 8 * 1024 * 1024
   });
   await rename(pendingPath, outputPath);
+}
+
+async function generateVideoThumbnail(inputPath: string, mediaId: string, durationSeconds?: number | null) {
+  await mkdir(thumbnailRoot, { recursive: true });
+  const thumbnailFilename = getVideoThumbnailFilename(mediaId);
+  const thumbnailPath = getThumbnailPath(thumbnailFilename);
+  const pendingPath = `${thumbnailPath}.tmp.jpg`;
+  const seekSeconds =
+    durationSeconds && Number.isFinite(durationSeconds)
+      ? Math.max(0.25, Math.min(1, durationSeconds * 0.1))
+      : 1;
+
+  await execFileAsync("ffmpeg", [
+    "-y",
+    "-ss",
+    seekSeconds.toFixed(2),
+    "-i",
+    inputPath,
+    "-frames:v",
+    "1",
+    "-vf",
+    "scale=640:-2",
+    "-q:v",
+    "3",
+    pendingPath
+  ], {
+    maxBuffer: 8 * 1024 * 1024
+  });
+  await assertNonEmptyFile(pendingPath);
+  await rename(pendingPath, thumbnailPath);
+  return thumbnailFilename;
 }
 
 function isExternalMediaType(type: unknown): type is "web_url" | "rss_feed" {
@@ -685,7 +737,11 @@ function normalizeMetadataItem(value: unknown): MediaItem | null {
           : undefined,
       trashFiles: Array.isArray(candidate.trashFiles)
         ? candidate.trashFiles.filter((filename): filename is string => typeof filename === "string" && Boolean(filename.trim()))
-        : undefined
+        : undefined,
+      thumbnailFilename:
+        typeof candidate.thumbnailFilename === "string" && candidate.thumbnailFilename.trim()
+          ? candidate.thumbnailFilename
+          : undefined
     };
   }
 
@@ -743,6 +799,10 @@ function normalizeMetadataItem(value: unknown): MediaItem | null {
     trashFiles: Array.isArray(candidate.trashFiles)
       ? candidate.trashFiles.filter((filename): filename is string => typeof filename === "string" && Boolean(filename.trim()))
       : undefined,
+    thumbnailFilename:
+      typeof candidate.thumbnailFilename === "string" && candidate.thumbnailFilename.trim()
+        ? candidate.thumbnailFilename
+        : undefined,
     videoProfile:
       candidate.videoProfile && typeof candidate.videoProfile === "object"
         ? (candidate.videoProfile as VideoProfile)
@@ -825,6 +885,14 @@ async function removeFileIfPresent(filename: string) {
   }
 }
 
+async function removeThumbnailIfPresent(filename: string) {
+  try {
+    await unlink(getThumbnailPath(filename));
+  } catch {
+    // Thumbnail cleanup is best effort.
+  }
+}
+
 async function assertNonEmptyFile(filePath: string) {
   const fileStat = await stat(filePath);
 
@@ -882,6 +950,18 @@ async function processVideo(job: VideoProcessingJob) {
       analyzeVideo(finalPath),
       assertNonEmptyFile(finalPath)
     ]);
+    let thumbnailFilename: string | undefined;
+
+    try {
+      thumbnailFilename = await generateVideoThumbnail(finalPath, mediaId, normalizedProfile.durationSeconds);
+    } catch (thumbnailError) {
+      console.warn("video thumbnail generation failed", {
+        error: thumbnailError instanceof Error ? thumbnailError.message : String(thumbnailError),
+        filename: item.filename,
+        mediaId
+      });
+    }
+
     await updateMediaItem(mediaId, {
       originalFilename: undefined,
       playbackFilename: undefined,
@@ -889,6 +969,7 @@ async function processVideo(job: VideoProcessingJob) {
       processingError: undefined,
       processingStatus: "ready",
       size: finalStat.size,
+      thumbnailFilename,
       videoProfile: normalizedProfile
     });
     console.log("video normalization complete", { filename: sourceFilename, mediaId, outputFilename: item.filename });
@@ -1012,6 +1093,7 @@ async function itemFromFile(
     processedAt: existingItem?.processedAt,
     processingError: existingItem?.processingError,
     processingStatus: existingItem?.processingStatus,
+    thumbnailFilename: existingItem?.thumbnailFilename,
     videoProfile: existingItem?.videoProfile
   };
 }
@@ -1140,6 +1222,7 @@ export async function createMedia(filename: string, content: Buffer): Promise<Me
     processedAt: undefined,
     processingError: undefined,
     processingStatus: "uploaded",
+    thumbnailFilename: existingItem?.thumbnailFilename,
     videoProfile: undefined
   };
   const nextItems = existingItem
@@ -1304,6 +1387,7 @@ export async function retryVideoNormalization(id: string): Promise<MediaItem | n
 
 export async function cleanupTemporaryMediaFiles() {
   await mkdir(mediaRoot, { recursive: true });
+  await mkdir(thumbnailRoot, { recursive: true });
   const [filenames, metadata] = await Promise.all([
     readdir(mediaRoot),
     readMetadataFile()
@@ -1347,6 +1431,14 @@ export async function cleanupTemporaryMediaFiles() {
     }
 
     await removeFileIfPresent(filename);
+  }
+
+  const thumbnailFilenames = await readdir(thumbnailRoot);
+
+  for (const filename of thumbnailFilenames) {
+    if (filename.endsWith(".tmp.jpg")) {
+      await removeThumbnailIfPresent(filename);
+    }
   }
 }
 
@@ -1456,6 +1548,9 @@ export async function deleteTrashedMediaPermanently(id: string): Promise<boolean
     force: true,
     recursive: true
   });
+  if (item.thumbnailFilename) {
+    await removeThumbnailIfPresent(item.thumbnailFilename);
+  }
   await writeMetadataFile(items.filter((mediaItem) => mediaItem.mediaId !== item.mediaId));
   return true;
 }

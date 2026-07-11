@@ -8,6 +8,8 @@ import {
   deleteTrashedMediaPermanently,
   getMediaContentType,
   getMediaPath,
+  getThumbnailContentType,
+  getThumbnailPath,
   listMedia,
   listTrashedMedia,
   moveMediaToTrash,
@@ -16,7 +18,7 @@ import {
   updateExternalMedia
 } from "../../media/mediaStore.js";
 import { badRequest, badRequestForError, conflict, notFound, payloadTooLarge } from "../apiErrors.js";
-import { analyzeMediaUsage, removeMediaFromAllReferences, validateMediaDelete } from "../../validation/referenceIntegrity.js";
+import { analyzeMediaUsage, analyzeMediaUsageSummaries, removeMediaFromAllReferences, validateMediaDelete } from "../../validation/referenceIntegrity.js";
 import { fetchRssFeed } from "../../rss/rssFetcher.js";
 
 const imageUploadLimitBytes = 20 * 1024 * 1024;
@@ -58,6 +60,8 @@ export const mediaRoutes: FastifyPluginAsync = async (app) => {
   app.get("/api/media", async () => listMedia());
 
   app.get("/api/media/trash", async () => listTrashedMedia());
+
+  app.get("/api/media/usage-summary", async () => analyzeMediaUsageSummaries());
 
   app.post("/api/media/rss-preview", async (request) => {
     const body = (request.body ?? {}) as { url?: unknown; maxItems?: unknown };
@@ -243,5 +247,23 @@ export const mediaRoutes: FastifyPluginAsync = async (app) => {
     }
 
     return reply.type(getMediaContentType(request.params.file)).send(createReadStream(filePath));
+  });
+
+  app.get<{ Params: { file: string } }>("/thumbnails/:file", async (request, reply) => {
+    let filePath: string;
+
+    try {
+      filePath = getThumbnailPath(request.params.file);
+    } catch {
+      return badRequest(reply, "invalid thumbnail file", "INVALID_THUMBNAIL_FILE");
+    }
+
+    try {
+      await access(filePath);
+    } catch {
+      return notFound(reply, "thumbnail file not found", "THUMBNAIL_FILE_NOT_FOUND");
+    }
+
+    return reply.type(getThumbnailContentType()).send(createReadStream(filePath));
   });
 };

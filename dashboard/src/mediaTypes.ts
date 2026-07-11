@@ -49,6 +49,7 @@ export interface MediaItem {
   status?: "trashed";
   trashedAt?: string;
   trashFiles?: string[];
+  thumbnailFilename?: string;
   videoProfile?: {
     audioCodec?: string | null;
     bitrate?: number | null;

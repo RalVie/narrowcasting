@@ -38,6 +38,13 @@ interface TrashConflictState {
   references: MediaUsageReference[];
 }
 
+interface MediaUsageSummary {
+  count: number;
+  references: MediaUsageReference[];
+}
+
+type MediaCategory = "all" | "image" | "video" | "web_url" | "rss_feed" | "trash";
+
 function formatFileSize(size: number) {
   if (size < 1024) {
     return `${size} B`;
@@ -77,6 +84,51 @@ function getReferenceRegion(reference: MediaUsageReference) {
   }
 
   return reference.field === "backgroundMediaId" ? "Background" : undefined;
+}
+
+function getHostName(value?: string) {
+  if (!value) {
+    return "";
+  }
+
+  try {
+    return new URL(value).hostname;
+  } catch {
+    return value;
+  }
+}
+
+function getTypeLabel(type: MediaItem["type"]) {
+  switch (type) {
+    case "image":
+      return "Image";
+    case "video":
+      return "Video";
+    case "web_url":
+      return "Web Page";
+    case "rss_feed":
+      return "RSS Feed";
+  }
+}
+
+function getUsageLabel(count: number) {
+  if (count === 0) {
+    return "Unused";
+  }
+
+  return count === 1 ? "Used in 1 place" : `Used in ${count} places`;
+}
+
+function mediaMatchesSearch(item: MediaItem, search: string) {
+  const query = search.trim().toLowerCase();
+
+  if (!query) {
+    return true;
+  }
+
+  return [item.title, item.filename, item.url, item.type]
+    .filter((value): value is string => typeof value === "string")
+    .some((value) => value.toLowerCase().includes(query));
 }
 
 function createBrowserAction(type: BrowserAction["type"]): BrowserAction {
@@ -241,6 +293,10 @@ export function MediaLibraryPage() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [items, setItems] = useState<MediaItem[]>([]);
   const [trashItems, setTrashItems] = useState<MediaItem[]>([]);
+  const [usageSummary, setUsageSummary] = useState<Record<string, MediaUsageSummary>>({});
+  const [category, setCategory] = useState<MediaCategory>("all");
+  const [search, setSearch] = useState("");
+  const [showDynamicForm, setShowDynamicForm] = useState(false);
   const [status, setStatus] = useState("Loading media library...");
   const [isBusy, setIsBusy] = useState(false);
   const [externalType, setExternalType] = useState<"web_url" | "rss_feed">("web_url");
@@ -299,8 +355,22 @@ export function MediaLibraryPage() {
     }
   }
 
+  async function loadUsageSummary() {
+    try {
+      const response = await fetch(apiUrl("/api/media/usage-summary"));
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      setUsageSummary((await response.json()) as Record<string, MediaUsageSummary>);
+    } catch {
+      setUsageSummary({});
+    }
+  }
+
   async function refreshMediaWorkspace() {
-    await Promise.all([loadMedia(), loadTrash()]);
+    await Promise.all([loadMedia(), loadTrash(), loadUsageSummary()]);
   }
 
   async function uploadFile(event: ChangeEvent<HTMLInputElement>) {
@@ -497,6 +567,7 @@ export function MediaLibraryPage() {
       setExternalWebUrlRenderMode("iframe");
       setExternalBrowserActions([]);
       setExternalRssPreview(emptyRssPreview);
+      setShowDynamicForm(false);
       setStatus("External media created.");
       await refreshMediaWorkspace();
     } catch (error) {
@@ -833,6 +904,265 @@ export function MediaLibraryPage() {
     );
   }
 
+  const activeItems = items.filter((item) => mediaMatchesSearch(item, search));
+  const visibleItems =
+    category === "trash"
+      ? trashItems.filter((item) => mediaMatchesSearch(item, search))
+      : activeItems.filter((item) => category === "all" || item.type === category);
+  const categoryCounts: Record<MediaCategory, number> = {
+    all: items.length,
+    image: items.filter((item) => item.type === "image").length,
+    video: items.filter((item) => item.type === "video").length,
+    web_url: items.filter((item) => item.type === "web_url").length,
+    rss_feed: items.filter((item) => item.type === "rss_feed").length,
+    trash: trashItems.length
+  };
+  const categoryTabs: Array<{ label: string; value: MediaCategory }> = [
+    { label: "All", value: "all" },
+    { label: "Images", value: "image" },
+    { label: "Videos", value: "video" },
+    { label: "Web Pages", value: "web_url" },
+    { label: "RSS Feeds", value: "rss_feed" },
+    { label: "Trash", value: "trash" }
+  ];
+
+  function renderMediaPreview(item: MediaItem, isTrashed = false) {
+    if (item.type === "image") {
+      return <img alt="" src={apiUrl(`/media/${encodeURIComponent(item.filename)}`)} />;
+    }
+
+    if (item.type === "video" && item.thumbnailFilename) {
+      return <img alt="" src={apiUrl(`/thumbnails/${encodeURIComponent(item.thumbnailFilename)}`)} />;
+    }
+
+    const label = item.type === "video" ? "Video" : item.type === "web_url" ? "Web" : "RSS";
+
+    return (
+      <div className={`media-type-placeholder ${item.type}${isTrashed ? " trashed" : ""}`}>
+        <span>{label}</span>
+        {item.type === "web_url" ? <small>{getHostName(item.url)}</small> : null}
+        {item.type === "rss_feed" ? <small>{getHostName(item.url)}</small> : null}
+      </div>
+    );
+  }
+
+  function renderMetadata(item: MediaItem) {
+    if (item.type === "image") {
+      return formatFileSize(item.size);
+    }
+
+    if (item.type === "video") {
+      const duration = item.videoProfile?.durationSeconds ? `${Math.round(item.videoProfile.durationSeconds)}s` : null;
+      return [duration, formatFileSize(item.size)].filter(Boolean).join(" | ");
+    }
+
+    if (item.type === "web_url") {
+      return [
+        getHostName(item.url),
+        item.webUrlRenderMode === "browser" ? "Browser renderer" : "Embedded iframe",
+        item.webUrlPlaybackMode === "persistent" ? "Persistent" : "Timed"
+      ].filter(Boolean).join(" | ");
+    }
+
+    return [
+      getHostName(item.url),
+      `${item.maxItems ?? 5} items`,
+      `${item.duration ?? 10}s per item`
+    ].filter(Boolean).join(" | ");
+  }
+
+  function renderExternalEditor(item: MediaItem) {
+    return (
+      <div className="media-card-editor">
+        <label>
+          Title
+          <input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} />
+        </label>
+        <label>
+          URL
+          <input
+            value={editUrl}
+            onChange={(event) => {
+              setEditUrl(event.target.value);
+              setEditRssPreview(emptyRssPreview);
+            }}
+          />
+        </label>
+        {item.type === "web_url" ? (
+          <fieldset className="operator-duration-options">
+            <legend>Playback Mode</legend>
+            <label>
+              <input
+                checked={editWebUrlPlaybackMode !== "persistent"}
+                name={`edit-web-url-playback-mode-${item.mediaId}`}
+                onChange={() => setEditWebUrlPlaybackMode("timed")}
+                type="radio"
+              />
+              Timed playback
+            </label>
+            <label>
+              <input
+                checked={editWebUrlPlaybackMode === "persistent"}
+                name={`edit-web-url-playback-mode-${item.mediaId}`}
+                onChange={() => setEditWebUrlPlaybackMode("persistent")}
+                type="radio"
+              />
+              Persistent until schedule changes
+            </label>
+          </fieldset>
+        ) : null}
+        {item.type === "rss_feed" || editWebUrlPlaybackMode !== "persistent" ? (
+          <label>
+            {item.type === "rss_feed" ? "Duration per item" : "Duration"}
+            <input
+              min={1}
+              type="number"
+              value={editDuration}
+              onChange={(event) => setEditDuration(Math.max(Number(event.target.value), 1))}
+            />
+          </label>
+        ) : null}
+        {item.type === "rss_feed" ? (
+          <>
+            <label>
+              Max items
+              <input
+                min={1}
+                max={20}
+                type="number"
+                value={editMaxItems}
+                onChange={(event) => {
+                  setEditMaxItems(Math.max(Math.min(Number(event.target.value), 20), 1));
+                  setEditRssPreview(emptyRssPreview);
+                }}
+              />
+              <small>The server resolves RSS into concrete player cards.</small>
+            </label>
+            {renderRssStyleEditor(editRssStyle, setEditRssStyle)}
+          </>
+        ) : (
+          <>
+            <label>
+              Render mode
+              <select
+                value={editWebUrlRenderMode}
+                onChange={(event) => {
+                  const mode = event.target.value as "iframe" | "browser";
+                  setEditWebUrlRenderMode(mode);
+
+                  if (mode === "browser") {
+                    setEditWebUrlPlaybackMode("timed");
+                  }
+                }}
+              >
+                <option value="iframe">Embedded iframe</option>
+                <option value="browser">Browser renderer</option>
+              </select>
+            </label>
+            {editWebUrlRenderMode === "browser"
+              ? renderBrowserActionsEditor(editBrowserActions, setEditBrowserActions)
+              : null}
+          </>
+        )}
+        {item.type === "rss_feed" ? (
+          <div className="rss-preview-actions">
+            <button
+              disabled={isBusy || editRssPreview.status === "loading" || !editUrl.trim()}
+              onClick={() => void previewRssFeed(editUrl, editMaxItems, setEditRssPreview)}
+              type="button"
+            >
+              Preview feed
+            </button>
+            {renderRssPreview(editRssPreview, editRssStyle)}
+          </div>
+        ) : null}
+        <div className="button-row">
+          <button disabled={isBusy || !editUrl.trim()} onClick={() => void saveExternalMedia(item)} type="button">
+            Save
+          </button>
+          <button disabled={isBusy} onClick={() => setEditingItemId(null)} type="button">
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function renderMediaCard(item: MediaItem) {
+    const usageCount = usageSummary[item.mediaId]?.count ?? 0;
+
+    return (
+      <article className="media-card media-library-card" key={item.mediaId}>
+        <div className="media-card-preview">{renderMediaPreview(item)}</div>
+        <div className="media-card-body">
+          {editingItemId === item.mediaId && (item.type === "web_url" || item.type === "rss_feed") ? (
+            renderExternalEditor(item)
+          ) : (
+            <>
+              <div className="media-card-title-row">
+                <span className={`media-type-badge ${item.type}`}>{getTypeLabel(item.type)}</span>
+                {item.type === "video" ? (
+                  <span className={`media-processing-badge ${getVideoProcessingStatus(item) ?? "ready"}`}>
+                    {getVideoProcessingLabel(item)}
+                  </span>
+                ) : null}
+              </div>
+              <div>
+                <h3 title={item.title ?? item.filename}>{item.title ?? item.filename}</h3>
+                <p>{renderMetadata(item)}</p>
+                <p>{getUsageLabel(usageCount)}</p>
+              </div>
+              {item.type === "video" && item.processingStatus === "failed" ? (
+                <>
+                  <p className="media-processing-error">{item.processingError ?? "Normalization failed."}</p>
+                  <button disabled={isBusy} onClick={() => void retryNormalization(item)} type="button">
+                    Retry normalization
+                  </button>
+                </>
+              ) : null}
+              <div className="button-row">
+                {item.type === "web_url" || item.type === "rss_feed" ? (
+                  <button disabled={isBusy} onClick={() => startEditing(item)} type="button">
+                    Edit
+                  </button>
+                ) : null}
+                <button disabled={isBusy} onClick={() => void moveItemToTrash(item)} type="button">
+                  Move to Trash
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </article>
+    );
+  }
+
+  function renderTrashCard(item: MediaItem) {
+    return (
+      <article className="media-card media-library-card trashed" key={item.mediaId}>
+        <div className="media-card-preview">{renderMediaPreview(item, true)}</div>
+        <div className="media-card-body">
+          <div className="media-card-title-row">
+            <span className={`media-type-badge ${item.type}`}>{getTypeLabel(item.type)}</span>
+            <span className="media-processing-badge">Trashed</span>
+          </div>
+          <div>
+            <h3 title={item.title ?? item.filename}>{item.title ?? item.filename}</h3>
+            <p>{item.trashedAt ? `Trashed ${new Date(item.trashedAt).toLocaleString()}` : renderMetadata(item)}</p>
+          </div>
+          <div className="button-row">
+            <button disabled={isBusy} onClick={() => void restoreItem(item)} type="button">
+              Restore
+            </button>
+            <button disabled={isBusy} onClick={() => void deletePermanently(item)} type="button">
+              Delete permanently
+            </button>
+          </div>
+        </div>
+      </article>
+    );
+  }
+
   useEffect(() => {
     void refreshMediaWorkspace();
     const timer = window.setInterval(() => {
@@ -853,7 +1183,10 @@ export function MediaLibraryPage() {
         </div>
         <div className="button-row">
           <button disabled={isBusy} onClick={() => inputRef.current?.click()} type="button">
-            Upload
+            Upload files
+          </button>
+          <button disabled={isBusy} onClick={() => setShowDynamicForm((value) => !value)} type="button">
+            {showDynamicForm ? "Close dynamic content" : "Add dynamic content"}
           </button>
           <button disabled={isBusy} onClick={() => void refreshMediaWorkspace()} type="button">
             Refresh
@@ -871,7 +1204,32 @@ export function MediaLibraryPage() {
 
       <p className="status-text">{status}</p>
 
-      <section className="operator-panel">
+      <div className="media-library-toolbar">
+        <div className="media-category-tabs" role="tablist" aria-label="Media categories">
+          {categoryTabs.map((tab) => (
+            <button
+              aria-selected={category === tab.value}
+              className={category === tab.value ? "active" : ""}
+              key={tab.value}
+              onClick={() => setCategory(tab.value)}
+              role="tab"
+              type="button"
+            >
+              {tab.label}
+              <span>{categoryCounts[tab.value]}</span>
+            </button>
+          ))}
+        </div>
+        <input
+          aria-label="Search media"
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search media"
+          type="search"
+          value={search}
+        />
+      </div>
+
+      {showDynamicForm ? <section className="operator-panel">
         <h3>Add Dynamic Content</h3>
         <div className="playlist-schedule-fields">
           <label>
@@ -988,228 +1346,24 @@ export function MediaLibraryPage() {
             Add
           </button>
         </div>
-      </section>
+      </section> : null}
 
       <div className="media-grid">
-        {items.map((item) => (
-          <article className="media-card" key={item.mediaId}>
-            {item.type === "image" ? (
-              <img alt="" src={apiUrl(`/media/${encodeURIComponent(item.filename)}`)} />
-            ) : item.type === "video" ? (
-              <div className="media-video-placeholder">
-                <span>Video</span>
-              </div>
-            ) : (
-              <div className="media-video-placeholder">
-                <span>{item.type === "web_url" ? "Web URL" : "RSS"}</span>
-              </div>
-            )}
-            <div className="media-card-body">
-              {editingItemId === item.mediaId && (item.type === "web_url" || item.type === "rss_feed") ? (
-                <div className="media-card-editor">
-                  <label>
-                    Title
-                    <input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} />
-                  </label>
-                  <label>
-                    URL
-                    <input
-                      value={editUrl}
-                      onChange={(event) => {
-                        setEditUrl(event.target.value);
-                        setEditRssPreview(emptyRssPreview);
-                      }}
-                    />
-                  </label>
-                  {item.type === "web_url" ? (
-                    <fieldset className="operator-duration-options">
-                      <legend>Playback Mode</legend>
-                      <label>
-                        <input
-                          checked={editWebUrlPlaybackMode !== "persistent"}
-                          name={`edit-web-url-playback-mode-${item.mediaId}`}
-                          onChange={() => setEditWebUrlPlaybackMode("timed")}
-                          type="radio"
-                        />
-                        Timed playback
-                      </label>
-                      <label>
-                        <input
-                          checked={editWebUrlPlaybackMode === "persistent"}
-                          name={`edit-web-url-playback-mode-${item.mediaId}`}
-                          onChange={() => setEditWebUrlPlaybackMode("persistent")}
-                          type="radio"
-                        />
-                        Persistent until schedule changes
-                      </label>
-                    </fieldset>
-                  ) : null}
-                  {item.type === "rss_feed" || editWebUrlPlaybackMode !== "persistent" ? (
-                    <label>
-                      {item.type === "rss_feed" ? "Duration per item" : "Duration"}
-                      <input
-                        min={1}
-                        type="number"
-                        value={editDuration}
-                        onChange={(event) => setEditDuration(Math.max(Number(event.target.value), 1))}
-                      />
-                    </label>
-                  ) : null}
-                  {item.type === "rss_feed" ? (
-                    <>
-                      <label>
-                        Max items
-                        <input
-                          min={1}
-                          max={20}
-                          type="number"
-                          value={editMaxItems}
-                          onChange={(event) => {
-                            setEditMaxItems(Math.max(Math.min(Number(event.target.value), 20), 1));
-                            setEditRssPreview(emptyRssPreview);
-                          }}
-                        />
-                        <small>The server resolves RSS into concrete player cards.</small>
-                      </label>
-                      {renderRssStyleEditor(editRssStyle, setEditRssStyle)}
-                    </>
-                  ) : (
-                    <>
-                      <label>
-                        Render mode
-                        <select
-                          value={editWebUrlRenderMode}
-                          onChange={(event) => {
-                            const mode = event.target.value as "iframe" | "browser";
-                            setEditWebUrlRenderMode(mode);
-
-                            if (mode === "browser") {
-                              setEditWebUrlPlaybackMode("timed");
-                            }
-                          }}
-                        >
-                          <option value="iframe">Embedded iframe</option>
-                          <option value="browser">Browser renderer</option>
-                        </select>
-                      </label>
-                      {editWebUrlRenderMode === "browser"
-                        ? renderBrowserActionsEditor(editBrowserActions, setEditBrowserActions)
-                        : null}
-                    </>
-                  )}
-                  {item.type === "rss_feed" ? (
-                    <div className="rss-preview-actions">
-                      <button
-                        disabled={isBusy || editRssPreview.status === "loading" || !editUrl.trim()}
-                        onClick={() => void previewRssFeed(editUrl, editMaxItems, setEditRssPreview)}
-                        type="button"
-                      >
-                        Preview feed
-                      </button>
-                      {renderRssPreview(editRssPreview, editRssStyle)}
-                    </div>
-                  ) : null}
-                  <div className="button-row">
-                    <button disabled={isBusy || !editUrl.trim()} onClick={() => void saveExternalMedia(item)} type="button">
-                      Save
-                    </button>
-                    <button disabled={isBusy} onClick={() => setEditingItemId(null)} type="button">
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div>
-                    <h3>{item.title ?? item.filename}</h3>
-                    <p>
-                      {item.type === "image" || item.type === "video"
-                        ? `${item.type} | ${formatFileSize(item.size)}`
-                        : `${item.type} | ${item.url ?? ""}`}
-                    </p>
-                    {item.type === "video" ? (
-                      <>
-                        <span className={`media-processing-badge ${getVideoProcessingStatus(item) ?? "ready"}`}>
-                          {getVideoProcessingLabel(item)}
-                        </span>
-                        {item.processingStatus && item.processingStatus !== "ready" && item.processingStatus !== "failed" ? (
-                          <p>{getVideoProcessingLabel(item)}</p>
-                        ) : null}
-                        {item.processingStatus === "failed" ? (
-                          <>
-                            <p className="media-processing-error">
-                              {item.processingError ?? "Normalization failed."}
-                            </p>
-                            <button disabled={isBusy} onClick={() => void retryNormalization(item)} type="button">
-                              Retry normalization
-                            </button>
-                          </>
-                        ) : null}
-                      </>
-                    ) : null}
-                    {item.type === "web_url" ? (
-                      <>
-                        <p>Playback: {item.webUrlPlaybackMode === "persistent" ? "Persistent until schedule changes" : "Timed playback"}</p>
-                        <p>Render mode: {item.webUrlRenderMode ?? "iframe"}</p>
-                      </>
-                    ) : null}
-                    {item.type === "web_url" && item.browserActions && item.browserActions.length > 0 ? (
-                      <p>Automation actions: {item.browserActions.length}</p>
-                    ) : null}
-                  </div>
-                  <div className="button-row">
-                    {item.type === "web_url" || item.type === "rss_feed" ? (
-                      <button disabled={isBusy} onClick={() => startEditing(item)} type="button">
-                        Edit
-                      </button>
-                    ) : null}
-                    <button disabled={isBusy} onClick={() => void moveItemToTrash(item)} type="button">
-                      Move to Trash
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </article>
-        ))}
-      </div>
-
-      <section className="operator-panel">
-        <div className="operator-panel-header">
-          <div>
-            <h3>Trash</h3>
-            <span>{trashItems.length} item(s)</span>
-          </div>
-        </div>
-        {trashItems.length === 0 ? <p className="operator-empty">Trash is empty.</p> : null}
-        {trashItems.length > 0 ? (
+        {visibleItems.length === 0 ? (
           <p className="operator-empty">
-            Restoring media returns only the media item. Playlist and Theme references removed earlier are not recreated automatically.
+            {category === "trash" ? "Trash is empty." : "No media matches this view."}
           </p>
         ) : null}
-        {trashItems.length > 0 ? (
-          <div className="operator-list">
-            {trashItems.map((item) => (
-              <article className="operator-list-card" key={item.mediaId}>
-                <strong>{item.title ?? item.filename}</strong>
-                <span>
-                  {item.type}
-                  {item.trashedAt ? ` | Trashed ${new Date(item.trashedAt).toLocaleString()}` : ""}
-                </span>
-                <div className="button-row">
-                  <button disabled={isBusy} onClick={() => void restoreItem(item)} type="button">
-                    Restore
-                  </button>
-                  <button disabled={isBusy} onClick={() => void deletePermanently(item)} type="button">
-                    Delete permanently
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        ) : null}
-      </section>
+        {category === "trash"
+          ? visibleItems.map((item) => renderTrashCard(item))
+          : visibleItems.map((item) => renderMediaCard(item))}
+      </div>
 
+      {category === "trash" && trashItems.length > 0 ? (
+        <p className="operator-empty">
+          Restoring media returns only the media item. Playlist and Theme references removed earlier are not recreated automatically.
+        </p>
+      ) : null}
       {trashConflict ? (
         <div className="media-trash-modal-backdrop" role="presentation">
           <section

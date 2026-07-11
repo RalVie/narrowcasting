@@ -27,6 +27,11 @@ export interface MediaUsageAnalysis {
   references: MediaUsageReference[];
 }
 
+export interface MediaUsageSummary {
+  count: number;
+  references: MediaUsageReference[];
+}
+
 export interface ReferenceValidationError {
   error: "validation_error";
   code: "REFERENCE_IN_USE" | "ASSIGNMENT_MANAGED_BY_CAMPAIGN";
@@ -153,13 +158,35 @@ export async function analyzeMediaUsage(reference: string): Promise<MediaUsageAn
     return null;
   }
 
+  const usageMap = await analyzeMediaUsageSummaries(mediaItems);
+  const references = usageMap[media.mediaId]?.references ?? [];
+
+  return {
+    mediaId: media.mediaId,
+    canTrash: references.length === 0,
+    references
+  };
+}
+
+export async function analyzeMediaUsageSummaries(mediaItems?: Awaited<ReturnType<typeof listMedia>>): Promise<Record<string, MediaUsageSummary>> {
+  const resolvedMediaItems = mediaItems ?? await listMedia();
   const [playlists, themes] = await Promise.all([listPlaylists(), listThemes()]);
-  const references: MediaUsageReference[] = [];
+  const mediaByReference = new Map<string, string>();
+  const referencesByMediaId = new Map<string, MediaUsageReference[]>();
+
+  for (const media of resolvedMediaItems) {
+    mediaByReference.set(media.mediaId, media.mediaId);
+    mediaByReference.set(media.id, media.mediaId);
+    mediaByReference.set(media.filename, media.mediaId);
+    referencesByMediaId.set(media.mediaId, []);
+  }
 
   for (const playlist of playlists) {
     playlist.items.forEach((item) => {
-      if (item.mediaId === media.mediaId || item.mediaId === media.id || item.file === media.filename) {
-        references.push({
+      const mediaId = mediaByReference.get(item.mediaId) ?? mediaByReference.get(item.file);
+
+      if (mediaId) {
+        referencesByMediaId.get(mediaId)?.push({
           type: "playlist",
           id: playlist.id,
           name: playlist.name,
@@ -170,8 +197,10 @@ export async function analyzeMediaUsage(reference: string): Promise<MediaUsageAn
   }
 
   for (const theme of themes) {
-    if (theme.backgroundMediaId === media.mediaId || theme.backgroundMediaId === media.id) {
-      references.push({
+    const backgroundMediaId = theme.backgroundMediaId ? mediaByReference.get(theme.backgroundMediaId) : undefined;
+
+    if (backgroundMediaId) {
+      referencesByMediaId.get(backgroundMediaId)?.push({
         type: "theme",
         id: theme.id,
         name: theme.name,
@@ -181,11 +210,14 @@ export async function analyzeMediaUsage(reference: string): Promise<MediaUsageAn
     }
 
     theme.regions.forEach((region) => {
-      if (
-        (region.type === "logo" || region.type === "image") &&
-        (region.mediaId === media.mediaId || region.mediaId === media.id || region.file === media.filename)
-      ) {
-        references.push({
+      if (region.type === "logo" || region.type === "image") {
+        const mediaId = (region.mediaId ? mediaByReference.get(region.mediaId) : undefined) ?? (region.file ? mediaByReference.get(region.file) : undefined);
+
+        if (!mediaId) {
+          return;
+        }
+
+        referencesByMediaId.get(mediaId)?.push({
           type: "theme",
           id: theme.id,
           name: theme.name,
@@ -196,11 +228,15 @@ export async function analyzeMediaUsage(reference: string): Promise<MediaUsageAn
     });
   }
 
-  return {
-    mediaId: media.mediaId,
-    canTrash: references.length === 0,
-    references
-  };
+  return Object.fromEntries(
+    Array.from(referencesByMediaId.entries()).map(([mediaId, references]) => [
+      mediaId,
+      {
+        count: references.length,
+        references
+      }
+    ])
+  );
 }
 
 export async function removeMediaFromAllReferences(reference: string) {
