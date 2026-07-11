@@ -133,8 +133,26 @@ export function PlaylistsPage() {
   const [deleteTarget, setDeleteTarget] = useState<PlaylistRecord | null>(null);
   const isDirtyRef = useRef(false);
   const selectedPlaylistIdRef = useRef<string | null>(null);
+  const savedStatusTimerRef = useRef<number | null>(null);
+
+  function clearSavedStatusTimer() {
+    if (savedStatusTimerRef.current) {
+      window.clearTimeout(savedStatusTimerRef.current);
+      savedStatusTimerRef.current = null;
+    }
+  }
+
+  function showSavedStatus() {
+    clearSavedStatusTimer();
+    setStatus("✓ All changes saved");
+    savedStatusTimerRef.current = window.setTimeout(() => {
+      setStatus((currentStatus) => (currentStatus === "✓ All changes saved" ? "" : currentStatus));
+      savedStatusTimerRef.current = null;
+    }, 3000);
+  }
 
   function markDirty() {
+    clearSavedStatusTimer();
     isDirtyRef.current = true;
     setIsDirty(true);
   }
@@ -395,7 +413,7 @@ export function PlaylistsPage() {
       setSelectedPlaylistId(savedPlaylist.id);
       isDirtyRef.current = false;
       setIsDirty(false);
-      setStatus(`Saved ${savedPlaylist.name}.`);
+      showSavedStatus();
       window.dispatchEvent(new CustomEvent("narrowcasting:playlist-saved"));
       return savedPlaylist;
     } catch (error) {
@@ -557,6 +575,8 @@ export function PlaylistsPage() {
       window.clearInterval(timer);
     };
   }, []);
+
+  useEffect(() => () => clearSavedStatusTimer(), []);
 
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -808,8 +828,8 @@ export function PlaylistsPage() {
       ) : playlist ? (
         <>
           <div className="playlist-editor-header">
-            <button className="text-button" onClick={() => backToLibrary()} type="button">
-              Back to Playlists
+            <button onClick={() => backToLibrary()} type="button">
+              ← Back to Playlists
             </button>
             <div className="playlist-editor-title-row">
               <input
@@ -826,6 +846,27 @@ export function PlaylistsPage() {
               <button disabled={isBusy} onClick={() => setIsAddMediaOpen(true)} type="button">
                 Add Media
               </button>
+              <details className="playlist-card-menu playlist-editor-menu">
+                <summary aria-label={`Actions for ${playlist.name}`}>...</summary>
+                <div>
+                  <button
+                    disabled={isBusy}
+                    onClick={() => {
+                      setRenameTarget(playlist);
+                      setRenameValue(playlist.name);
+                    }}
+                    type="button"
+                  >
+                    Rename
+                  </button>
+                  <button disabled={isBusy} onClick={() => void duplicatePlaylist(playlist)} type="button">
+                    Duplicate
+                  </button>
+                  <button disabled={isBusy || playlist.id === "default"} onClick={() => setDeleteTarget(playlist)} type="button">
+                    Delete
+                  </button>
+                </div>
+              </details>
               <button className="primary-button" disabled={isBusy || !isDirty} onClick={() => void savePlaylist()} type="button">
                 Save Changes
               </button>

@@ -1517,6 +1517,10 @@ button:disabled {
   text-align: left;
 }
 
+.playlist-editor-menu {
+  align-self: center;
+}
+
 .playlist-editor-header {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
