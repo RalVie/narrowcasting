@@ -33,6 +33,11 @@ interface MediaConflictResponse {
   references?: MediaUsageReference[];
 }
 
+interface TrashConflictState {
+  item: MediaItem;
+  references: MediaUsageReference[];
+}
+
 function formatFileSize(size: number) {
   if (size < 1024) {
     return `${size} B`;
@@ -72,14 +77,6 @@ function getReferenceRegion(reference: MediaUsageReference) {
   }
 
   return reference.field === "backgroundMediaId" ? "Background" : undefined;
-}
-
-function formatMediaReference(reference: MediaUsageReference) {
-  const type = getReferenceType(reference);
-  const label = type === "theme" ? "Theme" : "Playlist";
-  const region = getReferenceRegion(reference);
-
-  return `${label}\n• ${getReferenceName(reference)}${region ? `\n  Region: ${region}` : ""}`;
 }
 
 function createBrowserAction(type: BrowserAction["type"]): BrowserAction {
@@ -266,6 +263,7 @@ export function MediaLibraryPage() {
   const [editWebUrlRenderMode, setEditWebUrlRenderMode] = useState<"iframe" | "browser">("iframe");
   const [editBrowserActions, setEditBrowserActions] = useState<BrowserAction[]>([]);
   const [editRssPreview, setEditRssPreview] = useState<RssPreviewState>(emptyRssPreview);
+  const [trashConflict, setTrashConflict] = useState<TrashConflictState | null>(null);
 
   async function loadMedia() {
     setIsBusy(true);
@@ -354,21 +352,7 @@ export function MediaLibraryPage() {
         if (response.status === 409) {
           const conflictBody = (await response.json()) as MediaConflictResponse;
           const references = conflictBody.references ?? [];
-          const referenceLines = references.map(formatMediaReference).join("\n\n");
-          const confirmRemove = window.confirm(
-            [
-              `${item.filename} is still used and cannot be moved to Trash safely.`,
-              referenceLines,
-              "",
-              "Remove it from all listed playlists/themes and move it to Trash?",
-              "Affected content may need republishing."
-            ].join("\n")
-          );
-
-          if (confirmRemove) {
-            await moveItemToTrash(item, true);
-          }
-
+          setTrashConflict({ item, references });
           return;
         }
 
@@ -376,7 +360,12 @@ export function MediaLibraryPage() {
       }
 
       const body = (await response.json()) as { message?: string };
-      setStatus(body.message ?? `${item.filename} moved to Trash.`);
+      setTrashConflict(null);
+      setStatus(
+        removeReferences && trashConflict
+          ? `Media moved to Trash. ${trashConflict.references.length} reference(s) were removed. Restore will not recreate those references.`
+          : body.message ?? `${item.filename} moved to Trash.`
+      );
       await refreshMediaWorkspace();
     } catch (error) {
       setStatus(error instanceof Error ? `Move to Trash failed: ${error.message}` : "Move to Trash failed.");
@@ -433,6 +422,19 @@ export function MediaLibraryPage() {
     } finally {
       setIsBusy(false);
     }
+  }
+
+  function renderReferenceSummary(reference: MediaUsageReference, index: number) {
+    const type = getReferenceType(reference);
+    const region = getReferenceRegion(reference);
+
+    return (
+      <article className="media-trash-reference" key={`${type}-${getReferenceId(reference)}-${region ?? index}`}>
+        <strong>{type === "theme" ? "Theme" : "Playlist"}</strong>
+        <span>{getReferenceName(reference)}</span>
+        {region ? <small>Region: {region}</small> : null}
+      </article>
+    );
   }
 
   async function retryNormalization(item: MediaItem) {
@@ -1207,6 +1209,44 @@ export function MediaLibraryPage() {
           </div>
         ) : null}
       </section>
+
+      {trashConflict ? (
+        <div className="media-trash-modal-backdrop" role="presentation">
+          <section
+            aria-labelledby="media-trash-conflict-title"
+            aria-modal="true"
+            className="media-trash-modal"
+            role="dialog"
+          >
+            <div>
+              <h3 id="media-trash-conflict-title">Media is still in use</h3>
+              <p>{trashConflict.item.filename} is used in:</p>
+            </div>
+            <div className="media-trash-reference-list">
+              {trashConflict.references.map((reference, index) => renderReferenceSummary(reference, index))}
+            </div>
+            <div className="media-trash-warning">
+              <strong>Continuing will remove this media from all listed references and move it to Trash.</strong>
+              <p>
+                Restoring the media later will restore only the media item. Removed playlist/theme references will NOT be restored automatically.
+              </p>
+            </div>
+            <div className="button-row">
+              <button disabled={isBusy} onClick={() => setTrashConflict(null)} type="button">
+                Cancel
+              </button>
+              <button
+                className="danger-button"
+                disabled={isBusy}
+                onClick={() => void moveItemToTrash(trashConflict.item, true)}
+                type="button"
+              >
+                Remove from {trashConflict.references.length} reference(s) and move to Trash
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }
