@@ -6,11 +6,20 @@ import type { MediaItem } from "../mediaTypes";
 import type { PlaylistItem, PlaylistRecord } from "../playlistTypes";
 
 const refreshIntervalMs = 10_000;
-type MediaFilter = "all" | "image" | "video" | "web_url" | "rss_feed" | "logo" | "background" | "recent" | "favorite";
+type MediaFilter = "all" | "image" | "video" | "web_url" | "rss_feed";
+type ViewMode = "library" | "editor";
+type PendingNavigation =
+  | {
+      type: "back";
+    }
+  | {
+      type: "open";
+      playlist: PlaylistRecord;
+    };
 
 function createPlaylistItem(media: MediaItem): PlaylistItem {
   return {
-    id: `item-${Date.now()}-${media.mediaId}`,
+    id: `item-${Date.now()}-${media.mediaId}-${Math.random().toString(16).slice(2)}`,
     mediaId: media.mediaId,
     type: media.type,
     file: media.filename,
@@ -23,91 +32,160 @@ function isMediaReadyForPlaylist(media: MediaItem) {
   return media.type !== "video" || !media.processingStatus || media.processingStatus === "ready";
 }
 
-function getMediaPlaybackFile(media: MediaItem) {
-  return media.filename;
+function getMediaTitle(media?: MediaItem, fallback?: string) {
+  return media?.title ?? media?.filename ?? fallback ?? "Missing media";
 }
 
-function getPlaylistItemLabel(item: PlaylistItem, media?: MediaItem) {
-  return media?.title ?? media?.filename ?? item.file;
+function getMediaTypeLabel(type: MediaItem["type"] | PlaylistItem["type"]) {
+  if (type === "web_url") {
+    return "Web Page";
+  }
+
+  if (type === "rss_feed") {
+    return "RSS Feed";
+  }
+
+  return type.charAt(0).toUpperCase() + type.slice(1);
 }
 
 function isPersistentWebUrlItem(item: PlaylistItem, media?: MediaItem) {
   return item.type === "web_url" && media?.webUrlPlaybackMode === "persistent";
 }
 
-function formatBytes(size: number) {
-  if (size < 1024) {
-    return `${size} B`;
+function getItemDurationSeconds(item: PlaylistItem, media?: MediaItem) {
+  if (isPersistentWebUrlItem(item, media)) {
+    return 0;
   }
 
-  if (size < 1024 * 1024) {
-    return `${Math.round(size / 1024)} KB`;
+  if (item.type === "video" && item.durationMode !== "clip") {
+    return Math.max(0, Math.round(media?.videoProfile?.durationSeconds ?? item.duration ?? 0));
   }
 
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  return Math.max(0, Math.round(item.duration ?? media?.duration ?? 0));
+}
+
+function formatDuration(seconds: number) {
+  if (seconds <= 0) {
+    return "0 sec";
+  }
+
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+
+  if (minutes === 0) {
+    return `${remainingSeconds} sec`;
+  }
+
+  if (remainingSeconds === 0) {
+    return `${minutes} min`;
+  }
+
+  return `${minutes} min ${remainingSeconds} sec`;
+}
+
+function formatUpdatedAt(value?: string) {
+  if (!value) {
+    return "Not saved yet";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString();
 }
 
 function mediaMatchesFilter(media: MediaItem, filter: MediaFilter) {
-  const name = media.filename.toLowerCase();
+  return filter === "all" || media.type === filter;
+}
 
-  if (filter === "image") {
-    return media.type === "image";
+function mediaMatchesSearch(media: MediaItem, searchTerm: string) {
+  const search = searchTerm.trim().toLowerCase();
+
+  if (!search) {
+    return true;
   }
 
-  if (filter === "video") {
-    return media.type === "video";
-  }
-
-  if (filter === "web_url") {
-    return media.type === "web_url";
-  }
-
-  if (filter === "rss_feed") {
-    return media.type === "rss_feed";
-  }
-
-  if (filter === "logo") {
-    return media.type === "image" && name.includes("logo");
-  }
-
-  if (filter === "background") {
-    return media.type === "image" && (name.includes("background") || name.includes("bg"));
-  }
-
-  return true;
+  return [media.filename, media.title, media.url]
+    .filter((value): value is string => typeof value === "string")
+    .some((value) => value.toLowerCase().includes(search));
 }
 
 export function PlaylistsPage() {
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [playlists, setPlaylists] = useState<PlaylistRecord[]>([]);
-  const [selectedPlaylistId, setSelectedPlaylistId] = useState("default");
-  const [playlist, setPlaylist] = useState<PlaylistRecord>({
-    id: "default",
-    name: "Default Playlist",
-    version: 0,
-    updatedAt: "",
-    items: []
-  });
-  const [status, setStatus] = useState("Loading workspace...");
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
+  const [playlist, setPlaylist] = useState<PlaylistRecord | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>("library");
+  const [status, setStatus] = useState("Loading playlists...");
   const [isBusy, setIsBusy] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [mediaSearch, setMediaSearch] = useState("");
   const [playlistSearch, setPlaylistSearch] = useState("");
   const [mediaFilter, setMediaFilter] = useState<MediaFilter>("all");
-  const [previewingVideoId, setPreviewingVideoId] = useState<string | null>(null);
-  const previewTimerRef = useRef<number | null>(null);
+  const [isAddMediaOpen, setIsAddMediaOpen] = useState(false);
+  const [selectedMediaIds, setSelectedMediaIds] = useState<string[]>([]);
+  const [pendingNavigation, setPendingNavigation] = useState<PendingNavigation | null>(null);
+  const [renameTarget, setRenameTarget] = useState<PlaylistRecord | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<PlaylistRecord | null>(null);
   const isDirtyRef = useRef(false);
-  const selectedPlaylistIdRef = useRef("default");
+  const selectedPlaylistIdRef = useRef<string | null>(null);
 
   function markDirty() {
     isDirtyRef.current = true;
     setIsDirty(true);
   }
 
-  function selectPlaylist(playlistRecord: PlaylistRecord) {
+  function getMediaById(mediaId: string) {
+    return mediaItems.find((media) => media.mediaId === mediaId || media.id === mediaId || media.filename === mediaId);
+  }
+
+  function formatPlaylistDuration(playlistRecord: PlaylistRecord) {
+    const hasPersistentItem = playlistRecord.items.some((item) => isPersistentWebUrlItem(item, getMediaById(item.mediaId)));
+    const totalSeconds = playlistRecord.items.reduce((total, item) => total + getItemDurationSeconds(item, getMediaById(item.mediaId)), 0);
+
+    if (hasPersistentItem && totalSeconds === 0) {
+      return "Persistent";
+    }
+
+    if (hasPersistentItem) {
+      return `${formatDuration(totalSeconds)} + persistent`;
+    }
+
+    return formatDuration(totalSeconds);
+  }
+
+  function openPlaylist(playlistRecord: PlaylistRecord, options: { discardDirty?: boolean } = {}) {
+    if (isDirtyRef.current && !options.discardDirty) {
+      setPendingNavigation({ type: "open", playlist: playlistRecord });
+      return;
+    }
+
     selectedPlaylistIdRef.current = playlistRecord.id;
     setSelectedPlaylistId(playlistRecord.id);
-    setPlaylist(playlistRecord);
+    setPlaylist({
+      ...playlistRecord,
+      items: [...playlistRecord.items]
+    });
+    isDirtyRef.current = false;
+    setIsDirty(false);
+    setViewMode("editor");
+  }
+
+  function backToLibrary(options: { discardDirty?: boolean } = {}) {
+    if (isDirtyRef.current && !options.discardDirty) {
+      setPendingNavigation({ type: "back" });
+      return;
+    }
+
+    setViewMode("library");
+    setIsAddMediaOpen(false);
+    setSelectedMediaIds([]);
+    isDirtyRef.current = false;
+    setIsDirty(false);
   }
 
   async function loadEditorData(options: { force?: boolean } = {}) {
@@ -154,68 +232,75 @@ export function PlaylistsPage() {
       }
 
       const playlistRecords = playlistBody as PlaylistRecord[];
-      const selectedPlaylist =
-        playlistRecords.find((item) => item.id === selectedPlaylistIdRef.current) ??
-        playlistRecords.find((item) => item.id === "default") ??
-        playlistRecords[0];
-
       setPlaylists(playlistRecords);
 
-      if (selectedPlaylist) {
-        selectPlaylist(selectedPlaylist);
+      if (selectedPlaylistIdRef.current) {
+        const currentPlaylist = playlistRecords.find((item) => item.id === selectedPlaylistIdRef.current);
+
+        if (currentPlaylist && viewMode === "editor") {
+          setPlaylist(currentPlaylist);
+        }
       }
 
       isDirtyRef.current = false;
       setIsDirty(false);
-      setStatus(mediaLoaded ? "Workspace loaded." : "Playlists loaded. Media library unavailable.");
+      setStatus(mediaLoaded ? "Playlist library loaded." : "Playlists loaded. Media library unavailable.");
     } catch (error) {
-      setStatus(error instanceof Error ? `Unable to load workspace: ${error.message}` : "Unable to load workspace.");
+      setStatus(error instanceof Error ? `Unable to load playlists: ${error.message}` : "Unable to load playlists.");
     } finally {
       setIsBusy(false);
     }
   }
 
-  function addMediaItem(media: MediaItem, index = playlist.items.length) {
-    if (!isMediaReadyForPlaylist(media)) {
-      setStatus(
-        media.processingStatus === "failed"
-          ? `Cannot add ${media.filename}: video normalization failed.`
-          : `Cannot add ${media.filename}: video is still processing.`
-      );
+  function addMediaItems(items: MediaItem[]) {
+    const readyItems = items.filter(isMediaReadyForPlaylist);
+    const blockedCount = items.length - readyItems.length;
+
+    if (readyItems.length === 0) {
+      setStatus(blockedCount > 0 ? "Selected videos are still processing or failed normalization." : "No media selected.");
       return;
     }
 
     setPlaylist((currentPlaylist) => {
-      const items = [...currentPlaylist.items];
-      items.splice(index, 0, createPlaylistItem(media));
+      if (!currentPlaylist) {
+        return currentPlaylist;
+      }
 
       return {
         ...currentPlaylist,
-        items
+        items: [...currentPlaylist.items, ...readyItems.map(createPlaylistItem)]
       };
     });
     markDirty();
+    setIsAddMediaOpen(false);
+    setSelectedMediaIds([]);
+    setStatus(
+      blockedCount > 0
+        ? `Added ${readyItems.length} item(s). ${blockedCount} processing video(s) were skipped.`
+        : `Added ${readyItems.length} item(s).`
+    );
   }
 
   function updatePlaylistName(name: string) {
-    setPlaylist((currentPlaylist) => ({
-      ...currentPlaylist,
-      name
-    }));
+    setPlaylist((currentPlaylist) => (currentPlaylist ? { ...currentPlaylist, name } : currentPlaylist));
     markDirty();
   }
 
   function removeItem(id: string) {
-    setPlaylist((currentPlaylist) => ({
-      ...currentPlaylist,
-      items: currentPlaylist.items.filter((item) => item.id !== id)
-    }));
+    setPlaylist((currentPlaylist) =>
+      currentPlaylist
+        ? {
+            ...currentPlaylist,
+            items: currentPlaylist.items.filter((item) => item.id !== id)
+          }
+        : currentPlaylist
+    );
     markDirty();
   }
 
   function reorderItem(fromIndex: number, toIndex: number) {
     setPlaylist((currentPlaylist) => {
-      if (fromIndex === toIndex || fromIndex < 0 || fromIndex >= currentPlaylist.items.length) {
+      if (!currentPlaylist || fromIndex === toIndex || fromIndex < 0 || fromIndex >= currentPlaylist.items.length) {
         return currentPlaylist;
       }
 
@@ -232,46 +317,58 @@ export function PlaylistsPage() {
   }
 
   function updateDuration(id: string, duration: number) {
-    setPlaylist((currentPlaylist) => ({
-      ...currentPlaylist,
-      items: currentPlaylist.items.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              duration: Math.max(duration, 1),
-              durationMode: item.type === "video" ? "clip" : item.durationMode
-            }
-          : item
-      )
-    }));
+    setPlaylist((currentPlaylist) =>
+      currentPlaylist
+        ? {
+            ...currentPlaylist,
+            items: currentPlaylist.items.map((item) =>
+              item.id === id
+                ? {
+                    ...item,
+                    duration: Math.max(duration, 1),
+                    durationMode: item.type === "video" ? "clip" : item.durationMode
+                  }
+                : item
+            )
+          }
+        : currentPlaylist
+    );
     markDirty();
   }
 
   function updateVideoDurationMode(id: string, durationMode: "auto" | "clip") {
-    setPlaylist((currentPlaylist) => ({
-      ...currentPlaylist,
-      items: currentPlaylist.items.map((item) =>
-        item.id === id && item.type === "video" ? { ...item, durationMode } : item
-      )
-    }));
+    setPlaylist((currentPlaylist) =>
+      currentPlaylist
+        ? {
+            ...currentPlaylist,
+            items: currentPlaylist.items.map((item) =>
+              item.id === id && item.type === "video" ? { ...item, durationMode } : item
+            )
+          }
+        : currentPlaylist
+    );
     markDirty();
   }
 
-  async function savePlaylist() {
+  async function savePlaylist(currentPlaylist = playlist) {
+    if (!currentPlaylist) {
+      return null;
+    }
+
     setIsBusy(true);
     setStatus("Saving playlist...");
 
     try {
       const endpoint =
-        playlist.id === "default"
+        currentPlaylist.id === "default"
           ? apiUrl("/api/playlist")
-          : apiUrl(`/api/playlists/${encodeURIComponent(playlist.id)}`);
+          : apiUrl(`/api/playlists/${encodeURIComponent(currentPlaylist.id)}`);
       const response = await fetch(endpoint, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify(playlist)
+        body: JSON.stringify(currentPlaylist)
       });
 
       if (!response.ok) {
@@ -280,23 +377,30 @@ export function PlaylistsPage() {
 
       const body = (await response.json()) as PlaylistRecord;
       const savedPlaylist =
-        playlist.id === "default"
+        currentPlaylist.id === "default"
           ? {
               ...body,
               id: "default",
-              name: body.name ?? playlist.name
+              name: body.name ?? currentPlaylist.name
             }
           : body;
-      selectPlaylist(savedPlaylist);
+
+      setPlaylist(savedPlaylist);
       setPlaylists((currentPlaylists) =>
-        currentPlaylists.map((item) => (item.id === savedPlaylist.id ? savedPlaylist : item))
+        currentPlaylists.some((item) => item.id === savedPlaylist.id)
+          ? currentPlaylists.map((item) => (item.id === savedPlaylist.id ? savedPlaylist : item))
+          : [...currentPlaylists, savedPlaylist]
       );
+      selectedPlaylistIdRef.current = savedPlaylist.id;
+      setSelectedPlaylistId(savedPlaylist.id);
       isDirtyRef.current = false;
       setIsDirty(false);
       setStatus(`Saved ${savedPlaylist.name}.`);
       window.dispatchEvent(new CustomEvent("narrowcasting:playlist-saved"));
+      return savedPlaylist;
     } catch (error) {
       setStatus(error instanceof Error ? `Save failed: ${error.message}` : "Save failed.");
+      return null;
     } finally {
       setIsBusy(false);
     }
@@ -320,37 +424,55 @@ export function PlaylistsPage() {
       }
 
       const body = (await response.json()) as PlaylistRecord;
-      selectPlaylist(body);
       setPlaylists((currentPlaylists) => [...currentPlaylists, body]);
-      isDirtyRef.current = false;
-      setIsDirty(false);
+      openPlaylist(body, { discardDirty: true });
       setStatus(`${body.name} created.`);
+      return body;
     } catch (error) {
       setStatus(error instanceof Error ? `Create failed: ${error.message}` : "Create failed.");
+      return null;
     } finally {
       setIsBusy(false);
     }
   }
 
-  async function duplicatePlaylist() {
-    await createPlaylist(`${playlist.name} Copy`, playlist.items);
+  async function duplicatePlaylist(source: PlaylistRecord) {
+    const duplicatedItems = source.items.map((item) => ({
+      ...item,
+      id: `item-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    }));
+    await createPlaylist(`${source.name} Copy`, duplicatedItems);
   }
 
-  async function deleteSelectedPlaylist() {
-    if (playlist.id === "default") {
-      setStatus("Default playlist cannot be deleted.");
+  async function renamePlaylist() {
+    if (!renameTarget) {
       return;
     }
 
-    if (!window.confirm(`Delete playlist "${playlist.name}"?`)) {
+    const name = renameValue.trim();
+
+    if (!name) {
+      setStatus("Playlist name cannot be empty.");
+      return;
+    }
+
+    const renamedPlaylist = { ...renameTarget, name };
+    setRenameTarget(null);
+    await savePlaylist(renamedPlaylist);
+  }
+
+  async function deletePlaylist(target: PlaylistRecord) {
+    if (target.id === "default") {
+      setStatus("Default playlist cannot be deleted.");
+      setDeleteTarget(null);
       return;
     }
 
     setIsBusy(true);
-    setStatus(`Deleting ${playlist.name}...`);
+    setStatus(`Deleting ${target.name}...`);
 
     try {
-      const response = await fetch(apiUrl(`/api/playlists/${encodeURIComponent(playlist.id)}`), {
+      const response = await fetch(apiUrl(`/api/playlists/${encodeURIComponent(target.id)}`), {
         method: "DELETE"
       });
 
@@ -358,17 +480,19 @@ export function PlaylistsPage() {
         throw new Error(await readApiError(response));
       }
 
-      const nextPlaylists = playlists.filter((item) => item.id !== playlist.id);
-      const nextPlaylist = nextPlaylists.find((item) => item.id === "default") ?? nextPlaylists[0];
-      setPlaylists(nextPlaylists);
+      setPlaylists((currentPlaylists) => currentPlaylists.filter((item) => item.id !== target.id));
 
-      if (nextPlaylist) {
-        selectPlaylist(nextPlaylist);
+      if (selectedPlaylistIdRef.current === target.id) {
+        selectedPlaylistIdRef.current = null;
+        setSelectedPlaylistId(null);
+        setPlaylist(null);
+        setViewMode("library");
+        isDirtyRef.current = false;
+        setIsDirty(false);
       }
 
-      isDirtyRef.current = false;
-      setIsDirty(false);
-      setStatus(`${playlist.name} deleted.`);
+      setDeleteTarget(null);
+      setStatus(`${target.name} deleted.`);
       window.dispatchEvent(new CustomEvent("narrowcasting:playlist-saved"));
     } catch (error) {
       setStatus(error instanceof Error ? `Delete failed: ${error.message}` : "Delete failed.");
@@ -377,60 +501,50 @@ export function PlaylistsPage() {
     }
   }
 
-  function getMediaById(mediaId: string) {
-    return mediaItems.find((media) => media.mediaId === mediaId || media.id === mediaId || media.filename === mediaId);
-  }
-
-  function handleMediaDragStart(event: DragEvent<HTMLElement>, media: MediaItem) {
-    if (!isMediaReadyForPlaylist(media)) {
-      event.preventDefault();
-      return;
-    }
-
-    event.dataTransfer.effectAllowed = "copy";
-    event.dataTransfer.setData("application/x-media-id", media.mediaId);
-  }
-
   function handlePlaylistItemDragStart(event: DragEvent<HTMLElement>, index: number) {
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("application/x-playlist-index", String(index));
   }
 
-  function handlePlaylistDrop(event: DragEvent<HTMLElement>, index = playlist.items.length) {
+  function handlePlaylistItemDrop(event: DragEvent<HTMLElement>, index: number) {
     event.preventDefault();
-    const mediaId = event.dataTransfer.getData("application/x-media-id");
     const draggedIndex = event.dataTransfer.getData("application/x-playlist-index");
-
-    if (mediaId) {
-      const media = getMediaById(mediaId);
-
-      if (media) {
-        addMediaItem(media, index);
-      }
-
-      return;
-    }
 
     if (draggedIndex) {
       reorderItem(Number(draggedIndex), index);
     }
   }
 
-  function startVideoPreview(mediaId: string) {
-    if (previewTimerRef.current) {
-      window.clearTimeout(previewTimerRef.current);
+  async function resolvePendingNavigation(action: "cancel" | "discard" | "save") {
+    const pending = pendingNavigation;
+
+    if (!pending) {
+      return;
     }
 
-    previewTimerRef.current = window.setTimeout(() => setPreviewingVideoId(mediaId), 500);
-  }
-
-  function stopVideoPreview() {
-    if (previewTimerRef.current) {
-      window.clearTimeout(previewTimerRef.current);
-      previewTimerRef.current = null;
+    if (action === "cancel") {
+      setPendingNavigation(null);
+      return;
     }
 
-    setPreviewingVideoId(null);
+    if (action === "save") {
+      const saved = await savePlaylist();
+
+      if (!saved) {
+        return;
+      }
+    } else {
+      isDirtyRef.current = false;
+      setIsDirty(false);
+    }
+
+    setPendingNavigation(null);
+
+    if (pending.type === "back") {
+      backToLibrary({ discardDirty: true });
+    } else {
+      openPlaylist(pending.playlist, { discardDirty: true });
+    }
   }
 
   useEffect(() => {
@@ -444,258 +558,412 @@ export function PlaylistsPage() {
     };
   }, []);
 
-  const filteredMedia = useMemo(() => {
-    const search = mediaSearch.trim().toLowerCase();
-    const media = mediaItems
-      .filter((item) => mediaMatchesFilter(item, mediaFilter))
-      .filter((item) =>
-        search
-          ? [item.filename, item.title, item.url]
-              .filter((value): value is string => typeof value === "string")
-              .some((value) => value.toLowerCase().includes(search))
-          : true
-      );
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!isDirtyRef.current) {
+        return;
+      }
 
-    return mediaFilter === "recent" ? media.slice().reverse() : media;
-  }, [mediaFilter, mediaItems, mediaSearch]);
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, []);
+
+  const filteredMedia = useMemo(
+    () => mediaItems.filter((item) => mediaMatchesFilter(item, mediaFilter)).filter((item) => mediaMatchesSearch(item, mediaSearch)),
+    [mediaFilter, mediaItems, mediaSearch]
+  );
   const filteredPlaylists = playlists.filter((item) =>
     playlistSearch.trim() ? item.name.toLowerCase().includes(playlistSearch.trim().toLowerCase()) : true
   );
-  const filterButtons: Array<{ label: string; value: MediaFilter; disabled?: boolean }> = [
+  const selectedMedia = selectedMediaIds
+    .map((mediaId) => getMediaById(mediaId))
+    .filter((item): item is MediaItem => Boolean(item));
+  const filterButtons: Array<{ label: string; value: MediaFilter }> = [
     { label: "All", value: "all" },
     { label: "Images", value: "image" },
     { label: "Videos", value: "video" },
-    { label: "Web", value: "web_url" },
-    { label: "RSS", value: "rss_feed" },
-    { label: "Logos", value: "logo" },
-    { label: "Backgrounds", value: "background" },
-    { label: "Recent", value: "recent" },
-    { label: "Favorites", value: "favorite", disabled: true }
+    { label: "Web Pages", value: "web_url" },
+    { label: "RSS Feeds", value: "rss_feed" }
   ];
 
-  return (
-    <section className="page-section operator-section" id="playlists">
-      <div className="section-header">
-        <div>
-          <h2>Playlists</h2>
-          <p>Build playlists from media with direct drag and drop.</p>
-        </div>
-        <div className="button-row">
-          <button disabled={isBusy} onClick={() => void loadEditorData({ force: true })} type="button">
-            Refresh
-          </button>
-          <button disabled={isBusy} onClick={() => void savePlaylist()} type="button">
-            Save Playlist
-          </button>
-        </div>
-      </div>
+  function renderMediaPreview(media?: MediaItem, fallbackType: PlaylistItem["type"] = "image") {
+    if (media?.type === "image") {
+      return <img alt="" src={apiUrl(`/media/${encodeURIComponent(media.filename)}`)} />;
+    }
 
-      <p className="status-text">
-        {status}
-        {isDirty ? " Unsaved changes." : ""}
-      </p>
+    if (media?.type === "video" && media.thumbnailFilename) {
+      return <img alt="" src={apiUrl(`/thumbnails/${encodeURIComponent(media.thumbnailFilename)}`)} />;
+    }
 
-      <div className="operator-workspace">
-        <section className="operator-panel media-browser" aria-label="Media library">
-          <div className="operator-panel-header">
-            <h3>Media Library</h3>
-            <span>{filteredMedia.length} shown</span>
-          </div>
-          <input
-            aria-label="Search media"
-            onChange={(event) => setMediaSearch(event.target.value)}
-            placeholder="Search media"
-            type="search"
-            value={mediaSearch}
-          />
-          <div className="operator-filter-row">
-            {filterButtons.map((button) => (
-              <button
-                className={mediaFilter === button.value ? "operator-chip active" : "operator-chip"}
-                disabled={button.disabled}
-                key={button.value}
-                onClick={() => setMediaFilter(button.value)}
-                type="button"
-              >
-                {button.label}
-              </button>
-            ))}
-          </div>
-          <div className="operator-media-grid">
-            {filteredMedia.map((media) => (
-              <article
-                className={isMediaReadyForPlaylist(media) ? "operator-media-card" : "operator-media-card disabled"}
-                draggable={isMediaReadyForPlaylist(media)}
-                key={media.mediaId}
-                onDragStart={(event) => handleMediaDragStart(event, media)}
-                onMouseEnter={() => media.type === "video" && startVideoPreview(media.mediaId)}
-                onMouseLeave={stopVideoPreview}
-              >
-                <div className="operator-thumb">
-                  {media.type === "image" ? (
-                    <img alt="" src={apiUrl(`/media/${encodeURIComponent(media.filename)}`)} />
-                  ) : previewingVideoId === media.mediaId ? (
-                    <video autoPlay muted playsInline src={apiUrl(`/media/${encodeURIComponent(getMediaPlaybackFile(media))}`)} />
-                  ) : (
-                    <div className="operator-video-mark">Play</div>
-                  )}
+    const type = media?.type ?? fallbackType;
+    return <span>{getMediaTypeLabel(type)}</span>;
+  }
+
+  function renderPlaylistCard(playlistRecord: PlaylistRecord) {
+    const previews = playlistRecord.items
+      .slice(0, 4)
+      .map((item) => getMediaById(item.mediaId) ?? getMediaById(item.file));
+
+    return (
+      <article className="playlist-library-card" key={playlistRecord.id}>
+        <button className="playlist-library-open" onClick={() => openPlaylist(playlistRecord)} type="button">
+          <div className="playlist-preview-strip" aria-hidden="true">
+            {previews.length > 0 ? (
+              previews.map((media, index) => (
+                <div className="playlist-preview-thumb" key={`${playlistRecord.id}-${index}`}>
+                  {renderMediaPreview(media, playlistRecord.items[index]?.type)}
                 </div>
-                <strong>{media.filename}</strong>
-                <span>
-                  {media.type} · {formatBytes(media.size)}
-                </span>
-                {media.type === "video" && !isMediaReadyForPlaylist(media) ? (
-                  <span>{media.processingStatus === "failed" ? "Normalization failed" : "Processing video"}</span>
-                ) : null}
-              </article>
-            ))}
+              ))
+            ) : (
+              <div className="playlist-preview-thumb empty">Empty</div>
+            )}
           </div>
-        </section>
-
-        <section className="operator-panel playlist-browser" aria-label="Playlists">
-          <div className="operator-panel-header">
-            <h3>Playlists</h3>
-            <span>{playlists.length}</span>
+          <div className="playlist-library-main">
+            <strong>{playlistRecord.name}</strong>
+            <span>
+              {playlistRecord.items.length} item(s) - {formatPlaylistDuration(playlistRecord)}
+            </span>
+            <span>Last modified: {formatUpdatedAt(playlistRecord.updatedAt)}</span>
           </div>
-          <input
-            aria-label="Search playlists"
-            onChange={(event) => setPlaylistSearch(event.target.value)}
-            placeholder="Search playlists"
-            type="search"
-            value={playlistSearch}
-          />
-          <div className="operator-action-grid">
-            <button disabled={isBusy} onClick={() => void createPlaylist()} type="button">
-              New Playlist
+        </button>
+        <details className="playlist-card-menu">
+          <summary aria-label={`Actions for ${playlistRecord.name}`}>...</summary>
+          <div>
+            <button onClick={() => openPlaylist(playlistRecord)} type="button">
+              Open
             </button>
-            <button disabled={isBusy} onClick={() => void duplicatePlaylist()} type="button">
+            <button disabled={isBusy} onClick={() => void duplicatePlaylist(playlistRecord)} type="button">
               Duplicate
             </button>
-            <button disabled={isBusy || playlist.id === "default"} onClick={() => void deleteSelectedPlaylist()} type="button">
+            <button
+              disabled={isBusy}
+              onClick={() => {
+                setRenameTarget(playlistRecord);
+                setRenameValue(playlistRecord.name);
+              }}
+              type="button"
+            >
+              Rename
+            </button>
+            <button disabled={isBusy || playlistRecord.id === "default"} onClick={() => setDeleteTarget(playlistRecord)} type="button">
               Delete
             </button>
           </div>
-          <div className="operator-list">
-            {filteredPlaylists.map((item) => (
+        </details>
+      </article>
+    );
+  }
+
+  function renderPlaylistItem(item: PlaylistItem, index: number) {
+    const media = getMediaById(item.mediaId) ?? getMediaById(item.file);
+
+    return (
+      <article
+        className="playlist-editor-row"
+        draggable
+        key={item.id}
+        onDragOver={(event) => event.preventDefault()}
+        onDragStart={(event) => handlePlaylistItemDragStart(event, index)}
+        onDrop={(event) => handlePlaylistItemDrop(event, index)}
+      >
+        <span className="operator-drag-handle" title="Drag to reorder">
+          Drag
+        </span>
+        <div className="playlist-editor-thumb">{renderMediaPreview(media, item.type)}</div>
+        <div className="operator-item-main">
+          <strong>{getMediaTitle(media, item.file)}</strong>
+          <span>
+            {getMediaTypeLabel(item.type)}
+            {item.type === "video"
+              ? item.durationMode === "clip"
+                ? ` - ${formatDuration(item.duration)}`
+                : " - full video"
+              : isPersistentWebUrlItem(item, media)
+                ? " - persistent until schedule changes"
+                : ` - ${formatDuration(item.duration)}`}
+          </span>
+        </div>
+        {item.type === "video" ? (
+          <fieldset className="operator-duration-options">
+            <legend>Duration</legend>
+            <label>
+              <input
+                checked={item.durationMode !== "clip"}
+                name={`duration-mode-${item.id}`}
+                onChange={() => updateVideoDurationMode(item.id, "auto")}
+                type="radio"
+              />
+              Full video
+            </label>
+            <label>
+              <input
+                checked={item.durationMode === "clip"}
+                name={`duration-mode-${item.id}`}
+                onChange={() => updateVideoDurationMode(item.id, "clip")}
+                type="radio"
+              />
+              Custom:
+              <input
+                disabled={item.durationMode !== "clip"}
+                min="1"
+                onChange={(event) => updateDuration(item.id, Number(event.target.value))}
+                type="number"
+                value={item.duration}
+              />
+              sec
+            </label>
+          </fieldset>
+        ) : isPersistentWebUrlItem(item, media) ? (
+          <span className="playlist-persistent-note">No playlist duration</span>
+        ) : (
+          <label className="playlist-duration-field">
+            Duration
+            <input
+              min="1"
+              onChange={(event) => updateDuration(item.id, Number(event.target.value))}
+              type="number"
+              value={item.duration}
+            />
+          </label>
+        )}
+        <button disabled={isBusy} onClick={() => removeItem(item.id)} type="button">
+          Remove
+        </button>
+      </article>
+    );
+  }
+
+  function renderMediaPickerCard(media: MediaItem) {
+    const selected = selectedMediaIds.includes(media.mediaId);
+    const disabled = !isMediaReadyForPlaylist(media);
+
+    return (
+      <button
+        className={selected ? "playlist-picker-card selected" : "playlist-picker-card"}
+        disabled={disabled}
+        key={media.mediaId}
+        onClick={() =>
+          setSelectedMediaIds((currentIds) =>
+            currentIds.includes(media.mediaId)
+              ? currentIds.filter((mediaId) => mediaId !== media.mediaId)
+              : [...currentIds, media.mediaId]
+          )
+        }
+        type="button"
+      >
+        <div className="playlist-picker-thumb">{renderMediaPreview(media)}</div>
+        <strong>{getMediaTitle(media)}</strong>
+        <span>
+          {getMediaTypeLabel(media.type)}
+          {disabled ? " - processing" : ""}
+        </span>
+      </button>
+    );
+  }
+
+  return (
+    <section className="page-section operator-section" id="playlists">
+      {viewMode === "library" ? (
+        <>
+          <div className="section-header">
+            <div>
+              <h2>Playlists</h2>
+              <p>Manage reusable playback sequences.</p>
+            </div>
+            <div className="button-row">
+              <button disabled={isBusy} onClick={() => void loadEditorData({ force: true })} type="button">
+                Refresh
+              </button>
+              <button className="primary-button" disabled={isBusy} onClick={() => void createPlaylist()} type="button">
+                + New Playlist
+              </button>
+            </div>
+          </div>
+
+          <p className="status-text">{status}</p>
+
+          <div className="playlist-library-toolbar">
+            <input
+              aria-label="Search playlists"
+              onChange={(event) => setPlaylistSearch(event.target.value)}
+              placeholder="Search playlists"
+              type="search"
+              value={playlistSearch}
+            />
+            <span>{filteredPlaylists.length} playlist(s)</span>
+          </div>
+
+          <div className="playlist-library-grid">
+            {filteredPlaylists.length > 0 ? (
+              filteredPlaylists.map(renderPlaylistCard)
+            ) : (
+              <p className="operator-empty">No playlists found. Create a new playlist to start arranging media.</p>
+            )}
+          </div>
+        </>
+      ) : playlist ? (
+        <>
+          <div className="playlist-editor-header">
+            <button className="text-button" onClick={() => backToLibrary()} type="button">
+              Back to Playlists
+            </button>
+            <div className="playlist-editor-title-row">
+              <input
+                aria-label="Playlist name"
+                className="operator-title-input"
+                onChange={(event) => updatePlaylistName(event.target.value)}
+                value={playlist.name}
+              />
+              <span>
+                {playlist.items.length} item(s) - {formatPlaylistDuration(playlist)}
+              </span>
+            </div>
+            <div className="button-row">
+              <button disabled={isBusy} onClick={() => setIsAddMediaOpen(true)} type="button">
+                Add Media
+              </button>
+              <button className="primary-button" disabled={isBusy || !isDirty} onClick={() => void savePlaylist()} type="button">
+                Save Changes
+              </button>
+            </div>
+          </div>
+
+          <p className="status-text">
+            {status}
+            {isDirty ? " Unsaved changes." : ""}
+          </p>
+
+          <div className="playlist-editor-list">
+            {playlist.items.length > 0 ? (
+              playlist.items.map(renderPlaylistItem)
+            ) : (
+              <p className="operator-empty">No media in this playlist yet. Use Add Media to choose items.</p>
+            )}
+          </div>
+        </>
+      ) : null}
+
+      {isAddMediaOpen ? (
+        <div className="media-trash-modal-backdrop" role="presentation">
+          <section aria-modal="true" className="media-trash-modal playlist-media-modal" role="dialog">
+            <div className="playlist-modal-header">
+              <div>
+                <h3>Add media</h3>
+                <p>Select one or more media items to append to this playlist.</p>
+              </div>
               <button
-                className={item.id === selectedPlaylistId ? "operator-list-item active" : "operator-list-item"}
-                key={item.id}
+                aria-label="Close add media"
                 onClick={() => {
-                  selectPlaylist(item);
-                  isDirtyRef.current = false;
-                  setIsDirty(false);
+                  setIsAddMediaOpen(false);
+                  setSelectedMediaIds([]);
                 }}
                 type="button"
               >
-                <strong>{item.name}</strong>
-                <span>{item.items.length} item(s)</span>
+                Close
               </button>
-            ))}
-          </div>
-        </section>
-
-        <section
-          className="operator-panel playlist-content-panel"
-          aria-label="Playlist content"
-          onDragOver={(event) => event.preventDefault()}
-          onDrop={(event) => handlePlaylistDrop(event)}
-        >
-          <div className="operator-panel-header">
-            <div>
-              <h3>{playlist.name}</h3>
-              <span>Version {playlist.version}</span>
             </div>
-            <button disabled={isBusy} onClick={() => void savePlaylist()} type="button">
-              Save
-            </button>
-          </div>
-          <input
-            aria-label="Playlist name"
-            className="operator-title-input"
-            onChange={(event) => updatePlaylistName(event.target.value)}
-            value={playlist.name}
-          />
-          <div className="operator-drop-zone">
-            Drop media here
-          </div>
-          <div className="operator-timeline">
-            {playlist.items.length === 0 ? <p className="operator-empty">No media yet. Drag media into this playlist.</p> : null}
-            {playlist.items.map((item, index) => {
-              const media = getMediaById(item.mediaId) ?? getMediaById(item.file);
-
-              return (
-                <article
-                  className="operator-timeline-row"
-                  draggable
-                  key={item.id}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDragStart={(event) => handlePlaylistItemDragStart(event, index)}
-                  onDrop={(event) => handlePlaylistDrop(event, index)}
+            <input
+              aria-label="Search media"
+              onChange={(event) => setMediaSearch(event.target.value)}
+              placeholder="Search media"
+              type="search"
+              value={mediaSearch}
+            />
+            <div className="media-category-tabs">
+              {filterButtons.map((button) => (
+                <button
+                  className={mediaFilter === button.value ? "active" : ""}
+                  key={button.value}
+                  onClick={() => setMediaFilter(button.value)}
+                  type="button"
                 >
-                  <span className="operator-drag-handle">Drag</span>
-                  <div className="operator-item-main">
-                    <strong>{getPlaylistItemLabel(item, media)}</strong>
-                    <span>
-                      {item.type}
-                      {item.type === "video"
-                        ? " - video duration from file"
-                        : isPersistentWebUrlItem(item, media)
-                          ? " - persistent until schedule changes"
-                          : ""}
-                    </span>
-                  </div>
-                  {item.type === "video" ? (
-                    <fieldset className="operator-duration-options">
-                      <legend>Afspeelduur</legend>
-                      <label>
-                        <input
-                          checked={item.durationMode !== "clip"}
-                          name={`duration-mode-${item.id}`}
-                          onChange={() => updateVideoDurationMode(item.id, "auto")}
-                          type="radio"
-                        />
-                        Volledige video
-                      </label>
-                      <label>
-                        <input
-                          checked={item.durationMode === "clip"}
-                          name={`duration-mode-${item.id}`}
-                          onChange={() => updateVideoDurationMode(item.id, "clip")}
-                          type="radio"
-                        />
-                        Aangepaste duur:
-                        <input
-                          disabled={item.durationMode !== "clip"}
-                          min="1"
-                          onChange={(event) => updateDuration(item.id, Number(event.target.value))}
-                          type="number"
-                          value={item.duration}
-                        />
-                        seconden
-                      </label>
-                    </fieldset>
-                  ) : isPersistentWebUrlItem(item, media) ? (
-                    <p className="operator-empty">Persistent Web URL playback has no playlist duration.</p>
-                  ) : (
-                    <label>
-                      Duration
-                      <input
-                        min="1"
-                        onChange={(event) => updateDuration(item.id, Number(event.target.value))}
-                        type="number"
-                        value={item.duration}
-                      />
-                    </label>
-                  )}
-                  <button disabled={isBusy} onClick={() => removeItem(item.id)} type="button">
-                    Remove
-                  </button>
-                </article>
-              );
-            })}
-          </div>
-        </section>
-      </div>
+                  {button.label}
+                </button>
+              ))}
+            </div>
+            <div className="playlist-picker-grid">
+              {filteredMedia.length > 0 ? filteredMedia.map(renderMediaPickerCard) : <p className="operator-empty">No media found.</p>}
+            </div>
+            <div className="media-trash-modal-actions">
+              <button
+                onClick={() => {
+                  setIsAddMediaOpen(false);
+                  setSelectedMediaIds([]);
+                }}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button className="primary-button" disabled={selectedMedia.length === 0} onClick={() => addMediaItems(selectedMedia)} type="button">
+                Add selected media
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {pendingNavigation ? (
+        <div className="media-trash-modal-backdrop" role="presentation">
+          <section aria-modal="true" className="media-trash-modal" role="dialog">
+            <h3>Unsaved changes</h3>
+            <p>This playlist has changes that have not been saved.</p>
+            <div className="media-trash-modal-actions">
+              <button onClick={() => void resolvePendingNavigation("cancel")} type="button">
+                Cancel
+              </button>
+              <button className="danger-button" onClick={() => void resolvePendingNavigation("discard")} type="button">
+                Discard Changes
+              </button>
+              <button className="primary-button" disabled={isBusy} onClick={() => void resolvePendingNavigation("save")} type="button">
+                Save and Continue
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {renameTarget ? (
+        <div className="media-trash-modal-backdrop" role="presentation">
+          <section aria-modal="true" className="media-trash-modal" role="dialog">
+            <h3>Rename playlist</h3>
+            <input
+              aria-label="Playlist name"
+              onChange={(event) => setRenameValue(event.target.value)}
+              type="text"
+              value={renameValue}
+            />
+            <div className="media-trash-modal-actions">
+              <button onClick={() => setRenameTarget(null)} type="button">
+                Cancel
+              </button>
+              <button className="primary-button" disabled={isBusy || !renameValue.trim()} onClick={() => void renamePlaylist()} type="button">
+                Rename
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {deleteTarget ? (
+        <div className="media-trash-modal-backdrop" role="presentation">
+          <section aria-modal="true" className="media-trash-modal" role="dialog">
+            <h3>Delete playlist</h3>
+            <p>Delete "{deleteTarget.name}"? This does not delete media from the Media Library.</p>
+            <div className="media-trash-modal-actions">
+              <button onClick={() => setDeleteTarget(null)} type="button">
+                Cancel
+              </button>
+              <button className="danger-button" disabled={isBusy} onClick={() => void deletePlaylist(deleteTarget)} type="button">
+                Delete Playlist
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }
