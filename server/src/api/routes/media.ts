@@ -148,13 +148,24 @@ export const mediaRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post<{ Body: { removeReferences?: boolean }; Params: { id: string } }>("/api/media/:id/trash", async (request, reply) => {
-    const validation = await validateMediaDelete(request.params.id);
+    const usage = await analyzeMediaUsage(request.params.id);
 
-    if (!validation.ok && !request.body?.removeReferences) {
-      return conflict(reply, validation.error);
+    if (!usage) {
+      return notFound(reply, "media item not found", "MEDIA_NOT_FOUND");
     }
 
-    const removedReferences = !validation.ok && request.body?.removeReferences
+    if (!usage.canTrash && !request.body?.removeReferences) {
+      return conflict(reply, {
+        error: "validation_error",
+        code: "REFERENCE_IN_USE",
+        message: "Media cannot be moved to Trash because it is still referenced.",
+        objectType: "Media",
+        objectId: usage.mediaId,
+        references: usage.references
+      });
+    }
+
+    const removedReferences = !usage.canTrash && request.body?.removeReferences
       ? await removeMediaFromAllReferences(request.params.id)
       : null;
     const item = await moveMediaToTrash(request.params.id);

@@ -175,7 +175,8 @@ export async function analyzeMediaUsage(reference: string): Promise<MediaUsageAn
         type: "theme",
         id: theme.id,
         name: theme.name,
-        field: "backgroundMediaId"
+        field: "backgroundMediaId",
+        regionName: "Background"
       });
     }
 

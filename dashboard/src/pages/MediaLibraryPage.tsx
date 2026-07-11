@@ -17,11 +17,14 @@ const defaultRssStyle: Required<RssStyle> = {
 };
 
 interface MediaUsageReference {
-  type: "playlist" | "theme";
-  id: string;
-  name: string;
+  type?: "playlist" | "theme";
+  id?: string;
+  name?: string;
   field?: string;
   regionName?: string;
+  objectType?: string;
+  objectId?: string;
+  objectName?: string;
 }
 
 interface MediaConflictResponse {
@@ -40,6 +43,43 @@ function formatFileSize(size: number) {
   }
 
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function getReferenceType(reference: MediaUsageReference) {
+  const type = reference.type ?? reference.objectType?.toLowerCase();
+  return type === "theme" ? "theme" : "playlist";
+}
+
+function getReferenceId(reference: MediaUsageReference) {
+  return reference.id ?? reference.objectId ?? "unknown";
+}
+
+function getReferenceName(reference: MediaUsageReference) {
+  const type = getReferenceType(reference);
+  const id = getReferenceId(reference);
+  const name = reference.name ?? reference.objectName;
+
+  if (name) {
+    return name;
+  }
+
+  return type === "theme" ? `Missing Theme (${id})` : `Missing Playlist (${id})`;
+}
+
+function getReferenceRegion(reference: MediaUsageReference) {
+  if (reference.regionName) {
+    return reference.regionName;
+  }
+
+  return reference.field === "backgroundMediaId" ? "Background" : undefined;
+}
+
+function formatMediaReference(reference: MediaUsageReference) {
+  const type = getReferenceType(reference);
+  const label = type === "theme" ? "Theme" : "Playlist";
+  const region = getReferenceRegion(reference);
+
+  return `${label}\n• ${getReferenceName(reference)}${region ? `\n  Region: ${region}` : ""}`;
 }
 
 function createBrowserAction(type: BrowserAction["type"]): BrowserAction {
@@ -314,11 +354,7 @@ export function MediaLibraryPage() {
         if (response.status === 409) {
           const conflictBody = (await response.json()) as MediaConflictResponse;
           const references = conflictBody.references ?? [];
-          const referenceLines = references
-            .map((reference) =>
-              `${reference.type === "playlist" ? "Playlist" : "Theme"}: ${reference.name}${reference.regionName ? ` (${reference.regionName})` : ""}`
-            )
-            .join("\n");
+          const referenceLines = references.map(formatMediaReference).join("\n\n");
           const confirmRemove = window.confirm(
             [
               `${item.filename} is still used and cannot be moved to Trash safely.`,
@@ -362,7 +398,9 @@ export function MediaLibraryPage() {
         throw new Error(await readApiError(response));
       }
 
-      setStatus(`${item.filename} restored.`);
+      setStatus(
+        `${item.filename} restored. References removed during "Remove from all references" are not restored automatically. Reassign this media where needed.`
+      );
       await refreshMediaWorkspace();
     } catch (error) {
       setStatus(error instanceof Error ? `Restore failed: ${error.message}` : "Restore failed.");
@@ -1142,6 +1180,11 @@ export function MediaLibraryPage() {
           </div>
         </div>
         {trashItems.length === 0 ? <p className="operator-empty">Trash is empty.</p> : null}
+        {trashItems.length > 0 ? (
+          <p className="operator-empty">
+            Restoring media returns only the media item. Playlist and Theme references removed earlier are not recreated automatically.
+          </p>
+        ) : null}
         {trashItems.length > 0 ? (
           <div className="operator-list">
             {trashItems.map((item) => (
