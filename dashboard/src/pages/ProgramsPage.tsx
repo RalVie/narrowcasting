@@ -7,48 +7,173 @@ import type { Program } from "../programTypes";
 import type { Theme } from "../themeTypes";
 
 const refreshIntervalMs = 10_000;
+type ViewMode = "library" | "editor";
+type PendingNavigation =
+  | { type: "back" }
+  | {
+      type: "open";
+      program: Program;
+    };
+
+function formatDuration(seconds: number) {
+  if (seconds <= 0) {
+    return "0 sec";
+  }
+
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+
+  if (minutes === 0) {
+    return `${remainingSeconds} sec`;
+  }
+
+  if (remainingSeconds === 0) {
+    return `${minutes} min`;
+  }
+
+  return `${minutes} min ${remainingSeconds} sec`;
+}
+
+function playlistDurationSeconds(playlist?: PlaylistRecord) {
+  if (!playlist) {
+    return 0;
+  }
+
+  return playlist.items.reduce((total, item) => {
+    if (item.type === "web_url" && item.duration <= 0) {
+      return total;
+    }
+
+    return total + Math.max(0, Math.round(item.duration ?? 0));
+  }, 0);
+}
+
+function formatUpdatedAt(value?: string) {
+  if (!value) {
+    return "Not saved yet";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString();
+}
+
+function getProgramUpdatedAt(program: Program) {
+  const candidate = (program as Program & { updatedAt?: unknown }).updatedAt;
+  return typeof candidate === "string" ? candidate : undefined;
+}
 
 export function ProgramsPage() {
   const [playlists, setPlaylists] = useState<PlaylistRecord[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [themes, setThemes] = useState<Theme[]>([]);
-  const [selectedProgramId, setSelectedProgramId] = useState("default-program");
-  const [program, setProgram] = useState<Program>({
-    id: "default-program",
-    name: "Default Program",
-    playlistIds: ["default"]
-  });
+  const [selectedProgramId, setSelectedProgramId] = useState<string | null>(null);
+  const [program, setProgram] = useState<Program | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>("library");
   const [status, setStatus] = useState("Loading programs...");
   const [isBusy, setIsBusy] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [programSearch, setProgramSearch] = useState("");
   const [playlistSearch, setPlaylistSearch] = useState("");
-  const selectedProgramIdRef = useRef("default-program");
+  const [isAddPlaylistsOpen, setIsAddPlaylistsOpen] = useState(false);
+  const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
+  const [selectedPlaylistIds, setSelectedPlaylistIds] = useState<string[]>([]);
+  const [pendingNavigation, setPendingNavigation] = useState<PendingNavigation | null>(null);
+  const [renameTarget, setRenameTarget] = useState<Program | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Program | null>(null);
+  const selectedProgramIdRef = useRef<string | null>(null);
   const isDirtyRef = useRef(false);
-  const programDraftRef = useRef<Program>({
-    id: "default-program",
-    name: "Default Program",
-    playlistIds: ["default"]
-  });
+  const programDraftRef = useRef<Program | null>(null);
+  const savedStatusTimerRef = useRef<number | null>(null);
+
+  function clearSavedStatusTimer() {
+    if (savedStatusTimerRef.current) {
+      window.clearTimeout(savedStatusTimerRef.current);
+      savedStatusTimerRef.current = null;
+    }
+  }
+
+  function showSavedStatus() {
+    clearSavedStatusTimer();
+    setStatus("✓ All changes saved");
+    savedStatusTimerRef.current = window.setTimeout(() => {
+      setStatus((currentStatus) => (currentStatus === "✓ All changes saved" ? "" : currentStatus));
+      savedStatusTimerRef.current = null;
+    }, 3000);
+  }
 
   function markDirty() {
+    clearSavedStatusTimer();
     isDirtyRef.current = true;
     setIsDirty(true);
   }
 
-  function selectProgram(programRecord: Program) {
-    selectedProgramIdRef.current = programRecord.id;
-    programDraftRef.current = programRecord;
-    setSelectedProgramId(programRecord.id);
-    setProgram(programRecord);
+  function getPlaylist(playlistId: string) {
+    return playlists.find((playlist) => playlist.id === playlistId);
+  }
+
+  function themeName(themeId: string | undefined) {
+    if (!themeId) {
+      return "Default Theme";
+    }
+
+    return themes.find((theme) => theme.id === themeId)?.name ?? `Missing theme: ${themeId}`;
+  }
+
+  function programDuration(programRecord: Program) {
+    const totalSeconds = programRecord.playlistIds.reduce((total, playlistId) => total + playlistDurationSeconds(getPlaylist(playlistId)), 0);
+    return formatDuration(totalSeconds);
+  }
+
+  function openProgram(programRecord: Program, options: { discardDirty?: boolean } = {}) {
+    if (isDirtyRef.current && !options.discardDirty) {
+      setPendingNavigation({ type: "open", program: programRecord });
+      return;
+    }
+
+    const draft = {
+      ...programRecord,
+      playlistIds: [...programRecord.playlistIds]
+    };
+    selectedProgramIdRef.current = draft.id;
+    programDraftRef.current = draft;
+    setSelectedProgramId(draft.id);
+    setProgram(draft);
+    isDirtyRef.current = false;
+    setIsDirty(false);
+    setViewMode("editor");
+  }
+
+  function backToLibrary(options: { discardDirty?: boolean } = {}) {
+    if (isDirtyRef.current && !options.discardDirty) {
+      setPendingNavigation({ type: "back" });
+      return;
+    }
+
+    setViewMode("library");
+    setIsAddPlaylistsOpen(false);
+    setIsThemeModalOpen(false);
+    setSelectedPlaylistIds([]);
+    isDirtyRef.current = false;
+    setIsDirty(false);
   }
 
   async function loadData(options: { force?: boolean } = {}) {
     if (isDirtyRef.current && !options.force) {
       const playlistResponse = await fetch(apiUrl("/api/playlists")).catch(() => null);
+      const themeResponse = await fetch(apiUrl("/api/themes")).catch(() => null);
 
       if (playlistResponse?.ok) {
         setPlaylists((await playlistResponse.json()) as PlaylistRecord[]);
+      }
+
+      if (themeResponse?.ok) {
+        setThemes((await themeResponse.json()) as Theme[]);
       }
 
       return;
@@ -70,17 +195,18 @@ export function ProgramsPage() {
       const playlistBody = (await playlistResponse.json()) as PlaylistRecord[];
       const programBody = (await programResponse.json()) as Program[];
       const themeBody = (await themeResponse.json()) as Theme[];
-      const selectedProgram =
-        programBody.find((item) => item.id === selectedProgramIdRef.current) ??
-        programBody.find((item) => item.id === "default-program") ??
-        programBody[0];
-
       setPlaylists(playlistBody);
       setPrograms(programBody);
       setThemes(themeBody);
 
-      if (selectedProgram) {
-        selectProgram(selectedProgram);
+      if (selectedProgramIdRef.current) {
+        const currentProgram = programBody.find((item) => item.id === selectedProgramIdRef.current);
+
+        if (currentProgram && viewMode === "editor") {
+          const draft = { ...currentProgram, playlistIds: [...currentProgram.playlistIds] };
+          programDraftRef.current = draft;
+          setProgram(draft);
+        }
       }
 
       isDirtyRef.current = false;
@@ -109,33 +235,35 @@ export function ProgramsPage() {
       }
 
       const body = (await response.json()) as Program;
-      selectProgram(body);
       setPrograms((currentPrograms) => [...currentPrograms, body]);
-      isDirtyRef.current = false;
-      setIsDirty(false);
+      openProgram(body, { discardDirty: true });
       setStatus(`${body.name} created.`);
+      return body;
     } catch (error) {
       setStatus(error instanceof Error ? `Create failed: ${error.message}` : "Create failed.");
+      return null;
     } finally {
       setIsBusy(false);
     }
   }
 
-  async function duplicateProgram() {
-    const draft = programDraftRef.current;
-    await createProgram(`${draft.name} Copy`, draft.playlistIds, draft.themeId);
+  async function duplicateProgram(source: Program) {
+    await createProgram(`${source.name} Copy`, source.playlistIds, source.themeId);
   }
 
-  async function saveProgram() {
-    const draft = programDraftRef.current;
+  async function saveProgram(currentProgram = programDraftRef.current) {
+    if (!currentProgram) {
+      return null;
+    }
+
     setIsBusy(true);
-    setStatus(`Saving ${draft.name}...`);
+    setStatus(`Saving ${currentProgram.name}...`);
 
     try {
-      const response = await fetch(apiUrl(`/api/programs/${encodeURIComponent(draft.id)}`), {
+      const response = await fetch(apiUrl(`/api/programs/${encodeURIComponent(currentProgram.id)}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(draft)
+        body: JSON.stringify(currentProgram)
       });
 
       if (!response.ok) {
@@ -143,31 +271,51 @@ export function ProgramsPage() {
       }
 
       const body = (await response.json()) as Program;
-      selectProgram(body);
-      setPrograms((currentPrograms) => currentPrograms.map((item) => (item.id === body.id ? body : item)));
+      const savedProgram = { ...body, playlistIds: [...body.playlistIds] };
+      programDraftRef.current = savedProgram;
+      setProgram(savedProgram);
+      setPrograms((currentPrograms) =>
+        currentPrograms.some((item) => item.id === savedProgram.id)
+          ? currentPrograms.map((item) => (item.id === savedProgram.id ? savedProgram : item))
+          : [...currentPrograms, savedProgram]
+      );
+      selectedProgramIdRef.current = savedProgram.id;
+      setSelectedProgramId(savedProgram.id);
       isDirtyRef.current = false;
       setIsDirty(false);
-      setStatus(`${body.name} saved.`);
+      showSavedStatus();
       window.dispatchEvent(new CustomEvent("narrowcasting:playlist-saved"));
+      return savedProgram;
     } catch (error) {
       setStatus(error instanceof Error ? `Save failed: ${error.message}` : "Save failed.");
+      return null;
     } finally {
       setIsBusy(false);
     }
   }
 
-  async function deleteProgram() {
-    const draft = programDraftRef.current;
-
-    if (!window.confirm(`Delete program "${draft.name}"?`)) {
+  async function renameProgram() {
+    if (!renameTarget) {
       return;
     }
 
+    const name = renameValue.trim();
+
+    if (!name) {
+      setStatus("Program name cannot be empty.");
+      return;
+    }
+
+    setRenameTarget(null);
+    await saveProgram({ ...renameTarget, name });
+  }
+
+  async function deleteProgram(target: Program) {
     setIsBusy(true);
-    setStatus(`Deleting ${draft.name}...`);
+    setStatus(`Deleting ${target.name}...`);
 
     try {
-      const response = await fetch(apiUrl(`/api/programs/${encodeURIComponent(draft.id)}`), {
+      const response = await fetch(apiUrl(`/api/programs/${encodeURIComponent(target.id)}`), {
         method: "DELETE"
       });
 
@@ -175,17 +323,20 @@ export function ProgramsPage() {
         throw new Error(await readApiError(response));
       }
 
-      const nextPrograms = programs.filter((item) => item.id !== draft.id);
-      const nextProgram = nextPrograms.find((item) => item.id === "default-program") ?? nextPrograms[0];
-      setPrograms(nextPrograms);
+      setPrograms((currentPrograms) => currentPrograms.filter((item) => item.id !== target.id));
 
-      if (nextProgram) {
-        selectProgram(nextProgram);
+      if (selectedProgramIdRef.current === target.id) {
+        selectedProgramIdRef.current = null;
+        programDraftRef.current = null;
+        setSelectedProgramId(null);
+        setProgram(null);
+        setViewMode("library");
+        isDirtyRef.current = false;
+        setIsDirty(false);
       }
 
-      isDirtyRef.current = false;
-      setIsDirty(false);
-      setStatus(`${draft.name} deleted.`);
+      setDeleteTarget(null);
+      setStatus(`${target.name} deleted.`);
       window.dispatchEvent(new CustomEvent("narrowcasting:playlist-saved"));
     } catch (error) {
       setStatus(error instanceof Error ? `Delete failed: ${error.message}` : "Delete failed.");
@@ -195,22 +346,28 @@ export function ProgramsPage() {
   }
 
   function updateProgram(updater: (program: Program) => Program) {
+    if (!programDraftRef.current) {
+      return;
+    }
+
     const nextProgram = updater(programDraftRef.current);
     programDraftRef.current = nextProgram;
     setProgram(nextProgram);
     markDirty();
   }
 
-  function addPlaylist(playlistId: string, index = programDraftRef.current.playlistIds.length) {
-    if (!playlistId) {
+  function addPlaylists(playlistIds: string[]) {
+    if (playlistIds.length === 0) {
       return;
     }
 
-    updateProgram((currentProgram) => {
-      const playlistIds = [...currentProgram.playlistIds];
-      playlistIds.splice(index, 0, playlistId);
-      return { ...currentProgram, playlistIds };
-    });
+    updateProgram((currentProgram) => ({
+      ...currentProgram,
+      playlistIds: [...currentProgram.playlistIds, ...playlistIds]
+    }));
+    setSelectedPlaylistIds([]);
+    setIsAddPlaylistsOpen(false);
+    setStatus(`Added ${playlistIds.length} playlist(s).`);
   }
 
   function removePlaylist(index: number) {
@@ -233,21 +390,12 @@ export function ProgramsPage() {
     });
   }
 
-  function playlistName(playlistId: string) {
-    return playlists.find((playlist) => playlist.id === playlistId)?.name ?? playlistId;
-  }
-
-  function themeName(themeId: string | undefined) {
-    if (!themeId) {
-      return "No theme selected";
-    }
-
-    return themes.find((theme) => theme.id === themeId)?.name ?? `Missing theme: ${themeId}`;
-  }
-
-  function handlePlaylistDragStart(event: DragEvent<HTMLElement>, playlistId: string) {
-    event.dataTransfer.effectAllowed = "copy";
-    event.dataTransfer.setData("application/x-playlist-id", playlistId);
+  function selectTheme(themeId: string | undefined) {
+    updateProgram((currentProgram) => ({
+      ...currentProgram,
+      themeId
+    }));
+    setIsThemeModalOpen(false);
   }
 
   function handleProgramPlaylistDragStart(event: DragEvent<HTMLElement>, index: number) {
@@ -255,18 +403,44 @@ export function ProgramsPage() {
     event.dataTransfer.setData("application/x-program-playlist-index", String(index));
   }
 
-  function handleProgramDrop(event: DragEvent<HTMLElement>, index = programDraftRef.current.playlistIds.length) {
+  function handleProgramPlaylistDrop(event: DragEvent<HTMLElement>, index: number) {
     event.preventDefault();
-    const playlistId = event.dataTransfer.getData("application/x-playlist-id");
     const draggedIndex = event.dataTransfer.getData("application/x-program-playlist-index");
-
-    if (playlistId) {
-      addPlaylist(playlistId, index);
-      return;
-    }
 
     if (draggedIndex) {
       reorderPlaylist(Number(draggedIndex), index);
+    }
+  }
+
+  async function resolvePendingNavigation(action: "cancel" | "discard" | "save") {
+    const pending = pendingNavigation;
+
+    if (!pending) {
+      return;
+    }
+
+    if (action === "cancel") {
+      setPendingNavigation(null);
+      return;
+    }
+
+    if (action === "save") {
+      const saved = await saveProgram();
+
+      if (!saved) {
+        return;
+      }
+    } else {
+      isDirtyRef.current = false;
+      setIsDirty(false);
+    }
+
+    setPendingNavigation(null);
+
+    if (pending.type === "back") {
+      backToLibrary({ discardDirty: true });
+    } else {
+      openProgram(pending.program, { discardDirty: true });
     }
   }
 
@@ -276,184 +450,397 @@ export function ProgramsPage() {
     return () => window.clearInterval(timer);
   }, []);
 
+  useEffect(() => () => clearSavedStatusTimer(), []);
+
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!isDirtyRef.current) {
+        return;
+      }
+
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, []);
+
   const filteredPrograms = programs.filter((item) =>
     programSearch.trim() ? item.name.toLowerCase().includes(programSearch.trim().toLowerCase()) : true
   );
   const filteredPlaylists = playlists.filter((item) =>
     playlistSearch.trim() ? item.name.toLowerCase().includes(playlistSearch.trim().toLowerCase()) : true
   );
-  const selectedThemeExists = Boolean(program.themeId && themes.some((theme) => theme.id === program.themeId));
-  const selectedThemeMissing = Boolean(program.themeId && !selectedThemeExists);
-  const selectedThemeValue = selectedThemeExists ? program.themeId ?? "" : "";
+  const selectedPlaylists = selectedPlaylistIds.map(getPlaylist).filter((item): item is PlaylistRecord => Boolean(item));
+  const selectedThemeMissing = Boolean(program?.themeId && !themes.some((theme) => theme.id === program.themeId));
 
-  return (
-    <section className="page-section operator-section" id="programs">
-      <div className="section-header">
-        <div>
-          <h2>Program Builder</h2>
-          <p>Assemble playlists into the program the scheduler will activate.</p>
-        </div>
-        <div className="button-row">
-          <button disabled={isBusy} onClick={() => void loadData({ force: true })} type="button">
-            Refresh
-          </button>
-          <button disabled={isBusy} onClick={() => void saveProgram()} type="button">
-            Save Program
-          </button>
-        </div>
-      </div>
+  function renderProgramCard(programRecord: Program) {
+    const previews = programRecord.playlistIds.slice(0, 4).map(getPlaylist);
 
-      <p className="status-text">
-        {status}
-        {isDirty ? " Unsaved changes." : ""}
-      </p>
-
-      <div className="operator-workspace program-workspace">
-        <section className="operator-panel playlist-browser" aria-label="Programs">
-          <div className="operator-panel-header">
-            <h3>Programs</h3>
-            <span>{programs.length}</span>
+    return (
+      <article className="playlist-library-card" key={programRecord.id}>
+        <button className="playlist-library-open" onClick={() => openProgram(programRecord)} type="button">
+          <div className="playlist-preview-strip" aria-hidden="true">
+            {previews.length > 0 ? (
+              previews.map((playlist, index) => (
+                <div className="playlist-preview-thumb" key={`${programRecord.id}-${index}`}>
+                  <span>{playlist?.items.length ?? 0} items</span>
+                </div>
+              ))
+            ) : (
+              <div className="playlist-preview-thumb empty">Empty</div>
+            )}
           </div>
-          <input
-            aria-label="Search programs"
-            onChange={(event) => setProgramSearch(event.target.value)}
-            placeholder="Search programs"
-            type="search"
-            value={programSearch}
-          />
-          <div className="operator-action-grid">
-            <button disabled={isBusy} onClick={() => void createProgram()} type="button">
-              New Program
+          <div className="playlist-library-main">
+            <strong>{programRecord.name}</strong>
+            <span>
+              {programRecord.playlistIds.length} playlist(s) - Theme: {themeName(programRecord.themeId)}
+            </span>
+            <span>Estimated duration: {programDuration(programRecord)}</span>
+            <span>Last modified: {formatUpdatedAt(getProgramUpdatedAt(programRecord))}</span>
+          </div>
+        </button>
+        <details className="playlist-card-menu">
+          <summary aria-label={`Actions for ${programRecord.name}`}>...</summary>
+          <div>
+            <button onClick={() => openProgram(programRecord)} type="button">
+              Open
             </button>
-            <button disabled={isBusy} onClick={() => void duplicateProgram()} type="button">
+            <button disabled={isBusy} onClick={() => void duplicateProgram(programRecord)} type="button">
               Duplicate
             </button>
-            <button disabled={isBusy} onClick={() => void deleteProgram()} type="button">
+            <button
+              disabled={isBusy}
+              onClick={() => {
+                setRenameTarget(programRecord);
+                setRenameValue(programRecord.name);
+              }}
+              type="button"
+            >
+              Rename
+            </button>
+            <button disabled={isBusy} onClick={() => setDeleteTarget(programRecord)} type="button">
               Delete
             </button>
           </div>
-          <div className="operator-list">
-            {filteredPrograms.map((item) => (
+        </details>
+      </article>
+    );
+  }
+
+  function renderProgramPlaylist(playlistId: string, index: number) {
+    const playlist = getPlaylist(playlistId);
+
+    return (
+      <article
+        className="program-editor-row"
+        draggable
+        key={`${program?.id}-${playlistId}-${index}`}
+        onDragOver={(event) => event.preventDefault()}
+        onDragStart={(event) => handleProgramPlaylistDragStart(event, index)}
+        onDrop={(event) => handleProgramPlaylistDrop(event, index)}
+      >
+        <span className="operator-drag-handle" title="Drag to reorder">
+          Drag
+        </span>
+        <div className="operator-item-main">
+          <strong>{playlist?.name ?? playlistId}</strong>
+          <span>
+            {playlist?.items.length ?? 0} item(s) - {formatDuration(playlistDurationSeconds(playlist))}
+          </span>
+        </div>
+        <button disabled={isBusy} onClick={() => removePlaylist(index)} type="button">
+          Remove
+        </button>
+      </article>
+    );
+  }
+
+  function renderPlaylistPickerRow(playlist: PlaylistRecord) {
+    const selected = selectedPlaylistIds.includes(playlist.id);
+
+    return (
+      <button
+        className={selected ? "program-picker-row selected" : "program-picker-row"}
+        key={playlist.id}
+        onClick={() =>
+          setSelectedPlaylistIds((currentIds) =>
+            currentIds.includes(playlist.id) ? currentIds.filter((playlistId) => playlistId !== playlist.id) : [...currentIds, playlist.id]
+          )
+        }
+        type="button"
+      >
+        <strong>{playlist.name}</strong>
+        <span>
+          {playlist.items.length} item(s) - {formatDuration(playlistDurationSeconds(playlist))}
+        </span>
+      </button>
+    );
+  }
+
+  return (
+    <section className="page-section operator-section" id="programs">
+      {viewMode === "library" ? (
+        <>
+          <div className="section-header">
+            <div>
+              <h2>Programs</h2>
+              <p>Arrange playlists and themes into reusable playback programs.</p>
+            </div>
+            <div className="button-row">
+              <button disabled={isBusy} onClick={() => void loadData({ force: true })} type="button">
+                Refresh
+              </button>
+              <button className="primary-button" disabled={isBusy} onClick={() => void createProgram()} type="button">
+                + New Program
+              </button>
+            </div>
+          </div>
+
+          <p className="status-text">{status}</p>
+
+          <div className="playlist-library-toolbar">
+            <input
+              aria-label="Search programs"
+              onChange={(event) => setProgramSearch(event.target.value)}
+              placeholder="Search programs"
+              type="search"
+              value={programSearch}
+            />
+            <span>{filteredPrograms.length} program(s)</span>
+          </div>
+
+          <div className="playlist-library-grid">
+            {filteredPrograms.length > 0 ? (
+              filteredPrograms.map(renderProgramCard)
+            ) : (
+              <p className="operator-empty">No programs found. Create a new program to start arranging playlists.</p>
+            )}
+          </div>
+        </>
+      ) : program ? (
+        <>
+          <div className="playlist-editor-header program-editor-header">
+            <button onClick={() => backToLibrary()} type="button">
+              ← Back to Programs
+            </button>
+            <div className="playlist-editor-title-row">
+              <input
+                aria-label="Program name"
+                className="operator-title-input"
+                onChange={(event) =>
+                  updateProgram((currentProgram) => ({
+                    ...currentProgram,
+                    name: event.target.value
+                  }))
+                }
+                value={program.name}
+              />
+              <span>
+                {program.playlistIds.length} playlist(s) - Theme: {themeName(program.themeId)}
+              </span>
+            </div>
+            <div className="button-row">
+              <button disabled={isBusy} onClick={() => setIsAddPlaylistsOpen(true)} type="button">
+                Add Playlists
+              </button>
+              <button disabled={isBusy} onClick={() => setIsThemeModalOpen(true)} type="button">
+                Change Theme
+              </button>
+              <details className="playlist-card-menu playlist-editor-menu">
+                <summary aria-label={`Actions for ${program.name}`}>...</summary>
+                <div>
+                  <button
+                    disabled={isBusy}
+                    onClick={() => {
+                      setRenameTarget(program);
+                      setRenameValue(program.name);
+                    }}
+                    type="button"
+                  >
+                    Rename
+                  </button>
+                  <button disabled={isBusy} onClick={() => void duplicateProgram(program)} type="button">
+                    Duplicate
+                  </button>
+                  <button disabled={isBusy} onClick={() => setDeleteTarget(program)} type="button">
+                    Delete
+                  </button>
+                </div>
+              </details>
+              <button className="primary-button" disabled={isBusy || !isDirty} onClick={() => void saveProgram()} type="button">
+                Save Changes
+              </button>
+            </div>
+          </div>
+
+          <p className="status-text">
+            {status}
+            {isDirty ? " Unsaved changes." : ""}
+          </p>
+
+          <section className="program-theme-summary" aria-label="Program theme">
+            <div>
+              <span>Theme</span>
+              <strong>{themeName(program.themeId)}</strong>
+              {selectedThemeMissing ? <p>Selected theme is missing. Runtime will use the default until a valid theme is selected.</p> : null}
+            </div>
+            <button disabled={isBusy} onClick={() => setIsThemeModalOpen(true)} type="button">
+              Change Theme
+            </button>
+          </section>
+
+          <div className="playlist-editor-list">
+            {program.playlistIds.length > 0 ? (
+              program.playlistIds.map(renderProgramPlaylist)
+            ) : (
+              <p className="operator-empty">No playlists in this program yet. Use Add Playlists to choose them.</p>
+            )}
+          </div>
+        </>
+      ) : null}
+
+      {isAddPlaylistsOpen ? (
+        <div className="media-trash-modal-backdrop" role="presentation">
+          <section aria-modal="true" className="media-trash-modal playlist-media-modal" role="dialog">
+            <div className="playlist-modal-header">
+              <div>
+                <h3>Add playlists</h3>
+                <p>Select one or more playlists to append to this program.</p>
+              </div>
               <button
-                className={item.id === selectedProgramId ? "operator-list-item active" : "operator-list-item"}
-                key={item.id}
+                aria-label="Close add playlists"
                 onClick={() => {
-                  selectProgram(item);
-                  isDirtyRef.current = false;
-                  setIsDirty(false);
+                  setIsAddPlaylistsOpen(false);
+                  setSelectedPlaylistIds([]);
                 }}
                 type="button"
               >
-                <strong>{item.name}</strong>
-                <span>{item.playlistIds.length} playlist(s) / Theme: {themeName(item.themeId)}</span>
+                Close
               </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="operator-panel playlist-browser" aria-label="Available playlists">
-          <div className="operator-panel-header">
-            <h3>Playlists</h3>
-            <span>{filteredPlaylists.length} available</span>
-          </div>
-          <input
-            aria-label="Search playlists"
-            onChange={(event) => setPlaylistSearch(event.target.value)}
-            placeholder="Search playlists"
-            type="search"
-            value={playlistSearch}
-          />
-          <div className="operator-list">
-            {filteredPlaylists.map((playlist) => (
-              <article
-                className="operator-list-card"
-                draggable
-                key={playlist.id}
-                onDragStart={(event) => handlePlaylistDragStart(event, playlist.id)}
-              >
-                <strong>{playlist.name}</strong>
-                <span>{playlist.items.length} item(s)</span>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section
-          className="operator-panel playlist-content-panel"
-          aria-label="Program playlists"
-          onDragOver={(event) => event.preventDefault()}
-          onDrop={(event) => handleProgramDrop(event)}
-        >
-          <div className="operator-panel-header">
-            <div>
-              <h3>{program.name}</h3>
-              <span>{program.playlistIds.length} playlist(s)</span>
             </div>
-            <button disabled={isBusy} onClick={() => void saveProgram()} type="button">
-              Save
-            </button>
-          </div>
-          <input
-            aria-label="Program name"
-            className="operator-title-input"
-            onChange={(event) =>
-              updateProgram((currentProgram) => ({
-                ...currentProgram,
-                name: event.target.value
-              }))
-            }
-            value={program.name}
-          />
-          <label className="operator-field">
-            Theme
-            <select
-              onChange={(event) =>
-                updateProgram((currentProgram) => ({
-                  ...currentProgram,
-                  themeId: event.target.value
-                }))
-              }
-              value={selectedThemeValue}
-            >
-              {!program.themeId ? <option value="">No theme selected</option> : null}
-              {selectedThemeMissing ? <option value="">Missing theme: {program.themeId}</option> : null}
-              {themes.map((theme) => (
-                <option key={theme.id} value={theme.id}>
-                  {theme.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          {selectedThemeMissing ? (
-            <p className="operator-helper warning">
-              Selected theme is missing. Schedule rendering will use the runtime default until a valid theme is selected.
-            </p>
-          ) : null}
-          <div className="operator-drop-zone">Drop playlists here</div>
-          <div className="operator-timeline">
-            {program.playlistIds.length === 0 ? <p className="operator-empty">No playlists yet. Drag playlists into this program.</p> : null}
-            {program.playlistIds.map((playlistId, index) => (
-              <article
-                className="operator-timeline-row"
-                draggable
-                key={`${program.id}-${playlistId}-${index}`}
-                onDragOver={(event) => event.preventDefault()}
-                onDragStart={(event) => handleProgramPlaylistDragStart(event, index)}
-                onDrop={(event) => handleProgramDrop(event, index)}
+            <input
+              aria-label="Search playlists"
+              onChange={(event) => setPlaylistSearch(event.target.value)}
+              placeholder="Search playlists"
+              type="search"
+              value={playlistSearch}
+            />
+            <div className="program-picker-list">
+              {filteredPlaylists.length > 0 ? filteredPlaylists.map(renderPlaylistPickerRow) : <p className="operator-empty">No playlists found.</p>}
+            </div>
+            <div className="media-trash-modal-actions">
+              <button
+                onClick={() => {
+                  setIsAddPlaylistsOpen(false);
+                  setSelectedPlaylistIds([]);
+                }}
+                type="button"
               >
-                <span className="operator-drag-handle">Drag</span>
-                <div className="operator-item-main">
-                  <strong>{playlistName(playlistId)}</strong>
-                  <span>{playlists.find((item) => item.id === playlistId)?.items.length ?? 0} item(s)</span>
-                </div>
-                <button disabled={isBusy} onClick={() => removePlaylist(index)} type="button">
-                  Remove
+                Cancel
+              </button>
+              <button
+                className="primary-button"
+                disabled={selectedPlaylists.length === 0}
+                onClick={() => addPlaylists(selectedPlaylists.map((playlist) => playlist.id))}
+                type="button"
+              >
+                Add selected playlists
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {isThemeModalOpen ? (
+        <div className="media-trash-modal-backdrop" role="presentation">
+          <section aria-modal="true" className="media-trash-modal" role="dialog">
+            <h3>Change Theme</h3>
+            <div className="program-theme-list">
+              <button className={!program?.themeId ? "selected" : ""} onClick={() => selectTheme(undefined)} type="button">
+                <strong>Default Theme</strong>
+                <span>Use the runtime default layout.</span>
+              </button>
+              {themes.map((theme) => (
+                <button
+                  className={program?.themeId === theme.id ? "selected" : ""}
+                  key={theme.id}
+                  onClick={() => selectTheme(theme.id)}
+                  type="button"
+                >
+                  <strong>{theme.name}</strong>
+                  <span>{theme.regions.length} region(s)</span>
                 </button>
-              </article>
-            ))}
-          </div>
-        </section>
-      </div>
+              ))}
+            </div>
+            <div className="media-trash-modal-actions">
+              <button onClick={() => setIsThemeModalOpen(false)} type="button">
+                Cancel
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {pendingNavigation ? (
+        <div className="media-trash-modal-backdrop" role="presentation">
+          <section aria-modal="true" className="media-trash-modal" role="dialog">
+            <h3>Unsaved changes</h3>
+            <p>This program has changes that have not been saved.</p>
+            <div className="media-trash-modal-actions">
+              <button onClick={() => void resolvePendingNavigation("cancel")} type="button">
+                Cancel
+              </button>
+              <button className="danger-button" onClick={() => void resolvePendingNavigation("discard")} type="button">
+                Discard Changes
+              </button>
+              <button className="primary-button" disabled={isBusy} onClick={() => void resolvePendingNavigation("save")} type="button">
+                Save and Continue
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {renameTarget ? (
+        <div className="media-trash-modal-backdrop" role="presentation">
+          <section aria-modal="true" className="media-trash-modal" role="dialog">
+            <h3>Rename program</h3>
+            <input
+              aria-label="Program name"
+              onChange={(event) => setRenameValue(event.target.value)}
+              type="text"
+              value={renameValue}
+            />
+            <div className="media-trash-modal-actions">
+              <button onClick={() => setRenameTarget(null)} type="button">
+                Cancel
+              </button>
+              <button className="primary-button" disabled={isBusy || !renameValue.trim()} onClick={() => void renameProgram()} type="button">
+                Rename
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {deleteTarget ? (
+        <div className="media-trash-modal-backdrop" role="presentation">
+          <section aria-modal="true" className="media-trash-modal" role="dialog">
+            <h3>Delete program</h3>
+            <p>Delete "{deleteTarget.name}"? This does not delete playlists or media.</p>
+            <div className="media-trash-modal-actions">
+              <button onClick={() => setDeleteTarget(null)} type="button">
+                Cancel
+              </button>
+              <button className="danger-button" disabled={isBusy} onClick={() => void deleteProgram(deleteTarget)} type="button">
+                Delete Program
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }
