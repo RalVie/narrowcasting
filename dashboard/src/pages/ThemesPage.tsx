@@ -256,6 +256,7 @@ export function ThemesPage() {
   const [gridSize, setGridSize] = useState(20);
   const [showSafeArea, setShowSafeArea] = useState(true);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [pendingNavigation, setPendingNavigation] = useState<PendingNavigation | null>(null);
   const [renameTarget, setRenameTarget] = useState<Theme | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -992,6 +993,47 @@ export function ThemesPage() {
     );
   }
 
+  function getPreviewRegionStyle(region: ThemeRegion, index: number) {
+    const regionStyle = getRegionStyle(region, index);
+
+    return {
+      ...regionStyle,
+      borderColor: "transparent",
+      borderWidth: 0,
+      cursor: "default",
+      opacity: region.opacity ?? 1,
+      pointerEvents: "none" as const
+    };
+  }
+
+  function renderThemePresentationPreview() {
+    const previewWidth = theme.orientation === "portrait" ? "min(100%, 48vh)" : "min(100%, 1180px)";
+
+    return (
+      <div className="theme-preview-stage">
+        <div
+          className={isTransparentColor(theme.backgroundColor) ? "theme-preview-canvas transparent-background" : "theme-preview-canvas"}
+          style={{
+            aspectRatio: `${theme.canvasWidth} / ${theme.canvasHeight}`,
+            backgroundColor: isTransparentColor(theme.backgroundColor) ? undefined : theme.backgroundColor,
+            width: previewWidth
+          }}
+        >
+          {theme.regions
+            .filter((region) => region.visible !== false)
+            .map((region, index) => (
+              <div className="theme-preview-region" key={region.id} style={getPreviewRegionStyle(region, index)}>
+                {renderDesignerRegionPreview(region)}
+                {region.type === "logo" || region.type === "image" || region.type === "clock" ? null : (
+                  <span className="theme-preview-region-label">{region.name}</span>
+                )}
+              </div>
+            ))}
+        </div>
+      </div>
+    );
+  }
+
   function renderThemePreview(themeRecord: Theme) {
     return (
       <div
@@ -1089,7 +1131,7 @@ export function ThemesPage() {
               <span>{theme.orientation} - {theme.canvasWidth} x {theme.canvasHeight}</span>
             </div>
             <div className="button-row">
-              <button type="button">Preview</button>
+              <button onClick={() => setIsPreviewOpen(true)} type="button">Preview</button>
               <details className="playlist-card-menu playlist-editor-menu">
                 <summary aria-label={`Actions for ${theme.name}`}>...</summary>
                 <div>
@@ -1287,6 +1329,22 @@ export function ThemesPage() {
           </div>
         </>
       )}
+
+      {isPreviewOpen ? (
+        <div className="media-trash-modal-backdrop" role="presentation">
+          <section aria-modal="true" className="media-trash-modal theme-preview-modal" role="dialog">
+            <div className="theme-preview-modal-header">
+              <h3>Theme Preview</h3>
+            </div>
+            {renderThemePresentationPreview()}
+            <div className="media-trash-modal-actions">
+              <button onClick={() => setIsPreviewOpen(false)} type="button">
+                Close
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {pendingNavigation ? (
         <div className="media-trash-modal-backdrop" role="presentation"><section aria-modal="true" className="media-trash-modal" role="dialog"><h3>Unsaved changes</h3><p>This theme has changes that have not been saved.</p><div className="media-trash-modal-actions"><button onClick={() => void resolvePendingNavigation("cancel")} type="button">Cancel</button><button className="danger-button" onClick={() => void resolvePendingNavigation("discard")} type="button">Discard Changes</button><button className="primary-button" disabled={isBusy} onClick={() => void resolvePendingNavigation("save")} type="button">Save and Continue</button></div></section></div>
